@@ -153,6 +153,18 @@ export interface WebsiteCrawlResponse {
   crawled_at: string;
 }
 
+export interface WebsiteCrawlJobResponse {
+  id: string;
+  website_url: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  result: WebsiteCrawlResponse | null;
+}
+
 export interface ResearchSourceCrawlInput {
   source_url: string;
 }
@@ -288,11 +300,17 @@ export function ingestCompanies(
 
 export function crawlWebsite(
   input: WebsiteCrawlInput,
-): Promise<WebsiteCrawlResponse> {
-  return request<WebsiteCrawlResponse>("/crawler/crawl", {
+): Promise<WebsiteCrawlJobResponse> {
+  return request<WebsiteCrawlJobResponse>("/crawler/crawl", {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function getWebsiteCrawlJob(
+  jobId: string,
+): Promise<WebsiteCrawlJobResponse> {
+  return request<WebsiteCrawlJobResponse>(`/crawler/jobs/${jobId}`);
 }
 
 export function getCompanyWebsiteCrawl(
@@ -305,8 +323,8 @@ export function getCompanyWebsiteCrawl(
 
 export function crawlCompanyWebsite(
   companyId: string,
-): Promise<WebsiteCrawlResponse> {
-  return request<WebsiteCrawlResponse>(
+): Promise<WebsiteCrawlJobResponse> {
+  return request<WebsiteCrawlJobResponse>(
     `/companies/${companyId}/website-crawl`,
     { method: "POST" },
   );

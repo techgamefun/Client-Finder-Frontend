@@ -1,15 +1,39 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { crawlWebsite } from "@/lib/api";
+import { crawlWebsite, getWebsiteCrawlJob } from "@/lib/api";
 
 export function CrawlerPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
+  const [jobId, setJobId] = useState<string | null>(null);
   const crawlMutation = useMutation({
     mutationFn: crawlWebsite,
+    onMutate: () => setJobId(null),
+    onSuccess: (job) => setJobId(job.id),
   });
-  const crawlResult = crawlMutation.data;
+  const jobQuery = useQuery({
+    queryKey: ["website-crawl-job", jobId],
+    queryFn: () => {
+      if (jobId === null) {
+        throw new Error("A crawl job must be queued before checking status.");
+      }
+      return getWebsiteCrawlJob(jobId);
+    },
+    enabled: jobId !== null,
+    refetchInterval: (query) => {
+      const currentStatus = query.state.data?.status;
+      return currentStatus === "queued" || currentStatus === "running"
+        ? 1000
+        : false;
+    },
+  });
+  const crawlJob = jobQuery.data;
+  const crawlResult = crawlJob?.result;
+  const isCrawlPending =
+    crawlMutation.isPending ||
+    crawlJob?.status === "queued" ||
+    crawlJob?.status === "running";
   const crawledPages = crawlResult
     ? [
         {
@@ -76,13 +100,20 @@ export function CrawlerPage() {
           </label>
           <button
             className="button button-primary"
-            disabled={crawlMutation.isPending}
+            disabled={isCrawlPending}
             type="submit"
           >
-            {crawlMutation.isPending ? "Crawling..." : "Crawl website"}
-            {!crawlMutation.isPending && <span aria-hidden="true">→</span>}
+            {isCrawlPending ? "Crawling..." : "Crawl website"}
+            {!isCrawlPending && <span aria-hidden="true">→</span>}
           </button>
         </form>
+
+        {isCrawlPending && (
+          <div className="alert" role="status">
+            Crawl job {crawlJob?.status ?? "queued"}. This page will update
+            when it finishes.
+          </div>
+        )}
 
         {crawlMutation.isError && (
           <div className="alert alert-error" role="alert">
@@ -90,7 +121,19 @@ export function CrawlerPage() {
           </div>
         )}
 
-        {crawlMutation.isSuccess && crawlResult && (
+        {jobQuery.isError && (
+          <div className="alert alert-error" role="alert">
+            Could not check crawl status: {jobQuery.error.message}
+          </div>
+        )}
+
+        {crawlJob?.status === "failed" && (
+          <div className="alert alert-error" role="alert">
+            Crawl failed: {crawlJob.error || "The crawl job failed."}
+          </div>
+        )}
+
+        {crawlJob?.status === "succeeded" && crawlResult && (
           <div className="crawl-result" role="status">
             <div className="crawl-result-heading">
               <div>

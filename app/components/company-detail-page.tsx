@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  useEffect,
   useState,
   type FormEvent,
   type ReactNode,
@@ -16,6 +17,7 @@ import {
   getCompany,
   getCompanyWebsiteCrawl,
   getPageSpeedScan,
+  getWebsiteCrawlJob,
   updateCompany,
   updateLeadStatus,
 } from "@/lib/api";
@@ -45,6 +47,9 @@ export function CompanyDetailPage({
   const [isDeleteConfirmed, setIsDeleteConfirmed] = useState(false);
   const [isAboutExpanded, setIsAboutExpanded] = useState(false);
   const [showRecrawlOption, setShowRecrawlOption] = useState(false);
+  const [websiteCrawlJobId, setWebsiteCrawlJobId] = useState<string | null>(
+    null,
+  );
   const [activeCompanyInfoTab, setActiveCompanyInfoTab] = useState("about");
   const [pageSpeedStrategy, setPageSpeedStrategy] = useState<
     "mobile" | "desktop"
@@ -75,6 +80,22 @@ export function CompanyDetailPage({
     },
     enabled: companyId !== null,
   });
+  const websiteCrawlJobQuery = useQuery({
+    queryKey: ["website-crawl-job", websiteCrawlJobId],
+    queryFn: () => {
+      if (websiteCrawlJobId === null) {
+        throw new Error("A crawl job must be queued before checking status.");
+      }
+      return getWebsiteCrawlJob(websiteCrawlJobId);
+    },
+    enabled: websiteCrawlJobId !== null,
+    refetchInterval: (query) => {
+      const currentStatus = query.state.data?.status;
+      return currentStatus === "queued" || currentStatus === "running"
+        ? 1000
+        : false;
+    },
+  });
   const websiteCrawlMutation = useMutation({
     mutationFn: () => {
       if (companyId === null) {
@@ -82,12 +103,9 @@ export function CompanyDetailPage({
       }
       return crawlCompanyWebsite(companyId);
     },
-    onSuccess: async (crawl) => {
-      queryClient.setQueryData(
-        ["company-website-crawl", companyId],
-        crawl,
-      );
-      await queryClient.invalidateQueries({ queryKey: ["companies"] });
+    onMutate: () => setWebsiteCrawlJobId(null),
+    onSuccess: (job) => {
+      setWebsiteCrawlJobId(job.id);
     },
   });
   const researchSourceMutation = useMutation({
@@ -188,6 +206,20 @@ export function CompanyDetailPage({
       router.push("/leads");
     },
   });
+  useEffect(() => {
+    const job = websiteCrawlJobQuery.data;
+    if (
+      job?.status === "succeeded" &&
+      job.result &&
+      companyId !== null
+    ) {
+      queryClient.setQueryData(
+        ["company-website-crawl", companyId],
+        job.result,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["companies"] });
+    }
+  }, [companyId, queryClient, websiteCrawlJobQuery.data]);
 
   if (companyId !== null && companyQuery.isLoading) {
     return (
@@ -277,7 +309,10 @@ export function CompanyDetailPage({
   const audits = Object.entries(
     expandedReport?.lighthouseResult.audits ?? {},
   );
-  const crawl = websiteCrawlQuery.data;
+  const crawl =
+    websiteCrawlJobQuery.data?.status === "succeeded"
+      ? websiteCrawlJobQuery.data.result
+      : websiteCrawlQuery.data;
   const companyInfoTabs = crawl
     ? [
         {
@@ -313,7 +348,10 @@ export function CompanyDetailPage({
   const selectedCompanyInfoTab =
     companyInfoTabs.find((tab) => tab.id === activeCompanyInfoTab) ??
     companyInfoTabs[0];
-  const isCrawlPending = websiteCrawlMutation.isPending;
+  const isCrawlPending =
+    websiteCrawlMutation.isPending ||
+    websiteCrawlJobQuery.data?.status === "queued" ||
+    websiteCrawlJobQuery.data?.status === "running";
   const crawlStatusLabel = isCrawlPending
     ? "Crawling…"
     : websiteCrawlQuery.isLoading
@@ -322,7 +360,8 @@ export function CompanyDetailPage({
         ? "Status unavailable"
         : crawl
           ? "Crawled"
-          : websiteCrawlMutation.isError
+          : websiteCrawlMutation.isError ||
+              websiteCrawlJobQuery.data?.status === "failed"
             ? "Crawl failed"
             : "Not crawled";
 
@@ -361,7 +400,9 @@ export function CompanyDetailPage({
                       ? " is-pending"
                       : crawl
                         ? " is-success"
-                        : websiteCrawlMutation.isError
+                        : websiteCrawlMutation.isError ||
+                            websiteCrawlJobQuery.isError ||
+                            websiteCrawlJobQuery.data?.status === "failed"
                           ? " is-error"
                           : ""
                   }`}
@@ -608,6 +649,17 @@ export function CompanyDetailPage({
         <div className="alert alert-error" role="alert">
           Could not crawl {company.name}&apos;s website:{" "}
           {websiteCrawlMutation.error.message}
+        </div>
+      )}
+      {websiteCrawlJobQuery.isError && (
+        <div className="alert alert-error" role="alert">
+          Could not check crawl status: {websiteCrawlJobQuery.error.message}
+        </div>
+      )}
+      {websiteCrawlJobQuery.data?.status === "failed" && (
+        <div className="alert alert-error" role="alert">
+          Could not crawl {company.name}&apos;s website:{" "}
+          {websiteCrawlJobQuery.data.error || "The crawl job failed."}
         </div>
       )}
       <section className="detail-metrics" aria-label="Company record summary">
