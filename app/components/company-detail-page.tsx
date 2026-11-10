@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  createPageSpeedScan,
   crawlCompanyWebsite,
   crawlResearchSource,
   deleteCompany,
@@ -22,7 +23,6 @@ import type {
   Company,
   CompanyUpdateInput,
   PageSpeedAudit,
-  WebsiteCrawlResponse,
 } from "@/lib/api";
 
 const leadStatuses = [
@@ -43,6 +43,12 @@ export function CompanyDetailPage({
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteConfirmed, setIsDeleteConfirmed] = useState(false);
+  const [isAboutExpanded, setIsAboutExpanded] = useState(false);
+  const [showRecrawlOption, setShowRecrawlOption] = useState(false);
+  const [activeCompanyInfoTab, setActiveCompanyInfoTab] = useState("about");
+  const [pageSpeedStrategy, setPageSpeedStrategy] = useState<
+    "mobile" | "desktop"
+  >("mobile");
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
   const [expandedScanId, setExpandedScanId] = useState<string | null>(null);
   const companyId =
@@ -110,6 +116,35 @@ export function CompanyDetailPage({
       return getPageSpeedScan(companyId, expandedScanId);
     },
     enabled: expandedScanId !== null && companyId !== null,
+  });
+  const pageSpeedMutation = useMutation({
+    mutationFn: (strategy: "mobile" | "desktop") => {
+      if (companyId === null) {
+        throw new Error("A company must be loaded before it can be scanned.");
+      }
+      return createPageSpeedScan(companyId, { strategy });
+    },
+    onSuccess: async (scan) => {
+      if (companyId !== null) {
+        queryClient.setQueryData<Company>(
+          ["company", companyId],
+          (currentCompany) =>
+            currentCompany
+              ? {
+                  ...currentCompany,
+                  pagespeed_scans: [
+                    scan,
+                    ...currentCompany.pagespeed_scans,
+                  ],
+                }
+              : currentCompany,
+        );
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["company", companyId] }),
+          queryClient.invalidateQueries({ queryKey: ["companies"] }),
+        ]);
+      }
+    },
   });
   const updateMutation = useMutation({
     mutationFn: (input: CompanyUpdateInput) => {
@@ -242,6 +277,54 @@ export function CompanyDetailPage({
   const audits = Object.entries(
     expandedReport?.lighthouseResult.audits ?? {},
   );
+  const crawl = websiteCrawlQuery.data;
+  const companyInfoTabs = crawl
+    ? [
+        {
+          id: "about",
+          label: "About",
+          url: crawl.about_page_url,
+          content: crawl.about_content,
+          emails: [],
+        },
+        {
+          id: "contact",
+          label: "Contact",
+          url: crawl.contact_page_url,
+          content: crawl.contact_content,
+          emails: [],
+        },
+        {
+          id: "goals",
+          label: "Mission & goals",
+          url: crawl.goals_page_url,
+          content: crawl.goals_content,
+          emails: [],
+        },
+        {
+          id: "emails",
+          label: "Email addresses",
+          url: null,
+          content: null,
+          emails: crawl.emails,
+        },
+      ].filter((tab) => tab.url || tab.content || tab.emails.length > 0)
+    : [];
+  const selectedCompanyInfoTab =
+    companyInfoTabs.find((tab) => tab.id === activeCompanyInfoTab) ??
+    companyInfoTabs[0];
+  const isCrawlPending = websiteCrawlMutation.isPending;
+  const crawlStatusLabel = isCrawlPending
+    ? "Crawling…"
+    : websiteCrawlQuery.isLoading
+      ? "Checking…"
+      : websiteCrawlQuery.isError
+        ? "Status unavailable"
+        : crawl
+          ? "Crawled"
+          : websiteCrawlMutation.isError
+            ? "Crawl failed"
+            : "Not crawled";
 
   return (
     <div className="company-detail-page">
@@ -260,10 +343,207 @@ export function CompanyDetailPage({
             <div className="company-hero-meta">
               {company.industry && <span>{company.industry}</span>}
               {location && <span>{location}</span>}
-              {company.domain && <span>{company.domain}</span>}
+              {company.domain && (
+                <a
+                  href={companyWebsiteHref(company.website, company.domain) ?? undefined}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {company.domain}<span aria-hidden="true"> ↗</span>
+                </a>
+              )}
+              <span className="company-crawl-control">
+                <button
+                  aria-controls="company-recrawl-option"
+                  aria-expanded={crawl ? showRecrawlOption : undefined}
+                  className={`company-crawl-badge${
+                    isCrawlPending
+                      ? " is-pending"
+                      : crawl
+                        ? " is-success"
+                        : websiteCrawlMutation.isError
+                          ? " is-error"
+                          : ""
+                  }`}
+                  disabled={
+                    isCrawlPending ||
+                    websiteCrawlQuery.isLoading ||
+                    !company.website && !company.domain
+                  }
+                  onClick={() => {
+                    if (websiteCrawlQuery.isError) {
+                      void websiteCrawlQuery.refetch();
+                    } else if (crawl) {
+                      setShowRecrawlOption((shown) => !shown);
+                    } else {
+                      websiteCrawlMutation.mutate();
+                    }
+                  }}
+                  type="button"
+                >
+                  {crawlStatusLabel}
+                  {crawl && !isCrawlPending && (
+                    <span aria-hidden="true" className="company-crawl-chevron">
+                      ▾
+                    </span>
+                  )}
+                </button>
+                {crawl && showRecrawlOption && (
+                  <div
+                    className="company-crawl-menu"
+                    id="company-recrawl-option"
+                    role="group"
+                  >
+                    <span className="company-crawl-timestamp-label">
+                      Last successful crawl
+                    </span>
+                    <time
+                      className="company-crawl-timestamp"
+                      dateTime={crawl.crawled_at}
+                    >
+                      {formatDate(crawl.crawled_at)}
+                    </time>
+                    <button
+                      className="company-recrawl-option"
+                      disabled={isCrawlPending}
+                      onClick={() => {
+                        setShowRecrawlOption(false);
+                        websiteCrawlMutation.mutate();
+                      }}
+                      type="button"
+                    >
+                      Re-crawl website
+                    </button>
+                  </div>
+                )}
+              </span>
+              {websiteCrawlQuery.data?.social_links.map((socialUrl) => {
+                const social = getSocialLink(socialUrl);
+                if (!social) return null;
+
+                return (
+                  <a
+                    aria-label={social.label}
+                    className="company-social-link"
+                    href={social.href}
+                    key={social.href}
+                    rel="noreferrer"
+                    target="_blank"
+                    title={social.label}
+                  >
+                    <SocialLinkIcon platform={social.platform} />
+                  </a>
+                );
+              })}
             </div>
           </div>
         </div>
+        {selectedCompanyInfoTab && (
+          <article className="company-hero-about">
+            <div
+              aria-label="Company website information"
+              className="company-info-tabs"
+              role="tablist"
+            >
+              {companyInfoTabs.map((tab) => (
+                <button
+                  aria-controls="company-info-panel"
+                  aria-selected={selectedCompanyInfoTab.id === tab.id}
+                  className="company-info-tab"
+                  id={`company-info-tab-${tab.id}`}
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveCompanyInfoTab(tab.id);
+                    setIsAboutExpanded(false);
+                  }}
+                  onKeyDown={(event) => {
+                    const currentIndex = companyInfoTabs.findIndex(
+                      (item) => item.id === tab.id,
+                    );
+                    let nextIndex = currentIndex;
+                    if (event.key === "ArrowRight") {
+                      nextIndex = (currentIndex + 1) % companyInfoTabs.length;
+                    } else if (event.key === "ArrowLeft") {
+                      nextIndex =
+                        (currentIndex - 1 + companyInfoTabs.length) %
+                        companyInfoTabs.length;
+                    } else if (event.key === "Home") {
+                      nextIndex = 0;
+                    } else if (event.key === "End") {
+                      nextIndex = companyInfoTabs.length - 1;
+                    } else {
+                      return;
+                    }
+                    event.preventDefault();
+                    const nextTab = companyInfoTabs[nextIndex];
+                    setActiveCompanyInfoTab(nextTab.id);
+                    setIsAboutExpanded(false);
+                    document
+                      .getElementById(`company-info-tab-${nextTab.id}`)
+                      ?.focus();
+                  }}
+                  role="tab"
+                  type="button"
+                  tabIndex={selectedCompanyInfoTab.id === tab.id ? 0 : -1}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {selectedCompanyInfoTab.url && (
+              <div className="company-hero-about-heading">
+                <a
+                  href={selectedCompanyInfoTab.url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Open {selectedCompanyInfoTab.label} page{" "}
+                  <span aria-hidden="true">↗</span>
+                </a>
+              </div>
+            )}
+            <div
+              aria-labelledby={`company-info-tab-${selectedCompanyInfoTab.id}`}
+              className="company-info-panel"
+              id="company-info-panel"
+              role="tabpanel"
+              tabIndex={0}
+            >
+              {selectedCompanyInfoTab.id === "emails" ? (
+                <ul className="company-info-emails">
+                  {selectedCompanyInfoTab.emails.map((email) => (
+                    <li key={email}>
+                      <a href={`mailto:${email}`}>{email}</a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p
+                  className={
+                    selectedCompanyInfoTab.id === "about" && !isAboutExpanded
+                      ? "is-collapsed"
+                      : "is-expanded"
+                  }
+                >
+                  {selectedCompanyInfoTab.content ||
+                    "No page text was extracted."}
+                </p>
+              )}
+            </div>
+            {selectedCompanyInfoTab.id === "about" &&
+              selectedCompanyInfoTab.content &&
+              selectedCompanyInfoTab.content.length > 240 && (
+                <button
+                  aria-expanded={isAboutExpanded}
+                  className="company-hero-about-toggle"
+                  onClick={() => setIsAboutExpanded((expanded) => !expanded)}
+                  type="button"
+                >
+                  {isAboutExpanded ? "Show less" : "Show more"}
+                </button>
+              )}
+          </article>
+        )}
         <div className="company-hero-actions">
           <label className="detail-status-control">
             <span className="sr-only">Lead status</span>
@@ -295,6 +575,19 @@ export function CompanyDetailPage({
           </button>
         </div>
       </section>
+
+      {websiteCrawlQuery.isError && (
+        <div className="alert alert-error" role="alert">
+          Could not load website crawl status: {websiteCrawlQuery.error.message}
+          <button
+            className="text-button"
+            onClick={() => void websiteCrawlQuery.refetch()}
+            type="button"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {statusMutation.isError && (
         <div className="alert alert-error" role="alert">
@@ -442,14 +735,6 @@ export function CompanyDetailPage({
               </form>
             ) : (
               <dl className="company-overview-grid">
-                <DetailField label="Website">
-                  {company.website ? (
-                    <a href={company.website} rel="noreferrer" target="_blank">
-                      {company.website}<span aria-hidden="true"> ↗</span>
-                    </a>
-                  ) : "—"}
-                </DetailField>
-                <DetailField label="Domain" value={company.domain} />
                 <DetailField label="Industry" value={company.industry} />
                 <DetailField label="Location" value={location || null} />
                 <DetailField label="Lead score">
@@ -466,17 +751,6 @@ export function CompanyDetailPage({
               </dl>
             )}
           </section>
-
-          <WebsiteCrawlSection
-            crawl={websiteCrawlQuery.data ?? null}
-            error={websiteCrawlQuery.isError ? websiteCrawlQuery.error.message : null}
-            isLoading={websiteCrawlQuery.isLoading}
-            isPending={websiteCrawlMutation.isPending}
-            onCrawl={() => websiteCrawlMutation.mutate()}
-            onRetry={() => void websiteCrawlQuery.refetch()}
-            hasWebsite={Boolean(company.website || company.domain)}
-            lastAttemptFailed={websiteCrawlMutation.isError}
-          />
 
           <RecordSection
             title="Contacts"
@@ -596,6 +870,59 @@ export function CompanyDetailPage({
             icon="◷"
             count={company.pagespeed_scans.length}
             empty="No PageSpeed reports are available yet."
+            beforeContent={
+              <>
+                <div className="pagespeed-scan-controls">
+                  <label>
+                    <span className="sr-only">PageSpeed scan strategy</span>
+                    <select
+                      aria-label="PageSpeed scan strategy"
+                      disabled={pageSpeedMutation.isPending}
+                      onChange={(event) =>
+                        setPageSpeedStrategy(
+                          event.target.value === "desktop"
+                            ? "desktop"
+                            : "mobile",
+                        )
+                      }
+                      value={pageSpeedStrategy}
+                    >
+                      <option value="mobile">Mobile</option>
+                      <option value="desktop">Desktop</option>
+                    </select>
+                  </label>
+                  <button
+                    className="button button-primary"
+                    disabled={
+                      pageSpeedMutation.isPending ||
+                      !(company.website || company.domain)
+                    }
+                    onClick={() =>
+                      pageSpeedMutation.mutate(pageSpeedStrategy)
+                    }
+                    type="button"
+                  >
+                    {pageSpeedMutation.isPending
+                      ? "Scanning…"
+                      : company.pagespeed_scans.some(
+                            (scan) => scan.strategy === pageSpeedStrategy,
+                          )
+                        ? "Re-scan"
+                        : "Scan website"}
+                  </button>
+                </div>
+                {!(company.website || company.domain) && (
+                  <p className="record-empty pagespeed-scan-hint">
+                    Add a website or domain to enable PageSpeed scans.
+                  </p>
+                )}
+                {pageSpeedMutation.isError && (
+                  <p className="pagespeed-error" role="alert">
+                    Could not scan website: {pageSpeedMutation.error.message}
+                  </p>
+                )}
+              </>
+            }
           >
             {company.pagespeed_scans.map((scan) => {
               const isExpanded = expandedScanId === scan.id;
@@ -696,203 +1023,92 @@ export function CompanyDetailPage({
   );
 }
 
-function WebsiteCrawlSection({
-  crawl,
-  error,
-  isLoading,
-  isPending,
-  onCrawl,
-  onRetry,
-  hasWebsite,
-  lastAttemptFailed,
-}: {
-  crawl: WebsiteCrawlResponse | null;
-  error: string | null;
-  isLoading: boolean;
-  isPending: boolean;
-  onCrawl: () => void;
-  onRetry: () => void;
-  hasWebsite: boolean;
-  lastAttemptFailed: boolean;
-}) {
-  const crawledPages = crawl
-    ? [
-        {
-          label: "About",
-          url: crawl.about_page_url,
-          content: crawl.about_content,
-        },
-        {
-          label: "Contact",
-          url: crawl.contact_page_url,
-          content: crawl.contact_content,
-        },
-        {
-          label: "Mission & goals",
-          url: crawl.goals_page_url,
-          content: crawl.goals_content,
-        },
-      ].filter((page) => page.url || page.content)
-    : [];
+type SocialPlatform =
+  | "facebook"
+  | "instagram"
+  | "linkedin"
+  | "tiktok"
+  | "x"
+  | "youtube"
+  | "generic";
 
-  return (
-    <section className="panel detail-section website-crawl-section">
-      <div className="website-crawl-heading">
-        <div className="detail-section-heading">
-          <span className="section-icon blue" aria-hidden="true">⌕</span>
-          <div>
-            <h2>Website crawl</h2>
-            <p>Latest crawl status and extracted company information</p>
-          </div>
-        </div>
-        <span
-          aria-live="polite"
-          className={`website-crawl-status${
-            isPending
-              ? " is-pending"
-              : lastAttemptFailed
-                ? " is-error"
-                : crawl
-                  ? " is-success"
-                  : ""
-          }`}
-        >
-          {isPending
-            ? "Crawling"
-            : lastAttemptFailed
-              ? "Last crawl failed"
-              : error
-                ? "Status unavailable"
-                : isLoading
-                  ? "Checking status"
-                  : crawl
-                    ? "Crawled"
-                    : "Not crawled"}
-        </span>
-        <button
-          className="button button-primary"
-          disabled={!hasWebsite || isPending}
-          onClick={onCrawl}
-          type="button"
-        >
-          {isPending
-            ? "Crawling website…"
-            : crawl
-              ? "Re-crawl website"
-              : "Crawl website"}
-        </button>
-      </div>
+function getSocialLink(value: string): {
+  href: string;
+  label: string;
+  platform: SocialPlatform;
+} | null {
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`,
+    );
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
 
-      {!hasWebsite && (
-        <p className="record-empty">
-          Add a website or domain to enable crawling.
-        </p>
-      )}
-      {error && (
-        <div className="alert alert-error website-crawl-error" role="alert">
-          Could not load crawl status: {error}
-          <button className="text-button" onClick={onRetry} type="button">
-            Retry
-          </button>
-        </div>
-      )}
-      {isLoading ? (
-        <p className="record-empty" aria-live="polite">
-          Loading crawl status…
-        </p>
-      ) : crawl ? (
-        <div className="crawl-result website-crawl-result">
-          <div className="crawl-result-heading">
-            <div>
-              <strong>Last successful crawl</strong>
-              <a href={crawl.website_url} rel="noreferrer" target="_blank">
-                {crawl.website_url}
-                <span aria-hidden="true"> ↗</span>
-              </a>
-            </div>
-            <time dateTime={crawl.crawled_at}>
-              {formatDate(crawl.crawled_at)}
-            </time>
-          </div>
-          {crawledPages.length > 0 ? (
-            <div className="crawl-pages">
-              {crawledPages.map((page) => (
-                <article className="crawl-page" key={page.label}>
-                  <div>
-                    <strong>{page.label}</strong>
-                    {page.url && (
-                      <a href={page.url} rel="noreferrer" target="_blank">
-                        Open page ↗
-                      </a>
-                    )}
-                  </div>
-                  <p>{page.content || "No page text was extracted."}</p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="record-empty">
-              No About, Contact, or Mission page was found.
-            </p>
-          )}
-          <div className="crawl-extracted">
-            <CrawlExtractedList
-              title="Email addresses"
-              values={crawl.emails}
-              href={(email) => `mailto:${email}`}
-            />
-            <CrawlExtractedList
-              title="Social links"
-              values={crawl.social_links}
-              href={(url) => url}
-              external
-            />
-          </div>
-        </div>
-      ) : (
-        !error && !isLoading && (
-          <p className="record-empty">
-            No successful crawl has been recorded for this company yet.
-          </p>
-        )
-      )}
-    </section>
-  );
+    const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
+    const platform: SocialPlatform =
+      hostname.includes("facebook.com")
+        ? "facebook"
+        : hostname.includes("instagram.com")
+          ? "instagram"
+          : hostname.includes("linkedin.com")
+            ? "linkedin"
+            : hostname.includes("tiktok.com")
+              ? "tiktok"
+              : hostname === "x.com" || hostname.includes("twitter.com")
+                ? "x"
+                : hostname.includes("youtube.com") || hostname === "youtu.be"
+                  ? "youtube"
+                  : "generic";
+    const labels: Record<SocialPlatform, string> = {
+      facebook: "Facebook",
+      instagram: "Instagram",
+      linkedin: "LinkedIn",
+      tiktok: "TikTok",
+      x: "X",
+      youtube: "YouTube",
+      generic: hostname,
+    };
+
+    return { href: url.href, label: labels[platform], platform };
+  } catch {
+    return null;
+  }
 }
 
-function CrawlExtractedList({
-  title,
-  values,
-  href,
-  external = false,
-}: {
-  title: string;
-  values: string[];
-  href: (value: string) => string;
-  external?: boolean;
-}) {
-  return (
-    <div>
-      <strong>{title}</strong>
-      {values.length > 0 ? (
-        <ul>
-          {values.map((value) => (
-            <li key={value}>
-              <a
-                href={href(value)}
-                rel={external ? "noreferrer" : undefined}
-                target={external ? "_blank" : undefined}
-              >
-                {value}
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>None found</p>
-      )}
-    </div>
-  );
+function SocialLinkIcon({ platform }: { platform: SocialPlatform }) {
+  if (platform === "instagram") {
+    return (
+      <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+        <rect height="16" rx="5" stroke="currentColor" strokeWidth="2" width="16" x="4" y="4" />
+        <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="2" />
+        <circle cx="17.5" cy="6.8" r="1" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (platform === "youtube") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24">
+        <path d="M21 7.2a2.8 2.8 0 0 0-2-2C17.2 4.7 12 4.7 12 4.7s-5.2 0-7 .5a2.8 2.8 0 0 0-2 2A29 29 0 0 0 2.5 12a29 29 0 0 0 .5 4.8 2.8 2.8 0 0 0 2 2c1.8.5 7 .5 7 .5s5.2 0 7-.5a2.8 2.8 0 0 0 2-2 29 29 0 0 0 .5-4.8 29 29 0 0 0-.5-4.8ZM10 15.5v-7l6 3.5-6 3.5Z" fill="currentColor" />
+      </svg>
+    );
+  }
+  if (platform === "generic") {
+    return (
+      <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+        <path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7M14 10.5a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 19.2l1.7-1.7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+      </svg>
+    );
+  }
+
+  const glyphs: Record<
+    Exclude<SocialPlatform, "instagram" | "youtube" | "generic">,
+    string
+  > = {
+    facebook: "f",
+    linkedin: "in",
+    tiktok: "♪",
+    x: "X",
+  };
+  return <span aria-hidden="true">{glyphs[platform]}</span>;
 }
 
 function DetailField({
@@ -958,6 +1174,25 @@ function AuditItem({ audit }: { audit: PageSpeedAudit }) {
 
 function cleanText(value: string | null | undefined): string | null {
   return value?.trim() || null;
+}
+
+function companyWebsiteHref(
+  website: string | null,
+  domain: string | null,
+): string | null {
+  const value = website?.trim() || domain?.trim();
+  if (!value) return null;
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`,
+    );
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function formatDate(value: string): string {

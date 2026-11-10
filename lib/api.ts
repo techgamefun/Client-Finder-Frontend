@@ -51,6 +51,10 @@ export interface PageSpeedScanSummary {
   scanned_at: string;
 }
 
+export interface PageSpeedScanInput {
+  strategy: "mobile" | "desktop";
+}
+
 export interface PageSpeedAudit {
   title?: string;
   description?: string;
@@ -214,6 +218,19 @@ export function getPageSpeedScan(
 ): Promise<PageSpeedScanReport> {
   return request<PageSpeedScanReport>(
     `/companies/${companyId}/pagespeed-scans/${scanId}`,
+  );
+}
+
+export function createPageSpeedScan(
+  companyId: string,
+  input: PageSpeedScanInput,
+): Promise<PageSpeedScanSummary> {
+  return request<PageSpeedScanSummary>(
+    `/companies/${companyId}/pagespeed-scans`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }
 
