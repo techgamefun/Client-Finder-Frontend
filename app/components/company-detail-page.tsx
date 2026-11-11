@@ -316,10 +316,31 @@ export function CompanyDetailPage({
   const companyInfoTabs = crawl
     ? [
         {
+          id: "home",
+          label: "Home",
+          url: crawl.home_page_url,
+          content: crawl.home_content,
+          emails: [],
+        },
+        {
           id: "about",
           label: "About",
           url: crawl.about_page_url,
           content: crawl.about_content,
+          emails: [],
+        },
+        {
+          id: "blog",
+          label: "Blog",
+          url: crawl.blog_page_url,
+          content: crawl.blog_content,
+          emails: [],
+        },
+        {
+          id: "service",
+          label: "Services",
+          url: crawl.service_page_url,
+          content: crawl.service_content,
           emails: [],
         },
         {

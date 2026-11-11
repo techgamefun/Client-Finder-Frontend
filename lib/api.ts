@@ -142,8 +142,14 @@ export interface WebsiteCrawlInput {
 export interface WebsiteCrawlResponse {
   id: string;
   website_url: string;
+  home_page_url: string | null;
+  home_content: string | null;
   about_page_url: string | null;
   about_content: string | null;
+  blog_page_url: string | null;
+  blog_content: string | null;
+  service_page_url: string | null;
+  service_content: string | null;
   contact_page_url: string | null;
   contact_content: string | null;
   goals_page_url: string | null;

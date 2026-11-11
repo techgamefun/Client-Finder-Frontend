@@ -37,9 +37,24 @@ export function CrawlerPage() {
   const crawledPages = crawlResult
     ? [
         {
+          label: "Home",
+          url: crawlResult.home_page_url,
+          content: crawlResult.home_content,
+        },
+        {
           label: "About",
           url: crawlResult.about_page_url,
           content: crawlResult.about_content,
+        },
+        {
+          label: "Blog",
+          url: crawlResult.blog_page_url,
+          content: crawlResult.blog_content,
+        },
+        {
+          label: "Services",
+          url: crawlResult.service_page_url,
+          content: crawlResult.service_content,
         },
         {
           label: "Contact",
@@ -67,7 +82,7 @@ export function CrawlerPage() {
           <h1>Crawl a website</h1>
           <p className="heading-copy">
             Collect public company information from its homepage and relevant
-            About, Contact, and Mission pages.
+            About, Blog, Services, Contact, and Mission pages.
           </p>
         </div>
       </section>
@@ -168,7 +183,7 @@ export function CrawlerPage() {
               </div>
             ) : (
               <p className="empty-copy">
-                No About, Contact, or Mission page was found.
+                No page text was extracted.
               </p>
             )}
 
