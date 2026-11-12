@@ -4,8 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import {
   getApplicationSettings,
+  getOctoparseTemplates,
   getTavilyUsage,
   updateApplicationSettings,
+  type OctoparseTemplateConfiguration,
+  type OctoparseTemplateOption,
   type TavilyUsage,
 } from "@/lib/api";
 
@@ -27,65 +30,61 @@ const deploymentManagedSettings = [
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const [adminTokenInput, setAdminTokenInput] = useState("");
-  const [adminToken, setAdminToken] = useState("");
-  const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [maxPages, setMaxPages] = useState<number | null>(null);
   const [maxDepth, setMaxDepth] = useState<number | null>(null);
   const [tavilyApiKey, setTavilyApiKey] = useState("");
+  const [octoparseApiKey, setOctoparseApiKey] = useState("");
+  const [templateKeyword, setTemplateKeyword] = useState("");
+  const [templateDraft, setTemplateDraft] =
+    useState<OctoparseTemplateConfiguration | null>(null);
+  const [additionalParametersText, setAdditionalParametersText] =
+    useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const settingsQuery = useQuery({
-    queryKey: ["application-settings", connectionEpoch],
-    queryFn: () => getApplicationSettings(adminToken),
-    enabled: Boolean(adminToken),
+    queryKey: ["application-settings"],
+    queryFn: getApplicationSettings,
     retry: false,
   });
   const usageQuery = useQuery({
-    queryKey: ["tavily-usage", connectionEpoch],
-    queryFn: () => getTavilyUsage(adminToken),
-    enabled: Boolean(adminToken) && settingsQuery.data?.tavily_configured === true,
+    queryKey: ["tavily-usage"],
+    queryFn: getTavilyUsage,
+    enabled: settingsQuery.data?.tavily_configured === true,
     retry: false,
+  });
+  const templateSearchMutation = useMutation({
+    mutationFn: getOctoparseTemplates,
   });
   const configuredMaxPages =
     maxPages ?? settingsQuery.data?.crawl_max_pages ?? 6;
   const configuredMaxDepth =
     maxDepth ?? settingsQuery.data?.crawl_max_depth ?? 2;
+  const activeOctoparseTemplate =
+    templateDraft ?? settingsQuery.data?.octoparse_template ?? null;
+  const selectedTemplateMetadata =
+    templateSearchMutation.data?.templates.find(
+      (template) =>
+        template.template_name === activeOctoparseTemplate?.template_name,
+    ) ?? null;
+  const octoparseInputFields = getTemplateFields(
+    selectedTemplateMetadata?.input_schema ?? [],
+  );
+  const octoparseOutputFields = getTemplateFields(
+    selectedTemplateMetadata?.output_schema ?? [],
+  );
   const saveMutation = useMutation({
-    mutationFn: (input: {
-      crawl_max_pages: number;
-      crawl_max_depth: number;
-      tavily_api_key: string | null;
-    }) => updateApplicationSettings(adminToken, input),
+    mutationFn: updateApplicationSettings,
     onSuccess: async (settings) => {
       setTavilyApiKey("");
+      setOctoparseApiKey("");
       setMaxPages(null);
       setMaxDepth(null);
+      setTemplateDraft(null);
+      setAdditionalParametersText(null);
       setNotice("Settings saved.");
-      queryClient.setQueryData(
-        ["application-settings", connectionEpoch],
-        settings,
-      );
-      await queryClient.invalidateQueries({
-        queryKey: ["tavily-usage", connectionEpoch],
-      });
+      queryClient.setQueryData(["application-settings"], settings);
+      await queryClient.invalidateQueries({ queryKey: ["tavily-usage"] });
     },
   });
-
-  function connect(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setNotice("");
-    setMaxPages(null);
-    setMaxDepth(null);
-    setAdminToken(adminTokenInput.trim());
-    setConnectionEpoch((epoch) => epoch + 1);
-  }
-
-  function disconnect() {
-    setAdminToken("");
-    setAdminTokenInput("");
-    setConnectionEpoch((epoch) => epoch + 1);
-    setNotice("");
-  }
 
   function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,9 +99,104 @@ export function SettingsPage() {
   function resetTavilyKey() {
     setNotice("");
     saveMutation.mutate({
-      crawl_max_pages: configuredMaxPages,
-      crawl_max_depth: configuredMaxDepth,
       tavily_api_key: "",
+    });
+  }
+
+  function resetOctoparseKey() {
+    setNotice("");
+    saveMutation.mutate({ octoparse_api_key: "" });
+  }
+
+  function searchOctoparseTemplates(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice("");
+    templateSearchMutation.mutate(templateKeyword.trim());
+  }
+
+  function selectOctoparseTemplate(template: OctoparseTemplateOption) {
+    const inputFields = getTemplateFields(template.input_schema);
+    const outputFields = getTemplateFields(template.output_schema);
+    setTemplateDraft({
+      template_name: template.template_name,
+      query_field:
+        inputFields.find(({ field }) => /query|keyword|search/i.test(field))
+          ?.field ?? inputFields[0]?.field ?? "",
+      additional_parameters: {},
+      title_field:
+        outputFields.find(({ field }) => /title|name|business/i.test(field))
+          ?.field ?? outputFields[0]?.field ?? "",
+      url_field:
+        outputFields.find(({ field }) => /url|link|website/i.test(field))
+          ?.field ?? "",
+      content_field:
+        outputFields.find(({ field }) => /description|content|summary/i.test(field))
+          ?.field ?? null,
+      score_field: null,
+    });
+    setAdditionalParametersText("{}");
+  }
+
+  function updateTemplateField(
+    field: "query_field" | "title_field" | "url_field",
+    value: string,
+  ) {
+    const current = templateDraft ?? settingsQuery.data?.octoparse_template;
+    if (!current) return;
+    if (field === "query_field") {
+      setTemplateDraft({ ...current, query_field: value });
+    } else if (field === "title_field") {
+      setTemplateDraft({ ...current, title_field: value });
+    } else {
+      setTemplateDraft({ ...current, url_field: value });
+    }
+  }
+
+  function updateOptionalTemplateField(
+    field: "content_field" | "score_field",
+    value: string,
+  ) {
+    const current = templateDraft ?? settingsQuery.data?.octoparse_template;
+    if (!current) return;
+    const optionalValue = value || null;
+    if (field === "content_field") {
+      setTemplateDraft({ ...current, content_field: optionalValue });
+    } else {
+      setTemplateDraft({ ...current, score_field: optionalValue });
+    }
+  }
+
+  function saveOctoparseTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice("");
+    const current = templateDraft ?? settingsQuery.data?.octoparse_template;
+    if (!current) return;
+
+    let additionalParameters: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(
+        additionalParametersText ??
+          JSON.stringify(current.additional_parameters ?? {}),
+      );
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        setNotice("Additional parameters must be a JSON object.");
+        return;
+      }
+      additionalParameters = Object.fromEntries(Object.entries(parsed));
+    } catch {
+      setNotice("Additional parameters must be valid JSON.");
+      return;
+    }
+
+    saveMutation.mutate({
+      octoparse_template: {
+        ...current,
+        additional_parameters: additionalParameters,
+      },
     });
   }
 
@@ -118,50 +212,19 @@ export function SettingsPage() {
         </div>
       </section>
 
-      <section className="panel settings-panel">
-        <div className="settings-section-heading">
-          <div>
-            <p className="eyebrow">ADMIN ACCESS</p>
-            <h2>{adminToken ? "Administrator connected" : "Connect as administrator"}</h2>
-          </div>
-          {adminToken && (
-            <button
-              className="button button-secondary"
-              onClick={disconnect}
-              type="button"
-            >
-              Disconnect
-            </button>
-          )}
-        </div>
-        {!adminToken && (
-          <form className="settings-admin-form" onSubmit={connect}>
-            <label className="settings-field">
-              Admin token
-              <input
-                autoComplete="off"
-                onChange={(event) => setAdminTokenInput(event.target.value)}
-                required
-                type="password"
-                value={adminTokenInput}
-              />
-            </label>
-            <button className="button button-primary" type="submit">
-              Connect
-            </button>
-          </form>
-        )}
-        {settingsQuery.isPending && adminToken && (
-          <p className="settings-feedback" role="status">
-            Checking administrator access…
-          </p>
-        )}
-        {settingsQuery.isError && (
-          <p className="settings-feedback settings-feedback-error" role="alert">
-            Could not load settings: {settingsQuery.error.message}
-          </p>
-        )}
-      </section>
+      <p className="settings-public-warning" role="note">
+        Anyone who can reach this application can view or change these settings
+        and replace either provider API key. The keys themselves are never
+        displayed.
+      </p>
+      {settingsQuery.isPending && (
+        <p className="settings-feedback" role="status">Loading settings…</p>
+      )}
+      {settingsQuery.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not load settings: {settingsQuery.error.message}
+        </p>
+      )}
 
       {settingsQuery.data && (
         <>
@@ -239,6 +302,267 @@ export function SettingsPage() {
               </p>
             )}
             {usageQuery.data && <TavilyUsagePanel usage={usageQuery.data} />}
+          </section>
+
+          <section className="panel settings-panel">
+            <div className="settings-section-heading">
+              <div>
+                <p className="eyebrow">OCTOPARSE SEARCH ENGINE</p>
+                <h2>API key and scraper template</h2>
+                <p className="panel-subtitle">
+                  Octoparse runs a configured cloud template for each search.
+                  The API key is encrypted at rest and never returned.
+                </p>
+              </div>
+              <span className={`settings-connection-badge${settingsQuery.data.octoparse_configured ? " is-configured" : ""}`}>
+                {settingsQuery.data.octoparse_configured
+                  ? `Connected via ${settingsQuery.data.octoparse_key_source}`
+                  : "Not configured"}
+              </span>
+            </div>
+
+            <form
+              className="settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNotice("");
+                saveMutation.mutate({
+                  octoparse_api_key: octoparseApiKey.trim() || null,
+                });
+              }}
+            >
+              <label className="settings-field">
+                Replace Octoparse API key
+                <input
+                  autoComplete="new-password"
+                  onChange={(event) => setOctoparseApiKey(event.target.value)}
+                  placeholder="Leave blank to keep the current key"
+                  type="password"
+                  value={octoparseApiKey}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={saveMutation.isPending}
+                  type="submit"
+                >
+                  {saveMutation.isPending ? "Saving…" : "Save Octoparse key"}
+                </button>
+                {settingsQuery.data.octoparse_key_source === "database" && (
+                  <button
+                    className="button button-secondary"
+                    disabled={saveMutation.isPending}
+                    onClick={resetOctoparseKey}
+                    type="button"
+                  >
+                    Use deployment key
+                  </button>
+                )}
+              </div>
+            </form>
+
+            <form
+              className="settings-form octoparse-template-search"
+              onSubmit={searchOctoparseTemplates}
+            >
+              <label className="settings-field">
+                Find a reusable Octoparse template
+                <input
+                  minLength={2}
+                  onChange={(event) => setTemplateKeyword(event.target.value)}
+                  placeholder="e.g. business directory search"
+                  required
+                  value={templateKeyword}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="button button-secondary"
+                  disabled={
+                    !settingsQuery.data.octoparse_configured ||
+                    templateSearchMutation.isPending
+                  }
+                  type="submit"
+                >
+                  {templateSearchMutation.isPending
+                    ? "Searching templates…"
+                    : "Find templates"}
+                </button>
+              </div>
+            </form>
+
+            {templateSearchMutation.isError && (
+              <p className="settings-feedback settings-feedback-error" role="alert">
+                Could not search Octoparse templates:{" "}
+                {templateSearchMutation.error.message}
+              </p>
+            )}
+            {templateSearchMutation.data && (
+              <div className="octoparse-template-list">
+                {templateSearchMutation.data.templates.length === 0 ? (
+                  <p className="empty-copy">
+                    No templates matched. Try a different keyword.
+                  </p>
+                ) : (
+                  templateSearchMutation.data.templates.map((template) => (
+                    <button
+                      aria-pressed={
+                        activeOctoparseTemplate?.template_name ===
+                        template.template_name
+                      }
+                      className="octoparse-template-option"
+                      key={template.template_name}
+                      onClick={() => selectOctoparseTemplate(template)}
+                      type="button"
+                    >
+                      <strong>{template.template_name}</strong>
+                      {template.template_name ===
+                        templateSearchMutation.data.recommended_template_name && (
+                        <span>Recommended</span>
+                      )}
+                      {template.description && (
+                        <small>{template.description}</small>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {activeOctoparseTemplate && (
+              <form
+                className="settings-form octoparse-template-config"
+                onSubmit={saveOctoparseTemplate}
+              >
+                <p className="settings-feedback">
+                  Selected template:{" "}
+                  <strong>{activeOctoparseTemplate.template_name}</strong>
+                </p>
+                {selectedTemplateMetadata && (
+                  <>
+                    <p className="panel-subtitle">
+                      Template inputs:{" "}
+                      {octoparseInputFields
+                        .map(({ field, required }) =>
+                          required ? `${field} (required)` : field,
+                        )
+                        .join(", ") || "No input fields returned"}
+                    </p>
+                    <p className="panel-subtitle">
+                      Output fields:{" "}
+                      {octoparseOutputFields
+                        .map(({ field }) => field)
+                        .join(", ") || "No output fields returned"}
+                    </p>
+                  </>
+                )}
+                <label className="settings-field">
+                  Search query input field
+                  <input
+                    list="octoparse-input-fields"
+                    onChange={(event) =>
+                      updateTemplateField("query_field", event.target.value)
+                    }
+                    required
+                    value={activeOctoparseTemplate.query_field}
+                  />
+                </label>
+                <datalist id="octoparse-input-fields">
+                  {octoparseInputFields.map(({ field }) => (
+                    <option key={field} value={field} />
+                  ))}
+                </datalist>
+                <label className="settings-field">
+                  Additional template parameters (JSON object)
+                  <textarea
+                    onChange={(event) =>
+                      setAdditionalParametersText(event.target.value)
+                    }
+                    rows={4}
+                    value={
+                      additionalParametersText ??
+                      JSON.stringify(
+                        activeOctoparseTemplate.additional_parameters,
+                        null,
+                        2,
+                      )
+                    }
+                  />
+                </label>
+                <label className="settings-field">
+                  Result title field
+                  <input
+                    list="octoparse-output-fields"
+                    onChange={(event) =>
+                      updateTemplateField("title_field", event.target.value)
+                    }
+                    required
+                    value={activeOctoparseTemplate.title_field}
+                  />
+                </label>
+                <label className="settings-field">
+                  Result URL field
+                  <input
+                    list="octoparse-output-fields"
+                    onChange={(event) =>
+                      updateTemplateField("url_field", event.target.value)
+                    }
+                    required
+                    value={activeOctoparseTemplate.url_field}
+                  />
+                </label>
+                <datalist id="octoparse-output-fields">
+                  {octoparseOutputFields.map(({ field }) => (
+                    <option key={field} value={field} />
+                  ))}
+                </datalist>
+                <label className="settings-field">
+                  Result description field (optional)
+                  <input
+                    list="octoparse-output-fields"
+                    onChange={(event) =>
+                      updateOptionalTemplateField(
+                        "content_field",
+                        event.target.value,
+                      )
+                    }
+                    value={activeOctoparseTemplate.content_field ?? ""}
+                  />
+                </label>
+                <label className="settings-field">
+                  Result score field (optional, 0 to 1)
+                  <input
+                    list="octoparse-output-fields"
+                    onChange={(event) =>
+                      updateOptionalTemplateField(
+                        "score_field",
+                        event.target.value,
+                      )
+                    }
+                    value={activeOctoparseTemplate.score_field ?? ""}
+                  />
+                </label>
+                <div className="settings-actions">
+                  <button
+                    className="button button-primary"
+                    disabled={saveMutation.isPending}
+                    type="submit"
+                  >
+                    {saveMutation.isPending
+                      ? "Saving…"
+                      : "Save Octoparse template"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {saveMutation.isError && (
+              <p className="settings-feedback settings-feedback-error" role="alert">
+                Could not save settings: {saveMutation.error.message}
+              </p>
+            )}
+            {notice && <p className="settings-feedback" role="status">{notice}</p>}
           </section>
 
           <section className="panel settings-panel">
@@ -366,4 +690,17 @@ function TavilyUsagePanel({ usage }: { usage: TavilyUsage }) {
       </div>
     </div>
   );
+}
+
+function getTemplateFields(
+  schema: Record<string, unknown>[],
+): { field: string; required: boolean }[] {
+  return schema.flatMap((item) => {
+    const rawField = item.field ?? item.name ?? item.key;
+    if (typeof rawField !== "string" || !rawField.trim()) return [];
+    return [{
+      field: rawField,
+      required: item.required === true,
+    }];
+  });
 }

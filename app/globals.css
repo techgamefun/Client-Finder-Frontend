@@ -745,6 +745,107 @@ h1 {
   color: #8c7fe6;
 }
 
+.discovery-tool-selector {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.discovery-tool-category {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 13px;
+}
+
+.discovery-tool-category-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.discovery-tool-category h3 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.discovery-tool-category p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.discovery-tool-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.discovery-tool-option {
+  display: flex;
+  min-width: 180px;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  padding: 10px;
+  cursor: pointer;
+}
+
+.discovery-tool-option input {
+  margin: 2px 0 0;
+  accent-color: var(--purple-dark);
+}
+
+.discovery-tool-option span,
+.discovery-tool-option strong,
+.discovery-tool-option small {
+  display: block;
+}
+
+.discovery-tool-option strong {
+  color: var(--foreground);
+  font-size: 11px;
+}
+
+.discovery-tool-option small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.discovery-tool-coming-soon {
+  background: var(--surface-subtle);
+}
+
+.discovery-provider-status {
+  margin-top: 10px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.discovery-provider-status-failed {
+  color: #a74c49;
+}
+
+.discovery-result-provider {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .results-section {
   margin-top: 21px;
   border-top: 1px solid #edecf3;
@@ -1168,15 +1269,9 @@ h1 {
   margin: 6px 0 0;
 }
 
-.settings-admin-form,
 .settings-form {
   display: grid;
   gap: 14px;
-}
-
-.settings-admin-form {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
 }
 
 .settings-field {
@@ -1187,15 +1282,71 @@ h1 {
   font-weight: 600;
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field textarea {
   width: 100%;
-  min-height: 39px;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
   background: var(--input-surface);
-  padding: 0 11px;
+  padding: 9px 11px;
   color: var(--foreground);
   font-size: 12px;
+}
+
+.settings-field input {
+  min-height: 39px;
+}
+
+.settings-field textarea {
+  min-height: 95px;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+  line-height: 1.5;
+}
+
+.octoparse-template-search {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 17px;
+}
+
+.octoparse-template-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.octoparse-template-option {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px 12px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.octoparse-template-option[aria-pressed="true"] {
+  border-color: var(--purple-dark);
+  box-shadow: 0 0 0 1px var(--purple-dark);
+}
+
+.octoparse-template-option strong {
+  font-size: 11px;
+}
+
+.octoparse-template-option span,
+.octoparse-template-option small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.octoparse-template-config {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
 }
 
 .settings-actions {
@@ -1235,6 +1386,17 @@ h1 {
 
 .settings-feedback-error {
   color: #a74c49;
+}
+
+.settings-public-warning {
+  margin: 14px 0 0;
+  border: 1px solid #f0d7a8;
+  border-radius: 9px;
+  background: #fff9eb;
+  padding: 11px 13px;
+  color: #76521a;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .tavily-usage {
@@ -1313,7 +1475,6 @@ h1 {
 }
 
 @media (max-width: 600px) {
-  .settings-admin-form,
   .settings-limit-grid {
     grid-template-columns: minmax(0, 1fr);
   }

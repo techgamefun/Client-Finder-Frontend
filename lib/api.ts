@@ -111,6 +111,41 @@ export interface DiscoveryInput {
   max_results: number;
 }
 
+export type DiscoveryProviderId = "tavily" | "octoparse";
+export type DiscoveryToolCategory =
+  | "search_engine"
+  | "business_listing_website";
+
+export interface OctoparseTemplateConfiguration {
+  template_name: string;
+  query_field: string;
+  additional_parameters: Record<string, unknown>;
+  title_field: string;
+  url_field: string;
+  content_field: string | null;
+  score_field: string | null;
+}
+
+export interface OctoparseTemplateOption {
+  template_name: string;
+  slug: string | null;
+  execution_mode: string | null;
+  description: string | null;
+  input_schema: Record<string, unknown>[];
+  output_schema: Record<string, unknown>[];
+  source_tree: unknown;
+  source_summary: unknown;
+}
+
+export interface DiscoveryProviderJob {
+  id: string;
+  provider: DiscoveryProviderId;
+  status: "running" | "succeeded" | "failed";
+  results: DiscoveryResult[];
+  error: string | null;
+  warning: string | null;
+}
+
 export interface DiscoveryIngestInput extends DiscoveryInput {
   results: DiscoveryResult[];
   search_id: string;
@@ -121,12 +156,18 @@ export interface DiscoveryResult {
   url: string;
   content: string;
   score: number;
+  provider: DiscoveryProviderId;
 }
 
 export interface DiscoveryResponse {
   query: string;
   results: DiscoveryResult[];
   search_id: string;
+  provider_jobs: DiscoveryProviderJob[];
+  provider_failures: {
+    provider: DiscoveryProviderId;
+    detail: string;
+  }[];
 }
 
 export interface IngestResponse {
@@ -193,6 +234,10 @@ export interface ApplicationSettings {
   crawl_max_depth: number;
   tavily_configured: boolean;
   tavily_key_source: "database" | "environment" | "unset";
+  octoparse_configured: boolean;
+  octoparse_key_source: "database" | "environment" | "unset";
+  selected_discovery_tools: DiscoveryProviderId[];
+  octoparse_template: OctoparseTemplateConfiguration | null;
 }
 
 export interface TavilyUsage {
@@ -250,37 +295,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-function settingsAuthorization(adminToken: string): HeadersInit {
-  return { Authorization: `Bearer ${adminToken}` };
-}
-
-export function getApplicationSettings(
-  adminToken: string,
-): Promise<ApplicationSettings> {
-  return request<ApplicationSettings>("/settings", {
-    headers: settingsAuthorization(adminToken),
-  });
+export function getApplicationSettings(): Promise<ApplicationSettings> {
+  return request<ApplicationSettings>("/settings");
 }
 
 export function updateApplicationSettings(
-  adminToken: string,
   input: {
-    crawl_max_pages: number;
-    crawl_max_depth: number;
-    tavily_api_key: string | null;
+    crawl_max_pages?: number;
+    crawl_max_depth?: number;
+    tavily_api_key?: string | null;
+    octoparse_api_key?: string | null;
+    selected_discovery_tools?: DiscoveryProviderId[];
+    octoparse_template?: OctoparseTemplateConfiguration | null;
   },
 ): Promise<ApplicationSettings> {
   return request<ApplicationSettings>("/settings", {
     method: "PUT",
-    headers: settingsAuthorization(adminToken),
     body: JSON.stringify(input),
   });
 }
 
-export function getTavilyUsage(adminToken: string): Promise<TavilyUsage> {
-  return request<TavilyUsage>("/settings/tavily/usage", {
-    headers: settingsAuthorization(adminToken),
-  });
+export function getTavilyUsage(): Promise<TavilyUsage> {
+  return request<TavilyUsage>("/settings/tavily/usage");
+}
+
+export function getOctoparseTemplates(
+  keyword: string,
+): Promise<{
+  recommended_template_name: string | null;
+  templates: OctoparseTemplateOption[];
+}> {
+  return request(
+    `/settings/octoparse/templates?keyword=${encodeURIComponent(keyword)}`,
+  );
 }
 
 export async function getCompanies(): Promise<Company[]> {
@@ -371,6 +418,12 @@ export function searchCompanies(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function getDiscoveryProviderJob(
+  jobId: string,
+): Promise<DiscoveryProviderJob> {
+  return request<DiscoveryProviderJob>(`/discovery/jobs/${jobId}`);
 }
 
 export function getSearchKeywordSuggestions(

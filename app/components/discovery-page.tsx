@@ -8,10 +8,13 @@ import {
 } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import {
+  getApplicationSettings,
+  getDiscoveryProviderJob,
   getPageSpeedScanJob,
   getSearchKeywordSuggestions,
   ingestCompanies,
   searchCompanies,
+  updateApplicationSettings,
 } from "@/lib/api";
 import {
   formatElapsedTime,
@@ -20,6 +23,8 @@ import {
   formatTimestamp,
 } from "@/lib/job-format";
 import type {
+  DiscoveryProviderJob,
+  DiscoveryProviderId,
   DiscoveryIngestInput,
   PageSpeedScanJob,
 } from "@/lib/api";
@@ -28,6 +33,12 @@ export function DiscoveryPage() {
   const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState("");
   const [ingestResult, setIngestResult] = useState<string | null>(null);
+  const [preferenceError, setPreferenceError] = useState("");
+  const settingsQuery = useQuery({
+    queryKey: ["application-settings"],
+    queryFn: getApplicationSettings,
+    retry: false,
+  });
   const suggestionQuery = searchText.trim();
   const suggestionsQuery = useQuery({
     queryKey: ["discovery-keyword-suggestions", suggestionQuery],
@@ -37,6 +48,15 @@ export function DiscoveryPage() {
   const searchMutation = useMutation({
     mutationFn: searchCompanies,
     onSuccess: () => setIngestResult(null),
+  });
+  const preferenceMutation = useMutation({
+    mutationFn: (selected: DiscoveryProviderId[]) =>
+      updateApplicationSettings({ selected_discovery_tools: selected }),
+    onSuccess: (settings) => {
+      setPreferenceError("");
+      queryClient.setQueryData(["application-settings"], settings);
+    },
+    onError: (error: Error) => setPreferenceError(error.message),
   });
   const ingestMutation = useMutation({
     mutationFn: ingestCompanies,
@@ -53,6 +73,44 @@ export function DiscoveryPage() {
     },
   });
   const searchData = searchMutation.data;
+  const selectedProviders: DiscoveryProviderId[] =
+    settingsQuery.data?.selected_discovery_tools ?? ["tavily"];
+  const discoveryProviderJobs = searchData?.provider_jobs ?? [];
+  const discoveryProviderJobQueries = useQueries({
+    queries: discoveryProviderJobs.map((job) => ({
+      queryKey: ["discovery-provider-job", job.id],
+      queryFn: () => getDiscoveryProviderJob(job.id),
+      enabled: job.status === "running",
+      refetchInterval: (query: {
+        state: { data: DiscoveryProviderJob | undefined };
+      }) => (query.state.data?.status === "running" ? 5000 : false),
+      initialData: job,
+    })),
+  });
+  const combinedResults = [
+    ...(searchData?.results ?? []),
+    ...discoveryProviderJobQueries.flatMap((query) =>
+      query.data?.status === "succeeded" ? query.data.results : [],
+    ),
+  ].filter(
+    (result, index, results) =>
+      results.findIndex(
+        (candidate) =>
+          candidate.url === result.url &&
+          candidate.provider === result.provider,
+      ) === index,
+  );
+  const providerJobsPending = discoveryProviderJobQueries.some(
+    (query) => query.data?.status === "running",
+  );
+  const providerFailures = [
+    ...(searchData?.provider_failures ?? []),
+    ...discoveryProviderJobQueries.flatMap((query) =>
+      query.data?.status === "failed" && query.data.error
+        ? [{ provider: query.data.provider, detail: query.data.error }]
+        : [],
+    ),
+  ];
   const pageSpeedJobs = ingestMutation.data?.pagespeed_jobs ?? [];
   const pageSpeedJobQueries = useQueries({
     queries: pageSpeedJobs.map((job) => ({
@@ -76,6 +134,25 @@ export function DiscoveryPage() {
 
   function handleIngest(input: DiscoveryIngestInput) {
     ingestMutation.mutate(input);
+  }
+
+  function setDiscoveryProviders(selected: DiscoveryProviderId[]) {
+    if (selected.length === 0) {
+      setPreferenceError("Select at least one search engine.");
+      return;
+    }
+    setPreferenceError("");
+    preferenceMutation.mutate(selected);
+  }
+
+  function toggleDiscoveryProvider(
+    provider: DiscoveryProviderId,
+    checked: boolean,
+  ) {
+    const next = checked
+      ? [...selectedProviders, provider]
+      : selectedProviders.filter((selected) => selected !== provider);
+    setDiscoveryProviders([...new Set(next)]);
   }
 
   return (
@@ -104,6 +181,112 @@ export function DiscoveryPage() {
           <span className="sparkle" aria-hidden="true">✦</span>
         </div>
 
+        <section className="discovery-tool-selector" aria-label="Discovery tools">
+          <div className="discovery-tool-category">
+            <div className="discovery-tool-category-heading">
+              <div>
+                <h3>Search engines</h3>
+                <p>Choose one or run both search providers together.</p>
+              </div>
+              <button
+                className="button button-secondary"
+                disabled={
+                  preferenceMutation.isPending ||
+                  !settingsQuery.data?.tavily_configured ||
+                  !settingsQuery.data?.octoparse_configured ||
+                  !settingsQuery.data?.octoparse_template
+                }
+                onClick={() =>
+                  setDiscoveryProviders(
+                    selectedProviders.length === 2
+                      ? ["tavily"]
+                      : ["tavily", "octoparse"],
+                  )
+                }
+                type="button"
+              >
+                {selectedProviders.length === 2
+                  ? "Use Tavily only"
+                  : "Use all search engines"}
+              </button>
+            </div>
+            <div className="discovery-tool-options">
+              <label className="discovery-tool-option">
+                <input
+                  checked={selectedProviders.includes("tavily")}
+                  disabled={
+                    preferenceMutation.isPending ||
+                    (!settingsQuery.data?.tavily_configured &&
+                      !selectedProviders.includes("tavily"))
+                  }
+                  onChange={(event) =>
+                    toggleDiscoveryProvider("tavily", event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Tavily</strong>
+                  <small>
+                    {settingsQuery.data?.tavily_configured
+                      ? "Search engine"
+                      : "Configure its API key in Settings"}
+                  </small>
+                </span>
+              </label>
+              <label className="discovery-tool-option">
+                <input
+                  checked={selectedProviders.includes("octoparse")}
+                  disabled={
+                    preferenceMutation.isPending ||
+                    (!settingsQuery.data?.octoparse_configured &&
+                      !selectedProviders.includes("octoparse")) ||
+                    (!settingsQuery.data?.octoparse_template &&
+                      !selectedProviders.includes("octoparse"))
+                  }
+                  onChange={(event) =>
+                    toggleDiscoveryProvider("octoparse", event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Octoparse</strong>
+                  <small>
+                    {settingsQuery.data?.octoparse_template
+                      ? "Template configured"
+                      : "Configure an API key and template in Settings"}
+                  </small>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div className="discovery-tool-category discovery-tool-coming-soon">
+            <div>
+              <h3>Business listing websites</h3>
+              <p>
+                Coming soon. No listing providers have been configured yet.
+              </p>
+            </div>
+          </div>
+        </section>
+        {settingsQuery.isPending && (
+          <p className="settings-feedback" role="status">
+            Loading saved search-tool preferences…
+          </p>
+        )}
+        {settingsQuery.isError && (
+          <div className="alert alert-error" role="alert">
+            Could not load search-tool settings: {settingsQuery.error.message}
+          </div>
+        )}
+        {(preferenceError || preferenceMutation.isError) && (
+          <div className="alert alert-error" role="alert">
+            Could not save search-tool preferences:{" "}
+            {preferenceError ||
+              preferenceMutation.error?.message ||
+              "Unexpected error."}
+          </div>
+        )}
+
         <form className="discovery-form" onSubmit={handleSearch}>
           <label className="sr-only" htmlFor="discovery-query">
             Describe the companies you want to find
@@ -126,7 +309,13 @@ export function DiscoveryPage() {
           </datalist>
           <button
             className="button button-primary search-button"
-            disabled={searchMutation.isPending}
+            disabled={
+              searchMutation.isPending ||
+              settingsQuery.isPending ||
+              settingsQuery.isError ||
+              preferenceMutation.isPending ||
+              selectedProviders.length === 0
+            }
             type="submit"
           >
             {searchMutation.isPending ? "Searching..." : "Find leads"}
@@ -144,6 +333,22 @@ export function DiscoveryPage() {
             {searchMutation.error.message}
           </div>
         )}
+        {providerFailures.map(({ provider, detail }, index) => (
+          <div className="alert alert-error" key={`${provider}-${index}`} role="alert">
+            {provider === "tavily" ? "Tavily" : "Octoparse"}: {detail}
+          </div>
+        ))}
+        {discoveryProviderJobQueries.map((query, index) => (
+          query.isError && (
+            <div
+              className="alert alert-error"
+              key={`octoparse-poll-${discoveryProviderJobs[index]?.id}`}
+              role="alert"
+            >
+              Could not refresh Octoparse search status: {query.error.message}
+            </div>
+          )
+        ))}
         {ingestMutation.isError && (
           <div className="alert alert-error" role="alert">
             {ingestMutation.error.message}
@@ -154,6 +359,23 @@ export function DiscoveryPage() {
             {ingestResult}
           </div>
         )}
+        {discoveryProviderJobs.map((job, index) => {
+          const current = discoveryProviderJobQueries[index]?.data ?? job;
+          return (
+            <div
+              className={`discovery-provider-status discovery-provider-status-${current.status}`}
+              key={current.id}
+              role={current.status === "failed" ? "alert" : "status"}
+            >
+              Octoparse {current.status === "running"
+                ? "is collecting search results…"
+                : current.status === "succeeded"
+                  ? "search completed."
+                  : "search failed."}
+              {current.warning && ` ${current.warning}`}
+            </div>
+          );
+        })}
 
         {pageSpeedJobs.length > 0 && (
           <section
@@ -259,20 +481,22 @@ export function DiscoveryPage() {
               <div>
                 <strong>Search results</strong>
                 <span>
-                  {searchData.results.length} found for “{searchData.query}”
+                  {combinedResults.length} found for “{searchData.query}”
                 </span>
               </div>
-              {searchData.results.length > 0 && (
+              {combinedResults.length > 0 && (
                 <button
                   className="button button-secondary"
                   disabled={
-                    ingestMutation.isPending || ingestMutation.isSuccess
+                    ingestMutation.isPending ||
+                    ingestMutation.isSuccess ||
+                    providerJobsPending
                   }
                   onClick={() =>
                     handleIngest({
                       query: searchData.query,
                       max_results: 5,
-                      results: searchData.results,
+                      results: combinedResults,
                       search_id: searchData.search_id,
                     })
                   }
@@ -286,19 +510,29 @@ export function DiscoveryPage() {
                 </button>
               )}
             </div>
-            {searchData.results.length === 0 ? (
+            {combinedResults.length === 0 && providerJobsPending ? (
+              <p className="empty-copy">
+                Waiting for Octoparse to finish collecting data…
+              </p>
+            ) : combinedResults.length === 0 ? (
               <p className="empty-copy">
                 No companies matched this search. Try a broader query.
               </p>
             ) : (
               <div className="discovery-results">
-                {searchData.results.map((result) => (
-                  <article className="result-card" key={result.url}>
+                {combinedResults.map((result) => (
+                  <article
+                    className="result-card"
+                    key={`${result.provider}-${result.url}`}
+                  >
                     <div className="result-score">
                       {Math.round(result.score * 100)}
                       <small>%</small>
                     </div>
                     <div className="result-content">
+                      <span className="discovery-result-provider">
+                        {result.provider === "tavily" ? "Tavily" : "Octoparse"}
+                      </span>
                       <a
                         className="result-title"
                         href={result.url}
