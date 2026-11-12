@@ -21,6 +21,7 @@ const pages = [
   { href: "/crawler", icon: "◎", label: "Crawl a website" },
   { href: "/crawler/queue", icon: "↻", label: "Crawler queue" },
   { href: "/pagespeed-queue", icon: "◷", label: "PageSpeed queue" },
+  { href: "/settings", icon: "⚙", label: "Settings" },
 ];
 
 function subscribeToTheme(onChange: () => void) {

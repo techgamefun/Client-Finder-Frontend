@@ -562,6 +562,18 @@ h1 {
   padding-top: 16px;
 }
 
+.crawl-site-type,
+.queue-job-site-type {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.crawl-site-type strong,
+.queue-job-site-type strong {
+  color: var(--foreground);
+}
+
 .crawl-result-heading,
 .crawl-page > div {
   display: flex;
@@ -1132,6 +1144,168 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.settings-panel {
+  display: grid;
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-section-heading h2,
+.settings-panel > div > h2 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.settings-panel .panel-subtitle {
+  margin: 6px 0 0;
+}
+
+.settings-admin-form,
+.settings-form {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-admin-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.settings-field {
+  display: grid;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-field input {
+  width: 100%;
+  min-height: 39px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--input-surface);
+  padding: 0 11px;
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.settings-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-connection-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  padding: 6px 9px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.settings-connection-badge.is-configured {
+  background: #edf8f1;
+  color: #38764d;
+}
+
+.settings-feedback {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-feedback-error {
+  color: #a74c49;
+}
+
+.tavily-usage {
+  display: grid;
+  gap: 12px;
+}
+
+.tavily-usage-card {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-subtle);
+  padding: 13px;
+}
+
+.tavily-usage-card > span,
+.tavily-usage-breakdown span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.tavily-usage-card > strong {
+  color: var(--foreground);
+  font-size: 16px;
+}
+
+.tavily-usage-card small {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.tavily-usage-card progress {
+  width: 100%;
+  height: 7px;
+  accent-color: var(--purple);
+}
+
+.tavily-usage-breakdown {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.tavily-usage-breakdown > div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.tavily-usage-breakdown strong {
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.deployment-settings-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deployment-settings-list code {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
 @media (min-width: 760px) {
   .pagespeed-job-times {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1139,6 +1313,19 @@ h1 {
 }
 
 @media (max-width: 600px) {
+  .settings-admin-form,
+  .settings-limit-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tavily-usage-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deployment-settings-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .queue-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 9px;

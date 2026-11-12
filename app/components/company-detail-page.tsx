@@ -26,6 +26,7 @@ import type {
   CompanyUpdateInput,
   PageSpeedAudit,
 } from "@/lib/api";
+import { formatSiteType } from "@/lib/site-type";
 
 const leadStatuses = [
   "new",
@@ -411,6 +412,9 @@ export function CompanyDetailPage({
                 >
                   {company.domain}<span aria-hidden="true"> ↗</span>
                 </a>
+              )}
+              {crawl?.site_type && (
+                <span>Site type: {formatSiteType(crawl.site_type)}</span>
               )}
               <span className="company-crawl-control">
                 <button

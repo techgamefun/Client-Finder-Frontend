@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { crawlWebsite, getWebsiteCrawlJob } from "@/lib/api";
+import { formatSiteType } from "@/lib/site-type";
 
 export function CrawlerPage() {
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -164,6 +165,9 @@ export function CrawlerPage() {
               </div>
               <span>{new Date(crawlResult.crawled_at).toLocaleString()}</span>
             </div>
+            <p className="crawl-site-type">
+              Site type: <strong>{formatSiteType(crawlResult.site_type)}</strong>
+            </p>
 
             {crawledPages.length > 0 ? (
               <div className="crawl-pages">

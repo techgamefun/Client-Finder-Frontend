@@ -153,6 +153,7 @@ export interface WebsiteCrawlInput {
 export interface WebsiteCrawlResponse {
   id: string;
   website_url: string;
+  site_type: string | null;
   home_page_url: string | null;
   home_content: string | null;
   about_page_url: string | null;
@@ -187,6 +188,37 @@ export interface ResearchSourceCrawlInput {
   source_url: string;
 }
 
+export interface ApplicationSettings {
+  crawl_max_pages: number;
+  crawl_max_depth: number;
+  tavily_configured: boolean;
+  tavily_key_source: "database" | "environment" | "unset";
+}
+
+export interface TavilyUsage {
+  key: {
+    usage: number;
+    limit: number | null;
+    search_usage: number | null;
+    extract_usage: number | null;
+    crawl_usage: number | null;
+    map_usage: number | null;
+    research_usage: number | null;
+  };
+  account: {
+    current_plan: string | null;
+    plan_usage: number | null;
+    plan_limit: number | null;
+    paygo_usage: number | null;
+    paygo_limit: number | null;
+    search_usage: number | null;
+    extract_usage: number | null;
+    crawl_usage: number | null;
+    map_usage: number | null;
+    research_usage: number | null;
+  } | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -216,6 +248,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+function settingsAuthorization(adminToken: string): HeadersInit {
+  return { Authorization: `Bearer ${adminToken}` };
+}
+
+export function getApplicationSettings(
+  adminToken: string,
+): Promise<ApplicationSettings> {
+  return request<ApplicationSettings>("/settings", {
+    headers: settingsAuthorization(adminToken),
+  });
+}
+
+export function updateApplicationSettings(
+  adminToken: string,
+  input: {
+    crawl_max_pages: number;
+    crawl_max_depth: number;
+    tavily_api_key: string | null;
+  },
+): Promise<ApplicationSettings> {
+  return request<ApplicationSettings>("/settings", {
+    method: "PUT",
+    headers: settingsAuthorization(adminToken),
+    body: JSON.stringify(input),
+  });
+}
+
+export function getTavilyUsage(adminToken: string): Promise<TavilyUsage> {
+  return request<TavilyUsage>("/settings/tavily/usage", {
+    headers: settingsAuthorization(adminToken),
+  });
 }
 
 export async function getCompanies(): Promise<Company[]> {

@@ -15,12 +15,14 @@ import {
   formatTimestamp,
   type QueueJobStatus,
 } from "@/lib/job-format";
+import { formatSiteType } from "@/lib/site-type";
 
 type QueueKind = "crawler" | "pagespeed";
 
 interface QueueJob {
   id: string;
   websiteUrl: string;
+  siteType: string | null;
   detail: string;
   status: QueueJobStatus;
   error: string | null;
@@ -51,6 +53,7 @@ function normalizeCrawlerJob(job: WebsiteCrawlJobResponse): QueueJob {
   return {
     id: job.id,
     websiteUrl: job.website_url,
+    siteType: job.result?.site_type ?? null,
     detail: "Website crawl",
     status: job.status,
     error: job.error,
@@ -64,6 +67,7 @@ function normalizePageSpeedJob(job: PageSpeedScanJob): QueueJob {
   return {
     id: job.id,
     websiteUrl: job.website_url,
+    siteType: null,
     detail: `${job.strategy} scan`,
     status: job.status,
     error: job.error,
@@ -221,6 +225,11 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                     </dd>
                   </div>
                 </dl>
+                {job.siteType && (
+                  <p className="queue-job-site-type">
+                    Site type: <strong>{formatSiteType(job.siteType)}</strong>
+                  </p>
+                )}
                 {job.error && (
                   <p className="pagespeed-job-error">
                     <strong>Failure reason:</strong> {job.error}
