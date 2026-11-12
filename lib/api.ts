@@ -37,6 +37,7 @@ export interface Contact {
 export interface LeadSource {
   id: string;
   source_url: string;
+  source_domain: string;
   source_type: string | null;
   evidence: string | null;
   verified_at: string | null;
@@ -75,6 +76,20 @@ export interface PageSpeedScanReport extends PageSpeedScanSummary {
       audits?: Record<string, PageSpeedAudit>;
     };
   };
+}
+
+export interface PageSpeedScanJob {
+  id: string;
+  company_ids: string[];
+  website_url: string;
+  strategy: "mobile" | "desktop";
+  status: "queued" | "running" | "succeeded" | "failed";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 }
 
 export interface CompanyInput {
@@ -123,16 +138,12 @@ export interface IngestResponse {
   websites_crawled: number;
   companies_enriched: number;
   contacts_added: number;
-  pagespeed_scans_saved: number;
+  pagespeed_scans_queued: number;
   crawl_failures: {
     source_url: string;
     detail: string;
   }[];
-  pagespeed_failures: {
-    website_url: string;
-    strategy: string;
-    detail: string;
-  }[];
+  pagespeed_jobs: PageSpeedScanJob[];
 }
 
 export interface WebsiteCrawlInput {
@@ -167,6 +178,7 @@ export interface WebsiteCrawlJobResponse {
   error: string | null;
   created_at: string;
   updated_at: string;
+  started_at: string | null;
   completed_at: string | null;
   result: WebsiteCrawlResponse | null;
 }
@@ -236,6 +248,15 @@ export function getPageSpeedScan(
 ): Promise<PageSpeedScanReport> {
   return request<PageSpeedScanReport>(
     `/companies/${companyId}/pagespeed-scans/${scanId}`,
+  );
+}
+
+export function getPageSpeedScanJob(
+  companyId: string,
+  jobId: string,
+): Promise<PageSpeedScanJob> {
+  return request<PageSpeedScanJob>(
+    `/companies/${companyId}/pagespeed-jobs/${jobId}`,
   );
 }
 
@@ -317,6 +338,31 @@ export function getWebsiteCrawlJob(
   jobId: string,
 ): Promise<WebsiteCrawlJobResponse> {
   return request<WebsiteCrawlJobResponse>(`/crawler/jobs/${jobId}`);
+}
+
+export function getWebsiteCrawlJobs(): Promise<WebsiteCrawlJobResponse[]> {
+  return request<WebsiteCrawlJobResponse[]>("/crawler/jobs?limit=100");
+}
+
+export function getPageSpeedScanJobs(): Promise<PageSpeedScanJob[]> {
+  return request<PageSpeedScanJob[]>("/pagespeed/jobs?limit=100");
+}
+
+export function retryWebsiteCrawlJob(
+  jobId: string,
+): Promise<WebsiteCrawlJobResponse> {
+  return request<WebsiteCrawlJobResponse>(
+    `/crawler/jobs/${jobId}/retry`,
+    { method: "POST" },
+  );
+}
+
+export function retryPageSpeedScanJob(
+  jobId: string,
+): Promise<PageSpeedScanJob> {
+  return request<PageSpeedScanJob>(`/pagespeed/jobs/${jobId}/retry`, {
+    method: "POST",
+  });
 }
 
 export function getCompanyWebsiteCrawl(

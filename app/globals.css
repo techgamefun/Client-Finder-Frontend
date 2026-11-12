@@ -949,6 +949,207 @@ h1 {
   color: #287c56;
 }
 
+.pagespeed-job-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 17px;
+}
+
+.pagespeed-job-panel-heading,
+.pagespeed-job-card-heading,
+.pagespeed-job-card-heading > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pagespeed-job-panel-heading h2 {
+  margin: 3px 0 0;
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.pagespeed-job-panel-heading .panel-subtitle {
+  margin-top: 4px;
+}
+
+.pagespeed-job-count {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--purple-soft);
+  padding: 5px 9px;
+  color: var(--purple-dark);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.pagespeed-job-list {
+  display: grid;
+  gap: 9px;
+}
+
+.pagespeed-job-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  padding: 12px;
+}
+
+.pagespeed-job-card-heading {
+  flex-wrap: wrap;
+}
+
+.pagespeed-job-card-heading > div {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.queue-job-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-retry-button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.pagespeed-job-card-heading strong {
+  color: var(--foreground);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.pagespeed-job-card-heading a {
+  overflow-wrap: anywhere;
+  color: var(--purple);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.pagespeed-job-card-heading a:hover {
+  text-decoration: underline;
+}
+
+.pagespeed-job-status {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  border-radius: 6px;
+  background: #f0f1f5;
+  padding: 0 7px;
+  color: #696e81;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.pagespeed-job-status-running {
+  background: #efedff;
+  color: #6254c9;
+}
+
+.pagespeed-job-status-succeeded {
+  background: #e8f7ef;
+  color: #298253;
+}
+
+.pagespeed-job-status-failed {
+  background: #fff0ef;
+  color: #a74c49;
+}
+
+.pagespeed-job-times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.pagespeed-job-times dt {
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.pagespeed-job-times dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 10px;
+}
+
+.queue-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 18px;
+}
+
+.queue-stat-card {
+  display: grid;
+  min-height: 88px;
+  align-content: space-between;
+  gap: 12px;
+}
+
+.queue-stat-card > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.queue-stat-card > strong {
+  color: var(--foreground);
+  font-size: 22px;
+}
+
+.queue-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.queue-panel-heading h2 {
+  margin: 0 0 4px;
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.pagespeed-job-error {
+  margin: 10px 0 0;
+  border-radius: 7px;
+  background: #fff8f7;
+  padding: 8px 9px;
+  color: #a74c49;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 760px) {
+  .pagespeed-job-times {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .queue-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .queue-stat-card {
+    min-height: 75px;
+    padding: 12px;
+  }
+}
+
 .pipeline-panel {
   margin-top: 18px;
   padding: 19px 0 0;
@@ -1069,6 +1270,51 @@ html[data-theme="dark"] .leads-panel > .table-scroll::-webkit-scrollbar-thumb:ho
   width: 168px;
 }
 
+.source-domain-filters {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.source-domain-filter-label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.source-domain-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.source-domain-filter {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 0 9px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.source-domain-filter:hover,
+.source-domain-filter.active {
+  border-color: var(--purple);
+  background: var(--purple-soft);
+  color: var(--purple-dark);
+}
+
+.source-domain-filter span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
 .heading-count {
   display: inline-grid;
   min-width: 23px;
@@ -1181,6 +1427,30 @@ td {
   padding: 7px 14px;
   color: #71768a;
   font-size: 10px;
+}
+
+.source-domain-cell {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+}
+
+.source-domain-list {
+  display: grid;
+  max-width: 300px;
+  gap: 4px;
+}
+
+.source-domain-list a {
+  color: #6153cb;
+  font-size: 9px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.source-domain-list a:hover {
+  text-decoration: underline;
 }
 
 th:first-child,
@@ -3186,8 +3456,20 @@ html[data-theme="dark"] .crawl-page a,
 html[data-theme="dark"] .crawl-extracted a,
 html[data-theme="dark"] .company-detail a,
 html[data-theme="dark"] .record-item a,
+html[data-theme="dark"] .source-domain-list a,
 html[data-theme="dark"] .text-button,
 html[data-theme="dark"] .text-link {
+  color: var(--purple);
+}
+
+html[data-theme="dark"] .source-domain-filter {
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+html[data-theme="dark"] .source-domain-filter:hover,
+html[data-theme="dark"] .source-domain-filter.active {
+  background: var(--purple-soft);
   color: var(--purple);
 }
 
@@ -3283,6 +3565,28 @@ html[data-theme="dark"] .alert-success {
   border-color: #315742;
   background: #1d3025;
   color: #8bd3a9;
+}
+
+html[data-theme="dark"] .pagespeed-job-status {
+  background: #292c36;
+  color: #c1c4d0;
+}
+
+html[data-theme="dark"] .pagespeed-job-count,
+html[data-theme="dark"] .pagespeed-job-status-running {
+  background: #302c4d;
+  color: #b8afff;
+}
+
+html[data-theme="dark"] .pagespeed-job-status-succeeded {
+  background: #1d352a;
+  color: #79d4a3;
+}
+
+html[data-theme="dark"] .pagespeed-job-status-failed,
+html[data-theme="dark"] .pagespeed-job-error {
+  background: #302124;
+  color: #f0a3a0;
 }
 
 html[data-theme="dark"] .table-state,

@@ -93,6 +93,7 @@ export function LeadsPage() {
     requestedWebsite === "without_website"
       ? requestedWebsite
       : "all";
+  const sourceDomainFilter = pipelineParams.get("source_domain") ?? "";
   const requestedPage = Number(pipelineParams.get("page"));
   const currentPage =
     Number.isSafeInteger(requestedPage) && requestedPage > 0
@@ -170,6 +171,20 @@ export function LeadsPage() {
   });
 
   const companies = companiesQuery.data ?? noCompanies;
+  const sourceDomainCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const company of companies) {
+      const domains = new Set(
+        company.sources.map((source) => source.source_domain),
+      );
+      for (const domain of domains) {
+        counts.set(domain, (counts.get(domain) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries()).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+  }, [companies]);
   const filteredCompanies = useMemo(() => {
     const term = companyFilter.trim().toLowerCase();
     return companies.filter((company) => {
@@ -178,10 +193,16 @@ export function LeadsPage() {
         websiteFilter === "all" ||
         (websiteFilter === "with_website" && hasWebsite) ||
         (websiteFilter === "without_website" && !hasWebsite);
+      const matchesSourceDomain =
+        !sourceDomainFilter ||
+        company.sources.some(
+          (source) => source.source_domain === sourceDomainFilter,
+        );
 
       return (
         (statusFilter === "all" || company.lead_status === statusFilter) &&
         matchesWebsite &&
+        matchesSourceDomain &&
         (!term ||
           [
             company.name,
@@ -189,12 +210,22 @@ export function LeadsPage() {
             company.industry,
             company.city,
             company.state,
+            ...company.sources.flatMap((source) => [
+              source.source_domain,
+              source.source_url,
+            ]),
           ]
             .filter(Boolean)
             .some((value) => value?.toLowerCase().includes(term)))
       );
     });
-  }, [companies, companyFilter, statusFilter, websiteFilter]);
+  }, [
+    companies,
+    companyFilter,
+    sourceDomainFilter,
+    statusFilter,
+    websiteFilter,
+  ]);
   const websiteCount = companies.filter(
     (company) => company.website || company.domain,
   ).length;
@@ -298,7 +329,9 @@ export function LeadsPage() {
             <div className="pipeline-tools leads-filter-controls">
               <label className="filter-input">
                 <span aria-hidden="true">⌕</span>
-                <span className="sr-only">Filter companies</span>
+                <span className="sr-only">
+                  Search leads, source domains, and URLs
+                </span>
                 <input
                   onChange={(event) =>
                     updatePipelineQuery({
@@ -306,7 +339,7 @@ export function LeadsPage() {
                       page: null,
                     })
                   }
-                  placeholder="Search leads"
+                  placeholder="Search leads or source domains"
                   value={companyFilter}
                 />
               </label>
@@ -370,6 +403,49 @@ export function LeadsPage() {
                 ↻
               </button>
             </div>
+            {sourceDomainCounts.length > 0 && (
+              <div className="source-domain-filters">
+                <span className="source-domain-filter-label">
+                  Filter by source domain
+                </span>
+                <div
+                  aria-label="Filter leads by source domain"
+                  className="source-domain-filter-options"
+                  role="group"
+                >
+                  <button
+                    aria-pressed={!sourceDomainFilter}
+                    className={`source-domain-filter${!sourceDomainFilter ? " active" : ""}`}
+                    onClick={() =>
+                      updatePipelineQuery({
+                        source_domain: null,
+                        page: null,
+                      })
+                    }
+                    type="button"
+                  >
+                    All domains <span>{companies.length}</span>
+                  </button>
+                  {sourceDomainCounts.map(([domain, count]) => (
+                    <button
+                      aria-pressed={sourceDomainFilter === domain}
+                      className={`source-domain-filter${sourceDomainFilter === domain ? " active" : ""}`}
+                      key={domain}
+                      onClick={() =>
+                        updatePipelineQuery({
+                          source_domain:
+                            sourceDomainFilter === domain ? null : domain,
+                          page: null,
+                        })
+                      }
+                      type="button"
+                    >
+                      {domain} <span>{count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -412,6 +488,7 @@ export function LeadsPage() {
               <thead>
                 <tr>
                   <th>COMPANY</th>
+                  <th>SOURCE DOMAIN</th>
                   <th>INDUSTRY</th>
                   <th>LOCATION</th>
                   <th>STATUS</th>
@@ -425,6 +502,35 @@ export function LeadsPage() {
                   <Fragment key={company.id}>
                     <tr>
                       <td><CompanyName company={company} /></td>
+                      <td className="source-domain-cell">
+                        {company.sources.length > 0 ? (
+                          <div
+                            aria-label={`${company.name} source domains`}
+                            className="source-domain-list"
+                          >
+                            {Array.from(
+                              new Map(
+                                company.sources.map((source) => [
+                                  source.source_domain,
+                                  source,
+                                ]),
+                              ).values(),
+                            ).map((source) => (
+                              <a
+                                href={source.source_url}
+                                key={source.id}
+                                rel="noreferrer"
+                                target="_blank"
+                                title={source.source_url}
+                              >
+                                {source.source_domain}
+                              </a>
+                            ))}
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td>{company.industry ?? "—"}</td>
                       <td>
                         {[company.city, company.state].filter(Boolean).join(", ") ||
@@ -476,7 +582,7 @@ export function LeadsPage() {
                     </tr>
                     {expandedCompanyId === company.id && (
                       <tr className="detail-row">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <section
                             aria-label={`${company.name} full record`}
                             className="company-record"

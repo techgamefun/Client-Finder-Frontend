@@ -1,13 +1,28 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import {
+  getPageSpeedScanJob,
   getSearchKeywordSuggestions,
   ingestCompanies,
   searchCompanies,
 } from "@/lib/api";
-import type { DiscoveryIngestInput } from "@/lib/api";
+import {
+  formatElapsedTime,
+  formatJobStatus,
+  formatOptionalTimestamp,
+  formatTimestamp,
+} from "@/lib/job-format";
+import type {
+  DiscoveryIngestInput,
+  PageSpeedScanJob,
+} from "@/lib/api";
 
 export function DiscoveryPage() {
   const queryClient = useQueryClient();
@@ -32,20 +47,25 @@ export function DiscoveryPage() {
             .map(({ source_url, detail }) => `${source_url}: ${detail}`)
             .join("; ")}.`
         : "";
-      const pagespeedFailures = result.pagespeed_failures.length
-        ? ` PageSpeed failures: ${result.pagespeed_failures
-            .map(
-              ({ website_url, strategy, detail }) =>
-                `${website_url} (${strategy}): ${detail}`,
-            )
-            .join("; ")}.`
-        : "";
       setIngestResult(
-        `Saved ${result.sources_added} sources, created ${result.candidates_created} new leads, crawled ${result.websites_crawled} websites, saved ${result.pagespeed_scans_saved} detailed PageSpeed reports, enriched ${result.companies_enriched} companies, and added ${result.contacts_added} public email contacts. Skipped ${result.results_skipped} duplicates.${failures}${pagespeedFailures}`,
+        `Saved ${result.sources_added} sources, created ${result.candidates_created} new leads, crawled ${result.websites_crawled} websites, queued ${result.pagespeed_scans_queued} PageSpeed scans, enriched ${result.companies_enriched} companies, and added ${result.contacts_added} public email contacts. Skipped ${result.results_skipped} duplicates.${failures}`,
       );
     },
   });
   const searchData = searchMutation.data;
+  const pageSpeedJobs = ingestMutation.data?.pagespeed_jobs ?? [];
+  const pageSpeedJobQueries = useQueries({
+    queries: pageSpeedJobs.map((job) => ({
+      queryKey: ["pagespeed-job", job.id],
+      queryFn: () => getPageSpeedScanJob(job.company_ids[0], job.id),
+      refetchInterval: (query: {
+        state: { data: PageSpeedScanJob | undefined };
+      }) => {
+        const status = query.state.data?.status;
+        return status === "succeeded" || status === "failed" ? false : 2000;
+      },
+    })),
+  });
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,6 +153,104 @@ export function DiscoveryPage() {
           <div className="alert alert-success" role="status">
             {ingestResult}
           </div>
+        )}
+
+        {pageSpeedJobs.length > 0 && (
+          <section
+            aria-label="PageSpeed scan queue"
+            className="pagespeed-job-panel"
+          >
+            <div className="pagespeed-job-panel-heading">
+              <div>
+                <p className="eyebrow">BACKGROUND QUEUE</p>
+                <h2>PageSpeed insights</h2>
+                <p className="panel-subtitle">
+                  Scan statuses refresh automatically while jobs are running.
+                </p>
+              </div>
+              <span className="pagespeed-job-count">
+                {pageSpeedJobs.filter((job, index) => {
+                  const current = pageSpeedJobQueries[index]?.data ?? job;
+                  return (
+                    current.status === "succeeded" ||
+                    current.status === "failed"
+                  );
+                }).length}{" "}
+                / {pageSpeedJobs.length} finished
+              </span>
+            </div>
+            <div className="pagespeed-job-list">
+              {pageSpeedJobs.map((queuedJob, index) => {
+                const job = pageSpeedJobQueries[index]?.data ?? queuedJob;
+                const statusQuery = pageSpeedJobQueries[index];
+                return (
+                  <article className="pagespeed-job-card" key={job.id}>
+                    <div className="pagespeed-job-card-heading">
+                      <div>
+                        <strong>{job.strategy} scan</strong>
+                        <span
+                          className={`pagespeed-job-status pagespeed-job-status-${job.status}`}
+                        >
+                          {formatJobStatus(job.status)}
+                        </span>
+                      </div>
+                      <a
+                        href={job.website_url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {job.website_url}
+                      </a>
+                    </div>
+                    <dl className="pagespeed-job-times">
+                      <div>
+                        <dt>Queued</dt>
+                        <dd>{formatTimestamp(job.created_at)}</dd>
+                      </div>
+                      <div>
+                        <dt>Started</dt>
+                        <dd>
+                          {formatOptionalTimestamp(
+                            job.started_at,
+                            "Not started",
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Finished</dt>
+                        <dd>
+                          {formatOptionalTimestamp(
+                            job.completed_at,
+                            "Not finished",
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Total time</dt>
+                        <dd>
+                          {formatElapsedTime(
+                            job.started_at,
+                            job.completed_at,
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    {job.status === "failed" && job.error && (
+                      <p className="pagespeed-job-error" role="alert">
+                        {job.error}
+                      </p>
+                    )}
+                    {statusQuery?.isError && (
+                      <p className="pagespeed-job-error" role="alert">
+                        Could not refresh this job:{" "}
+                        {statusQuery.error.message}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         {searchData && (
