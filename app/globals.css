@@ -1236,6 +1236,14 @@ h1 {
   gap: 10px 16px;
 }
 
+.queue-panel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .queue-status-filter select {
   min-width: 150px;
 }
