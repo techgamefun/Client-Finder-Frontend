@@ -5,10 +5,12 @@ import { useState, type FormEvent } from "react";
 import {
   getApplicationSettings,
   getOctoparseTemplates,
+  getOctoparseUsage,
   getTavilyUsage,
   updateApplicationSettings,
   type OctoparseTemplateConfiguration,
   type OctoparseTemplateOption,
+  type OctoparseUsage,
   type TavilyUsage,
 } from "@/lib/api";
 
@@ -28,8 +30,12 @@ const deploymentManagedSettings = [
   "GOMAXPROCS",
 ];
 
+type SettingsSection = "tavily" | "octoparse" | "crawler";
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
+  const [activeSection, setActiveSection] =
+    useState<SettingsSection>("tavily");
   const [maxPages, setMaxPages] = useState<number | null>(null);
   const [maxDepth, setMaxDepth] = useState<number | null>(null);
   const [tavilyApiKey, setTavilyApiKey] = useState("");
@@ -49,6 +55,12 @@ export function SettingsPage() {
     queryKey: ["tavily-usage"],
     queryFn: getTavilyUsage,
     enabled: settingsQuery.data?.tavily_configured === true,
+    retry: false,
+  });
+  const octoparseUsageQuery = useQuery({
+    queryKey: ["octoparse-usage"],
+    queryFn: getOctoparseUsage,
+    enabled: settingsQuery.data !== undefined,
     retry: false,
   });
   const templateSearchMutation = useMutation({
@@ -207,16 +219,28 @@ export function SettingsPage() {
           <p className="eyebrow">WORKSPACE CONFIGURATION</p>
           <h1>Settings</h1>
           <p className="heading-copy">
-            Manage Tavily access and safe per-crawl limits for this application.
+            Manage discovery providers and crawler settings for this application.
           </p>
         </div>
       </section>
 
-      <p className="settings-public-warning" role="note">
-        Anyone who can reach this application can view or change these settings
-        and replace either provider API key. The keys themselves are never
-        displayed.
-      </p>
+      <div className="settings-section-picker">
+        <label className="settings-field">
+          Show settings for
+          <select
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (isSettingsSection(value)) setActiveSection(value);
+            }}
+            value={activeSection}
+          >
+            <option value="tavily">Tavily</option>
+            <option value="octoparse">Octoparse</option>
+            <option value="crawler">Crawler</option>
+          </select>
+        </label>
+      </div>
+
       {settingsQuery.isPending && (
         <p className="settings-feedback" role="status">Loading settings…</p>
       )}
@@ -228,7 +252,10 @@ export function SettingsPage() {
 
       {settingsQuery.data && (
         <>
-          <section className="panel settings-panel">
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "tavily"}
+          >
             <div className="settings-section-heading">
               <div>
                 <p className="eyebrow">TAVILY</p>
@@ -240,7 +267,7 @@ export function SettingsPage() {
               </div>
               <span className={`settings-connection-badge${settingsQuery.data.tavily_configured ? " is-configured" : ""}`}>
                 {settingsQuery.data.tavily_configured
-                  ? `Connected via ${settingsQuery.data.tavily_key_source}`
+                  ? "Configured"
                   : "Not configured"}
               </span>
             </div>
@@ -304,7 +331,10 @@ export function SettingsPage() {
             {usageQuery.data && <TavilyUsagePanel usage={usageQuery.data} />}
           </section>
 
-          <section className="panel settings-panel">
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "octoparse"}
+          >
             <div className="settings-section-heading">
               <div>
                 <p className="eyebrow">OCTOPARSE SEARCH ENGINE</p>
@@ -316,7 +346,7 @@ export function SettingsPage() {
               </div>
               <span className={`settings-connection-badge${settingsQuery.data.octoparse_configured ? " is-configured" : ""}`}>
                 {settingsQuery.data.octoparse_configured
-                  ? `Connected via ${settingsQuery.data.octoparse_key_source}`
+                  ? "Configured"
                   : "Not configured"}
               </span>
             </div>
@@ -361,6 +391,33 @@ export function SettingsPage() {
                 )}
               </div>
             </form>
+
+            <div className="settings-actions">
+              <button
+                className="button button-secondary"
+                disabled={octoparseUsageQuery.isFetching}
+                onClick={() => void octoparseUsageQuery.refetch()}
+                type="button"
+              >
+                {octoparseUsageQuery.isFetching
+                  ? "Refreshing usage…"
+                  : "Refresh Octoparse usage"}
+              </button>
+            </div>
+            {octoparseUsageQuery.isPending && (
+              <p className="settings-feedback" role="status">
+                Loading Octoparse usage…
+              </p>
+            )}
+            {octoparseUsageQuery.isError && (
+              <p className="settings-feedback settings-feedback-error" role="alert">
+                Could not retrieve Octoparse usage:{" "}
+                {octoparseUsageQuery.error.message}
+              </p>
+            )}
+            {octoparseUsageQuery.data && (
+              <OctoparseUsagePanel usage={octoparseUsageQuery.data} />
+            )}
 
             <form
               className="settings-form octoparse-template-search"
@@ -565,7 +622,10 @@ export function SettingsPage() {
             {notice && <p className="settings-feedback" role="status">{notice}</p>}
           </section>
 
-          <section className="panel settings-panel">
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "crawler"}
+          >
             <div className="settings-section-heading">
               <div>
                 <p className="eyebrow">WEBSITE CRAWLER</p>
@@ -613,7 +673,10 @@ export function SettingsPage() {
             </form>
           </section>
 
-          <section className="panel settings-panel">
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "crawler"}
+          >
             <div>
               <p className="eyebrow">DEPLOYMENT-MANAGED</p>
               <h2>Other crawler settings</h2>
@@ -692,6 +755,38 @@ function TavilyUsagePanel({ usage }: { usage: TavilyUsage }) {
   );
 }
 
+function OctoparseUsagePanel({ usage }: { usage: OctoparseUsage }) {
+  const period = new Date(usage.period_start).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+  return (
+    <div className="octoparse-usage">
+      <p className="panel-subtitle">
+        App-tracked tasks for {period} (UTC). Account-wide plan usage and
+        remaining quota are not retrieved by this integration; check your
+        Octoparse account for those totals.
+      </p>
+      <div className="octoparse-usage-grid">
+        {[
+          ["Tasks started", usage.tasks_started],
+          ["Running", usage.tasks_running],
+          ["Succeeded", usage.tasks_succeeded],
+          ["Failed", usage.tasks_failed],
+          ["All-time tasks", usage.all_time_tasks_started],
+        ].map(([label, count]) => (
+          <article className="octoparse-usage-card" key={label}>
+            <span>{label}</span>
+            <strong>{count.toLocaleString()}</strong>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function getTemplateFields(
   schema: Record<string, unknown>[],
 ): { field: string; required: boolean }[] {
@@ -703,4 +798,8 @@ function getTemplateFields(
       required: item.required === true,
     }];
   });
+}
+
+function isSettingsSection(value: string): value is SettingsSection {
+  return value === "tavily" || value === "octoparse" || value === "crawler";
 }

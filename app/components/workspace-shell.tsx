@@ -18,6 +18,7 @@ const pages = [
   { href: "/", icon: "◫", label: "Overview" },
   { href: "/leads", icon: "▤", label: "Lead pipeline" },
   { href: "/discovery", icon: "⌕", label: "Discover leads" },
+  { href: "/websites", icon: "↗", label: "Websites" },
   { href: "/crawler", icon: "◎", label: "Crawl a website" },
   { href: "/crawler/queue", icon: "↻", label: "Crawler queue" },
   { href: "/pagespeed-queue", icon: "◷", label: "PageSpeed queue" },

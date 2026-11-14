@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   getPageSpeedScanJobs,
@@ -79,6 +80,9 @@ function normalizePageSpeedJob(job: PageSpeedScanJob): QueueJob {
 
 export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const config = queueConfig[kind];
+  const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
+    "all",
+  );
   const jobsQuery = useQuery<QueueJob[]>({
     queryKey: [kind, "queue-jobs"],
     queryFn: async () => {
@@ -109,6 +113,10 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     (job) => job.status === "succeeded",
   ).length;
   const failedCount = jobs.filter((job) => job.status === "failed").length;
+  const visibleJobs =
+    kind === "crawler" && statusFilter !== "all"
+      ? jobs.filter((job) => job.status === statusFilter)
+      : jobs;
 
   return (
     <>
@@ -151,10 +159,33 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <div>
             <h2 id="queue-jobs-heading">Recent jobs</h2>
             <p className="panel-subtitle">
-              Showing the latest {jobs.length} jobs. This page refreshes
+              Showing {visibleJobs.length} of the latest {jobs.length} jobs.
+              This page refreshes
               automatically.
             </p>
           </div>
+          {kind === "crawler" && (
+            <label className="select-filter queue-status-filter">
+              <span className="sr-only">Filter crawl jobs by status</span>
+              <select
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setStatusFilter(
+                    value === "all" || isQueueJobStatus(value)
+                      ? value
+                      : "all",
+                  );
+                }}
+                value={statusFilter}
+              >
+                <option value="all">All statuses</option>
+                <option value="queued">Queued</option>
+                <option value="running">Running</option>
+                <option value="succeeded">Finished</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+          )}
         </div>
 
         {jobsQuery.isLoading ? (
@@ -165,9 +196,13 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <p className="empty-copy">
             No {kind === "crawler" ? "crawl" : "PageSpeed"} jobs found.
           </p>
+        ) : visibleJobs.length === 0 ? (
+          <p className="empty-copy">
+            No crawl jobs match the selected status.
+          </p>
         ) : (
           <div className="pagespeed-job-list">
-            {jobs.map((job) => (
+            {visibleJobs.map((job) => (
               <article className="pagespeed-job-card" key={job.id}>
                 <div className="pagespeed-job-card-heading">
                   <div>
@@ -251,4 +286,8 @@ function QueueStat({ label, value }: { label: string; value: number }) {
       <strong>{value}</strong>
     </article>
   );
+}
+
+function isQueueJobStatus(value: string): value is QueueJobStatus {
+  return ["queued", "running", "succeeded", "failed"].includes(value);
 }

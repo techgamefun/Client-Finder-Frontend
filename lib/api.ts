@@ -151,6 +151,16 @@ export interface DiscoveryIngestInput extends DiscoveryInput {
   search_id: string;
 }
 
+export interface DiscoveryWebsiteSaveInput extends DiscoveryInput {
+  results: DiscoveryWebsiteInput[];
+  search_id: string;
+}
+
+export interface DiscoveryWebsiteInput {
+  url: string;
+  provider: DiscoveryProviderId;
+}
+
 export interface DiscoveryResult {
   title: string;
   url: string;
@@ -187,6 +197,15 @@ export interface IngestResponse {
   pagespeed_jobs: PageSpeedScanJob[];
 }
 
+export interface DiscoveryWebsiteSaveResponse {
+  query: string;
+  results_found: number;
+  websites_saved: number;
+  crawl_jobs_enqueued: number;
+  crawl_jobs_already_present: number;
+  domains_skipped: number;
+}
+
 export interface WebsiteCrawlInput {
   website_url: string;
 }
@@ -207,9 +226,41 @@ export interface WebsiteCrawlResponse {
   contact_content: string | null;
   goals_page_url: string | null;
   goals_content: string | null;
+  classification_signals: CrawlPageClassification[];
   emails: string[];
   social_links: string[];
   crawled_at: string;
+}
+
+export interface CrawlPageClassification {
+  url: string;
+  rendering_mode: string | null;
+  classification_signals: PageClassificationSignals | null;
+}
+
+export interface PageClassificationSignals {
+  page_title: string | null;
+  meta_description: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  og_type: string | null;
+  generator: string | null;
+  json_ld_scripts: string[];
+  json_ld_schema_types: string[];
+  microdata_schema_types: string[];
+  heading_texts: string[];
+  first_paragraph_text: string | null;
+  meta_classification_terms: string[];
+  url_classification_terms: string[];
+  body_classification_terms: string[];
+  article_count: number;
+  password_input_count: number;
+  shopping_elements: Record<string, number>;
+  nav_link_texts: string[];
+  footer_link_texts: string[];
+  header_link_texts: string[];
+  cta_texts: string[];
+  url_path_patterns: string[];
 }
 
 export interface WebsiteCrawlJobResponse {
@@ -225,8 +276,66 @@ export interface WebsiteCrawlJobResponse {
   result: WebsiteCrawlResponse | null;
 }
 
+export interface WebsiteCrawlJobHistory {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface WebsiteRecord {
+  id: string;
+  website_url: string;
+  domain: string;
+  crawl_id: string | null;
+  is_crawled: boolean;
+  crawl_job_status: "queued" | "running" | "succeeded" | "failed" | null;
+  category: string | null;
+  page_type: WebsitePageType | null;
+  site_topic: string[];
+  language: string | null;
+  status: "new";
+  site_type: "normal" | "listing";
+  discovery_source: string;
+  discovery_provider: DiscoveryProviderId | null;
+  created_at: string;
+  crawled_at: string | null;
+  crawl_signals: CrawlPageClassification[];
+}
+
+export interface WebsiteDetailResponse {
+  website: WebsiteRecord;
+  crawl: WebsiteCrawlResponse | null;
+  crawl_jobs: WebsiteCrawlJobHistory[];
+}
+
+export type WebsitePageType =
+  | "business_site"
+  | "business_listing"
+  | "article"
+  | "blog"
+  | "news"
+  | "ecommerce"
+  | "social_media"
+  | "cms"
+  | "software_tool"
+  | "documentation"
+  | "forum"
+  | "media"
+  | "other";
+
 export interface ResearchSourceCrawlInput {
   source_url: string;
+}
+
+export interface WebsiteUpdateInput {
+  page_type?: WebsitePageType | null;
+  site_topic?: string[];
+  language?: string | null;
 }
 
 export interface ApplicationSettings {
@@ -262,6 +371,15 @@ export interface TavilyUsage {
     map_usage: number | null;
     research_usage: number | null;
   } | null;
+}
+
+export interface OctoparseUsage {
+  period_start: string;
+  tasks_started: number;
+  tasks_running: number;
+  tasks_succeeded: number;
+  tasks_failed: number;
+  all_time_tasks_started: number;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -317,6 +435,10 @@ export function updateApplicationSettings(
 
 export function getTavilyUsage(): Promise<TavilyUsage> {
   return request<TavilyUsage>("/settings/tavily/usage");
+}
+
+export function getOctoparseUsage(): Promise<OctoparseUsage> {
+  return request<OctoparseUsage>("/settings/octoparse/usage");
 }
 
 export function getOctoparseTemplates(
@@ -443,6 +565,31 @@ export function ingestCompanies(
   });
 }
 
+export function saveDiscoveryWebsites(
+  input: DiscoveryWebsiteSaveInput,
+): Promise<DiscoveryWebsiteSaveResponse> {
+  return request<DiscoveryWebsiteSaveResponse>("/discovery/save-websites", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateWebsite(
+  websiteId: string,
+  input: WebsiteUpdateInput,
+): Promise<WebsiteRecord> {
+  return request<WebsiteRecord>(`/websites/${websiteId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getWebsiteDetail(
+  websiteId: string,
+): Promise<WebsiteDetailResponse> {
+  return request<WebsiteDetailResponse>(`/websites/${websiteId}`);
+}
+
 export function crawlWebsite(
   input: WebsiteCrawlInput,
 ): Promise<WebsiteCrawlJobResponse> {
@@ -460,6 +607,19 @@ export function getWebsiteCrawlJob(
 
 export function getWebsiteCrawlJobs(): Promise<WebsiteCrawlJobResponse[]> {
   return request<WebsiteCrawlJobResponse[]>("/crawler/jobs?limit=100");
+}
+
+export async function getWebsites(): Promise<WebsiteRecord[]> {
+  const pageSize = 500;
+  const websites: WebsiteRecord[] = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await request<WebsiteRecord[]>(
+      `/websites?limit=${pageSize}&offset=${offset}`,
+    );
+    websites.push(...page);
+    if (page.length < pageSize) return websites;
+  }
 }
 
 export function getPageSpeedScanJobs(): Promise<PageSpeedScanJob[]> {

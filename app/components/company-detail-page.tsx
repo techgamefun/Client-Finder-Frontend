@@ -3,12 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  useEffect,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   createPageSpeedScan,
   crawlCompanyWebsite,
@@ -21,11 +16,7 @@ import {
   updateCompany,
   updateLeadStatus,
 } from "@/lib/api";
-import type {
-  Company,
-  CompanyUpdateInput,
-  PageSpeedAudit,
-} from "@/lib/api";
+import type { Company, CompanyUpdateInput, PageSpeedAudit } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
 
 const leadStatuses = [
@@ -46,7 +37,7 @@ export function CompanyDetailPage({
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteConfirmed, setIsDeleteConfirmed] = useState(false);
-  const [isAboutExpanded, setIsAboutExpanded] = useState(false);
+  const [isCompanyInfoExpanded, setIsCompanyInfoExpanded] = useState(false);
   const [showRecrawlOption, setShowRecrawlOption] = useState(false);
   const [websiteCrawlJobId, setWebsiteCrawlJobId] = useState<string | null>(
     null,
@@ -57,10 +48,11 @@ export function CompanyDetailPage({
   >("mobile");
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
   const [expandedScanId, setExpandedScanId] = useState<string | null>(null);
-  const companyId =
-    /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(companyIdParam)
-      ? companyIdParam
-      : null;
+  const companyId = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(
+    companyIdParam,
+  )
+    ? companyIdParam
+    : null;
   const companyQuery = useQuery({
     queryKey: ["company", companyId],
     queryFn: () => {
@@ -151,10 +143,7 @@ export function CompanyDetailPage({
             currentCompany
               ? {
                   ...currentCompany,
-                  pagespeed_scans: [
-                    scan,
-                    ...currentCompany.pagespeed_scans,
-                  ],
+                  pagespeed_scans: [scan, ...currentCompany.pagespeed_scans],
                 }
               : currentCompany,
         );
@@ -186,7 +175,9 @@ export function CompanyDetailPage({
   const statusMutation = useMutation({
     mutationFn: (leadStatus: string) => {
       if (companyId === null) {
-        throw new Error("A company must be loaded before its status can change.");
+        throw new Error(
+          "A company must be loaded before its status can change.",
+        );
       }
       return updateLeadStatus(companyId, leadStatus);
     },
@@ -209,11 +200,7 @@ export function CompanyDetailPage({
   });
   useEffect(() => {
     const job = websiteCrawlJobQuery.data;
-    if (
-      job?.status === "succeeded" &&
-      job.result &&
-      companyId !== null
-    ) {
+    if (job?.status === "succeeded" && job.result && companyId !== null) {
       queryClient.setQueryData(
         ["company-website-crawl", companyId],
         job.result,
@@ -225,7 +212,9 @@ export function CompanyDetailPage({
   if (companyId !== null && companyQuery.isLoading) {
     return (
       <section className="company-detail-state" aria-live="polite">
-        <span className="detail-state-icon" aria-hidden="true">◷</span>
+        <span className="detail-state-icon" aria-hidden="true">
+          ◷
+        </span>
         <strong>Loading company record…</strong>
         <span>Gathering company information and related research.</span>
       </section>
@@ -235,9 +224,17 @@ export function CompanyDetailPage({
   if (companyId === null) {
     return (
       <section className="company-detail-state">
-        <span className="detail-state-icon detail-state-error" aria-hidden="true">!</span>
+        <span
+          className="detail-state-icon detail-state-error"
+          aria-hidden="true"
+        >
+          !
+        </span>
         <strong>Company not found.</strong>
-        <span>This company link may be out of date or the record may have been removed.</span>
+        <span>
+          This company link may be out of date or the record may have been
+          removed.
+        </span>
         <Link className="button button-secondary" href="/leads">
           Back to company records
         </Link>
@@ -248,7 +245,12 @@ export function CompanyDetailPage({
   if (companyQuery.isError) {
     return (
       <section className="company-detail-state" role="alert">
-        <span className="detail-state-icon detail-state-error" aria-hidden="true">!</span>
+        <span
+          className="detail-state-icon detail-state-error"
+          aria-hidden="true"
+        >
+          !
+        </span>
         <strong>Could not load this company.</strong>
         <span>{companyQuery.error.message}</span>
         <button
@@ -258,7 +260,9 @@ export function CompanyDetailPage({
         >
           Try again
         </button>
-        <Link className="text-link" href="/leads">Back to company records</Link>
+        <Link className="text-link" href="/leads">
+          Back to company records
+        </Link>
       </section>
     );
   }
@@ -307,14 +311,12 @@ export function CompanyDetailPage({
     expandedScanId !== null && scanQuery.data?.id === expandedScanId
       ? scanQuery.data.report
       : null;
-  const audits = Object.entries(
-    expandedReport?.lighthouseResult.audits ?? {},
-  );
+  const audits = Object.entries(expandedReport?.lighthouseResult.audits ?? {});
   const crawl =
     websiteCrawlJobQuery.data?.status === "succeeded"
       ? websiteCrawlJobQuery.data.result
       : websiteCrawlQuery.data;
-  const companyInfoTabs = crawl
+  const crawlInfoTabs = crawl
     ? [
         {
           id: "home",
@@ -367,6 +369,23 @@ export function CompanyDetailPage({
         },
       ].filter((tab) => tab.url || tab.content || tab.emails.length > 0)
     : [];
+  const companyInfoTabs = [
+    ...crawlInfoTabs,
+    {
+      id: "contacts",
+      label: "Contacts",
+      url: null,
+      content: null,
+      emails: [],
+    },
+    {
+      id: "location",
+      label: "Location",
+      url: null,
+      content: location || "No location information recorded.",
+      emails: [],
+    },
+  ];
   const selectedCompanyInfoTab =
     companyInfoTabs.find((tab) => tab.id === activeCompanyInfoTab) ??
     companyInfoTabs[0];
@@ -399,22 +418,33 @@ export function CompanyDetailPage({
             {company.name.slice(0, 1).toUpperCase()}
           </span>
           <div className="company-hero-copy">
-            <p className="eyebrow">COMPANY PROFILE · RECORD #{company.id}</p>
-            <h1>{company.name}</h1>
+            <p className="eyebrow">
+              COMPANY PROFILE · ADDED {formatDate(company.created_at)}
+            </p>
+            <div className="company-title-row">
+              <h1>{company.name}</h1>
+              {company.industry && (
+                <span className="company-industry-badge">
+                  {company.industry}
+                </span>
+              )}
+            </div>
             <div className="company-hero-meta">
-              {company.industry && <span>{company.industry}</span>}
-              {location && <span>{location}</span>}
               {company.domain && (
                 <a
-                  href={companyWebsiteHref(company.website, company.domain) ?? undefined}
+                  href={
+                    companyWebsiteHref(company.website, company.domain) ??
+                    undefined
+                  }
                   rel="noreferrer"
                   target="_blank"
                 >
-                  {company.domain}<span aria-hidden="true"> ↗</span>
+                  {company.domain}
+                  <span aria-hidden="true"> ↗</span>
                 </a>
               )}
               {crawl?.site_type && (
-                <span>Site type: {formatSiteType(crawl.site_type)}</span>
+                <span>Type: {formatSiteType(crawl.site_type)}</span>
               )}
               <span className="company-crawl-control">
                 <button
@@ -434,7 +464,7 @@ export function CompanyDetailPage({
                   disabled={
                     isCrawlPending ||
                     websiteCrawlQuery.isLoading ||
-                    !company.website && !company.domain
+                    (!company.website && !company.domain)
                   }
                   onClick={() => {
                     if (websiteCrawlQuery.isError) {
@@ -520,7 +550,7 @@ export function CompanyDetailPage({
                   key={tab.id}
                   onClick={() => {
                     setActiveCompanyInfoTab(tab.id);
-                    setIsAboutExpanded(false);
+                    setIsCompanyInfoExpanded(false);
                   }}
                   onKeyDown={(event) => {
                     const currentIndex = companyInfoTabs.findIndex(
@@ -543,7 +573,7 @@ export function CompanyDetailPage({
                     event.preventDefault();
                     const nextTab = companyInfoTabs[nextIndex];
                     setActiveCompanyInfoTab(nextTab.id);
-                    setIsAboutExpanded(false);
+                    setIsCompanyInfoExpanded(false);
                     document
                       .getElementById(`company-info-tab-${nextTab.id}`)
                       ?.focus();
@@ -575,37 +605,92 @@ export function CompanyDetailPage({
               role="tabpanel"
               tabIndex={0}
             >
-              {selectedCompanyInfoTab.id === "emails" ? (
-                <ul className="company-info-emails">
-                  {selectedCompanyInfoTab.emails.map((email) => (
-                    <li key={email}>
-                      <a href={`mailto:${email}`}>{email}</a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p
-                  className={
-                    selectedCompanyInfoTab.id === "about" && !isAboutExpanded
-                      ? "is-collapsed"
-                      : "is-expanded"
-                  }
-                >
-                  {selectedCompanyInfoTab.content ||
-                    "No page text was extracted."}
-                </p>
-              )}
-            </div>
-            {selectedCompanyInfoTab.id === "about" &&
-              selectedCompanyInfoTab.content &&
-              selectedCompanyInfoTab.content.length > 240 && (
+              {selectedCompanyInfoTab.id === "contacts" ? (
+                company.contacts.length === 0 ? (
+                  <p className="company-info-empty">
+                    No public contact information has been added yet.
+                  </p>
+                ) : (
+                  <div className="company-info-contacts">
+                    {(isCompanyInfoExpanded
+                      ? company.contacts
+                      : company.contacts.slice(0, 5)
+                    ).map((contact) => (
+                      <article
+                        className="detail-record-card"
+                        key={contact.id}
+                      >
+                        <span className="contact-avatar" aria-hidden="true">
+                          {(contact.name ?? "?").slice(0, 1).toUpperCase()}
+                        </span>
+                        <div className="contact-card-content">
+                          <strong>
+                            {contact.name || "Unnamed contact"}
+                          </strong>
+                          <span>{contact.role || "Role not provided"}</span>
+                          <div className="contact-links">
+                            {contact.business_email && (
+                              <a href={`mailto:${contact.business_email}`}>
+                                {contact.business_email}
+                              </a>
+                            )}
+                            {contact.business_phone && (
+                              <a href={`tel:${contact.business_phone}`}>
+                                {contact.business_phone}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <span
+                          className={`public-label${contact.is_publicly_listed ? "" : " not-public"}`}
+                        >
+                          {contact.is_publicly_listed
+                            ? "Publicly listed"
+                            : "Not confirmed public"}
+                        </span>
+                        </article>
+                      ))}
+                    </div>
+                  )
+                ) : selectedCompanyInfoTab.id === "emails" ? (
+                  <ul className="company-info-emails">
+                    {(isCompanyInfoExpanded
+                      ? selectedCompanyInfoTab.emails
+                      : selectedCompanyInfoTab.emails.slice(0, 5)
+                    ).map((email) => (
+                      <li key={email}>
+                        <a href={`mailto:${email}`}>{email}</a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p
+                    className={
+                      (selectedCompanyInfoTab.content?.length ?? 0) > 240 &&
+                      !isCompanyInfoExpanded
+                        ? "is-collapsed"
+                        : "is-expanded"
+                    }
+                  >
+                    {selectedCompanyInfoTab.content ||
+                      "No page text was extracted."}
+                  </p>
+                )}
+              </div>
+              {((selectedCompanyInfoTab.id === "emails" &&
+                selectedCompanyInfoTab.emails.length > 5) ||
+                (selectedCompanyInfoTab.id === "contacts" &&
+                  company.contacts.length > 5) ||
+                (selectedCompanyInfoTab.content?.length ?? 0) > 240) && (
                 <button
-                  aria-expanded={isAboutExpanded}
+                  aria-expanded={isCompanyInfoExpanded}
                   className="company-hero-about-toggle"
-                  onClick={() => setIsAboutExpanded((expanded) => !expanded)}
+                  onClick={() =>
+                    setIsCompanyInfoExpanded((expanded) => !expanded)
+                  }
                   type="button"
                 >
-                  {isAboutExpanded ? "Show less" : "Show more"}
+                  {isCompanyInfoExpanded ? "Show less" : "Show more"}
                 </button>
               )}
           </article>
@@ -687,40 +772,31 @@ export function CompanyDetailPage({
           {websiteCrawlJobQuery.data.error || "The crawl job failed."}
         </div>
       )}
-      <section className="detail-metrics" aria-label="Company record summary">
-        <article className="detail-metric-card">
-          <span className="detail-metric-icon violet" aria-hidden="true">◈</span>
-          <div><span>LEAD SCORE</span><strong>{company.lead_score ?? "—"}</strong></div>
-        </article>
-        <article className="detail-metric-card">
-          <span className="detail-metric-icon green" aria-hidden="true">◎</span>
-          <div><span>PUBLIC CONTACTS</span><strong>{company.contacts.length}</strong></div>
-        </article>
-        <article className="detail-metric-card">
-          <span className="detail-metric-icon amber" aria-hidden="true">↗</span>
-          <div><span>RESEARCH SOURCES</span><strong>{company.sources.length}</strong></div>
-        </article>
-        <article className="detail-metric-card">
-          <span className="detail-metric-icon blue" aria-hidden="true">◷</span>
-          <div><span>PAGE SPEED SCANS</span><strong>{company.pagespeed_scans.length}</strong></div>
-        </article>
-      </section>
-
       <div className="company-detail-layout">
         <main className="company-detail-main">
-          <section className="panel detail-section">
-            <div className="detail-section-heading">
-              <span className="section-icon violet" aria-hidden="true">▤</span>
-              <div><h2>Company overview</h2><p>Core profile and qualification details</p></div>
-            </div>
-            {isEditing ? (
-              <form className="company-form detail-edit-form" onSubmit={handleSave}>
+          {isEditing && (
+            <section className="panel detail-section">
+              <div className="detail-section-heading">
+                <span className="section-icon violet" aria-hidden="true">
+                  ▤
+                </span>
+                <div>
+                  <h2>Edit company details</h2>
+                  <p>Update company profile information</p>
+                </div>
+              </div>
+              <form
+                className="company-form detail-edit-form"
+                onSubmit={handleSave}
+              >
                 <div className="form-row">
                   <label>
                     Company name <span>*</span>
                     <input
                       maxLength={200}
-                      onChange={(event) => updateField("name", event.target.value)}
+                      onChange={(event) =>
+                        updateField("name", event.target.value)
+                      }
                       required
                       value={editingForm.name ?? ""}
                     />
@@ -728,7 +804,9 @@ export function CompanyDetailPage({
                   <label>
                     Website
                     <input
-                      onChange={(event) => updateField("website", event.target.value)}
+                      onChange={(event) =>
+                        updateField("website", event.target.value)
+                      }
                       placeholder="https://example.com"
                       type="url"
                       value={editingForm.website ?? ""}
@@ -739,14 +817,18 @@ export function CompanyDetailPage({
                   <label>
                     Industry
                     <input
-                      onChange={(event) => updateField("industry", event.target.value)}
+                      onChange={(event) =>
+                        updateField("industry", event.target.value)
+                      }
                       value={editingForm.industry ?? ""}
                     />
                   </label>
                   <label>
                     Domain
                     <input
-                      onChange={(event) => updateField("domain", event.target.value)}
+                      onChange={(event) =>
+                        updateField("domain", event.target.value)
+                      }
                       value={editingForm.domain ?? ""}
                     />
                   </label>
@@ -755,14 +837,18 @@ export function CompanyDetailPage({
                   <label>
                     City
                     <input
-                      onChange={(event) => updateField("city", event.target.value)}
+                      onChange={(event) =>
+                        updateField("city", event.target.value)
+                      }
                       value={editingForm.city ?? ""}
                     />
                   </label>
                   <label>
                     State / region
                     <input
-                      onChange={(event) => updateField("state", event.target.value)}
+                      onChange={(event) =>
+                        updateField("state", event.target.value)
+                      }
                       value={editingForm.state ?? ""}
                     />
                   </label>
@@ -785,7 +871,9 @@ export function CompanyDetailPage({
                       onChange={(event) =>
                         updateField(
                           "lead_score",
-                          event.target.value === "" ? null : Number(event.target.value),
+                          event.target.value === ""
+                            ? null
+                            : Number(event.target.value),
                         )
                       }
                       type="number"
@@ -810,59 +898,8 @@ export function CompanyDetailPage({
                   </button>
                 </div>
               </form>
-            ) : (
-              <dl className="company-overview-grid">
-                <DetailField label="Industry" value={company.industry} />
-                <DetailField label="Location" value={location || null} />
-                <DetailField label="Lead score">
-                  {company.lead_score === null ? "Not scored" : `${company.lead_score} / 100`}
-                </DetailField>
-                <DetailField label="Added">
-                  <time dateTime={company.created_at}>
-                    {formatDate(company.created_at)}
-                  </time>
-                </DetailField>
-                <DetailField label="Software need" wide>
-                  {company.software_need || "No software need recorded."}
-                </DetailField>
-              </dl>
-            )}
-          </section>
-
-          <RecordSection
-            title="Contacts"
-            subtitle="Publicly listed contact details"
-            icon="♙"
-            count={company.contacts.length}
-            empty="No public contact information has been added yet."
-          >
-            {company.contacts.map((contact) => (
-              <article className="detail-record-card" key={contact.id}>
-                <span className="contact-avatar" aria-hidden="true">
-                  {(contact.name ?? "?").slice(0, 1).toUpperCase()}
-                </span>
-                <div className="contact-card-content">
-                  <strong>{contact.name || "Unnamed contact"}</strong>
-                  <span>{contact.role || "Role not provided"}</span>
-                  <div className="contact-links">
-                    {contact.business_email && (
-                      <a href={`mailto:${contact.business_email}`}>
-                        {contact.business_email}
-                      </a>
-                    )}
-                    {contact.business_phone && (
-                      <a href={`tel:${contact.business_phone}`}>
-                        {contact.business_phone}
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <span className={`public-label${contact.is_publicly_listed ? "" : " not-public"}`}>
-                  {contact.is_publicly_listed ? "Publicly listed" : "Not confirmed public"}
-                </span>
-              </article>
-            ))}
-          </RecordSection>
+            </section>
+          )}
 
           <RecordSection
             title="Research sources"
@@ -872,20 +909,27 @@ export function CompanyDetailPage({
             empty="No research sources are attached to this company."
           >
             {company.sources.map((source) => (
-              <article className="detail-record-card source-card" key={source.id}>
+              <article
+                className="detail-record-card source-card"
+                key={source.id}
+              >
                 <div className="source-card-top">
                   <span className="source-kind">
-                    {source.source_type?.replaceAll("_", " ") || "Research source"}
+                    {source.source_type?.replaceAll("_", " ") ||
+                      "Research source"}
                   </span>
                   <span>{formatDate(source.created_at)}</span>
                 </div>
                 <a href={source.source_url} rel="noreferrer" target="_blank">
-                  {source.source_url}<span aria-hidden="true"> ↗</span>
+                  {source.source_url}
+                  <span aria-hidden="true"> ↗</span>
                 </a>
                 <button
                   className="button button-secondary research-source-crawl-button"
                   disabled={researchSourceMutation.isPending}
-                  onClick={() => researchSourceMutation.mutate(source.source_url)}
+                  onClick={() =>
+                    researchSourceMutation.mutate(source.source_url)
+                  }
                   type="button"
                 >
                   {researchSourceMutation.isPending &&
@@ -907,8 +951,8 @@ export function CompanyDetailPage({
                       <p>{researchSourceMutation.error.message}</p>
                       <span>
                         Temporary network or server errors may clear on retry.
-                        Sites that deny automated access require an approved
-                        API or permission from the site owner.
+                        Sites that deny automated access require an approved API
+                        or permission from the site owner.
                       </span>
                     </div>
                   )}
@@ -931,9 +975,15 @@ export function CompanyDetailPage({
           >
             <div className="keyword-list">
               {company.search_keywords.map((keyword, index) => (
-                <article className="keyword-card" key={`${keyword.keyword}-${keyword.searched_at}-${index}`}>
+                <article
+                  className="keyword-card"
+                  key={`${keyword.keyword}-${keyword.searched_at}-${index}`}
+                >
                   <span aria-hidden="true">⌕</span>
-                  <div><strong>{keyword.keyword}</strong><small>{formatDate(keyword.searched_at)}</small></div>
+                  <div>
+                    <strong>{keyword.keyword}</strong>
+                    <small>{formatDate(keyword.searched_at)}</small>
+                  </div>
                 </article>
               ))}
             </div>
@@ -974,9 +1024,7 @@ export function CompanyDetailPage({
                       pageSpeedMutation.isPending ||
                       !(company.website || company.domain)
                     }
-                    onClick={() =>
-                      pageSpeedMutation.mutate(pageSpeedStrategy)
-                    }
+                    onClick={() => pageSpeedMutation.mutate(pageSpeedStrategy)}
                     type="button"
                   >
                     {pageSpeedMutation.isPending
@@ -1023,33 +1071,51 @@ export function CompanyDetailPage({
                       return (
                         <div key={category}>
                           <span>{label}</span>
-                          <strong>{score === null || score === undefined ? "—" : `${score}/100`}</strong>
+                          <strong>
+                            {score === null || score === undefined
+                              ? "—"
+                              : `${score}/100`}
+                          </strong>
                         </div>
                       );
                     })}
                   </div>
                   <button
                     className="text-button pagespeed-toggle"
-                    onClick={() => setExpandedScanId(isExpanded ? null : scan.id)}
+                    onClick={() =>
+                      setExpandedScanId(isExpanded ? null : scan.id)
+                    }
                     type="button"
                   >
-                    {isExpanded ? "Hide detailed audits" : "View detailed audits"}
+                    {isExpanded
+                      ? "Hide detailed audits"
+                      : "View detailed audits"}
                     <span aria-hidden="true">{isExpanded ? " ↑" : " ↓"}</span>
                   </button>
                   {isExpanded && scanQuery.isPending && (
-                    <p className="record-empty">Loading Lighthouse audit details…</p>
+                    <p className="record-empty">
+                      Loading Lighthouse audit details…
+                    </p>
                   )}
                   {isExpanded && scanQuery.isError && (
-                    <p className="pagespeed-error" role="alert">{scanQuery.error.message}</p>
+                    <p className="pagespeed-error" role="alert">
+                      {scanQuery.error.message}
+                    </p>
                   )}
                   {isExpanded && expandedReport && (
                     <div className="pagespeed-audits">
-                      <p>Lighthouse {expandedReport.lighthouseResult.lighthouseVersion ?? "version unavailable"}</p>
+                      <p>
+                        Lighthouse{" "}
+                        {expandedReport.lighthouseResult.lighthouseVersion ??
+                          "version unavailable"}
+                      </p>
                       {audits.map(([id, audit]) => (
                         <AuditItem audit={audit} key={id} />
                       ))}
                       {audits.length === 0 && (
-                        <p className="record-empty">No detailed Lighthouse audits were included.</p>
+                        <p className="record-empty">
+                          No detailed Lighthouse audits were included.
+                        </p>
                       )}
                     </div>
                   )}
@@ -1060,12 +1126,20 @@ export function CompanyDetailPage({
 
           <section className="panel detail-danger-zone">
             <div className="detail-section-heading">
-              <span className="section-icon danger" aria-hidden="true">!</span>
-              <div><h2>Remove company</h2><p>Delete this record and its related data</p></div>
+              <span className="section-icon danger" aria-hidden="true">
+                !
+              </span>
+              <div>
+                <h2>Remove company</h2>
+                <p>Delete this record and its related data</p>
+              </div>
             </div>
             {isDeleteConfirmed ? (
               <div className="delete-confirm-panel">
-                <p>This will permanently delete {company.name} and its related records.</p>
+                <p>
+                  This will permanently delete {company.name} and its related
+                  records.
+                </p>
                 <div>
                   <button
                     className="button button-secondary"
@@ -1080,7 +1154,9 @@ export function CompanyDetailPage({
                     onClick={() => deleteMutation.mutate()}
                     type="button"
                   >
-                    {deleteMutation.isPending ? "Deleting…" : "Delete permanently"}
+                    {deleteMutation.isPending
+                      ? "Deleting…"
+                      : "Delete permanently"}
                   </button>
                 </div>
               </div>
@@ -1121,20 +1197,19 @@ function getSocialLink(value: string): {
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
 
     const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
-    const platform: SocialPlatform =
-      hostname.includes("facebook.com")
-        ? "facebook"
-        : hostname.includes("instagram.com")
-          ? "instagram"
-          : hostname.includes("linkedin.com")
-            ? "linkedin"
-            : hostname.includes("tiktok.com")
-              ? "tiktok"
-              : hostname === "x.com" || hostname.includes("twitter.com")
-                ? "x"
-                : hostname.includes("youtube.com") || hostname === "youtu.be"
-                  ? "youtube"
-                  : "generic";
+    const platform: SocialPlatform = hostname.includes("facebook.com")
+      ? "facebook"
+      : hostname.includes("instagram.com")
+        ? "instagram"
+        : hostname.includes("linkedin.com")
+          ? "linkedin"
+          : hostname.includes("tiktok.com")
+            ? "tiktok"
+            : hostname === "x.com" || hostname.includes("twitter.com")
+              ? "x"
+              : hostname.includes("youtube.com") || hostname === "youtu.be"
+                ? "youtube"
+                : "generic";
     const labels: Record<SocialPlatform, string> = {
       facebook: "Facebook",
       instagram: "Instagram",
@@ -1155,7 +1230,15 @@ function SocialLinkIcon({ platform }: { platform: SocialPlatform }) {
   if (platform === "instagram") {
     return (
       <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-        <rect height="16" rx="5" stroke="currentColor" strokeWidth="2" width="16" x="4" y="4" />
+        <rect
+          height="16"
+          rx="5"
+          stroke="currentColor"
+          strokeWidth="2"
+          width="16"
+          x="4"
+          y="4"
+        />
         <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="2" />
         <circle cx="17.5" cy="6.8" r="1" fill="currentColor" />
       </svg>
@@ -1164,14 +1247,23 @@ function SocialLinkIcon({ platform }: { platform: SocialPlatform }) {
   if (platform === "youtube") {
     return (
       <svg aria-hidden="true" viewBox="0 0 24 24">
-        <path d="M21 7.2a2.8 2.8 0 0 0-2-2C17.2 4.7 12 4.7 12 4.7s-5.2 0-7 .5a2.8 2.8 0 0 0-2 2A29 29 0 0 0 2.5 12a29 29 0 0 0 .5 4.8 2.8 2.8 0 0 0 2 2c1.8.5 7 .5 7 .5s5.2 0 7-.5a2.8 2.8 0 0 0 2-2 29 29 0 0 0 .5-4.8 29 29 0 0 0-.5-4.8ZM10 15.5v-7l6 3.5-6 3.5Z" fill="currentColor" />
+        <path
+          d="M21 7.2a2.8 2.8 0 0 0-2-2C17.2 4.7 12 4.7 12 4.7s-5.2 0-7 .5a2.8 2.8 0 0 0-2 2A29 29 0 0 0 2.5 12a29 29 0 0 0 .5 4.8 2.8 2.8 0 0 0 2 2c1.8.5 7 .5 7 .5s5.2 0 7-.5a2.8 2.8 0 0 0 2-2 29 29 0 0 0 .5-4.8 29 29 0 0 0-.5-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"
+          fill="currentColor"
+        />
       </svg>
     );
   }
   if (platform === "generic") {
     return (
       <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-        <path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7M14 10.5a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 19.2l1.7-1.7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path
+          d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7M14 10.5a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 19.2l1.7-1.7"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
       </svg>
     );
   }
@@ -1186,25 +1278,6 @@ function SocialLinkIcon({ platform }: { platform: SocialPlatform }) {
     x: "X",
   };
   return <span aria-hidden="true">{glyphs[platform]}</span>;
-}
-
-function DetailField({
-  label,
-  value,
-  children,
-  wide = false,
-}: {
-  label: string;
-  value?: string | null;
-  children?: ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div className={`overview-field${wide ? " overview-field-wide" : ""}`}>
-      <dt>{label}</dt>
-      <dd>{children ?? value ?? "—"}</dd>
-    </div>
-  );
 }
 
 function RecordSection({
@@ -1227,9 +1300,14 @@ function RecordSection({
   return (
     <section className="panel detail-section">
       <div className="detail-section-heading">
-        <span className="section-icon violet" aria-hidden="true">{icon}</span>
+        <span className="section-icon violet" aria-hidden="true">
+          {icon}
+        </span>
         <div className="detail-section-title">
-          <h2>{title}<span>{count}</span></h2>
+          <h2>
+            {title}
+            <span>{count}</span>
+          </h2>
           <p>{subtitle}</p>
         </div>
       </div>
