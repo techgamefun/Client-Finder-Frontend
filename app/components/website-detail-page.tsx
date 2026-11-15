@@ -344,6 +344,13 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
               }))}
             />
             <LinkList
+              label="Phone numbers"
+              links={(crawl?.phones ?? []).map((phone) => ({
+                label: phone,
+                href: `tel:${phone}`,
+              }))}
+            />
+            <LinkList
               label="Social links"
               links={(crawl?.social_links ?? []).map((url) => ({
                 label: url,
@@ -488,7 +495,11 @@ function LinkList({
         <ul>
           {links.map(({ label: linkLabel, href }) => (
             <li key={href}>
-              <a href={href} rel="noreferrer" target="_blank">
+              <a
+                href={href}
+                rel={href.startsWith("http") ? "noreferrer" : undefined}
+                target={href.startsWith("http") ? "_blank" : undefined}
+              >
                 {linkLabel}
               </a>
             </li>

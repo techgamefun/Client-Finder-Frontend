@@ -5,17 +5,27 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
+  createCompanyContact,
   createPageSpeedScan,
   crawlCompanyWebsite,
+  deleteCompanyContact,
   deleteCompany,
   getCompany,
+  getCompanyContacts,
   getCompanyWebsiteCrawl,
   getPageSpeedScan,
   getWebsiteCrawlJob,
+  updateCompanyContact,
   updateCompany,
   updateLeadStatus,
 } from "@/lib/api";
-import type { Company, CompanyUpdateInput, PageSpeedAudit } from "@/lib/api";
+import type {
+  Company,
+  CompanyUpdateInput,
+  Contact,
+  ContactInput,
+  PageSpeedAudit,
+} from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
 
 const leadStatuses = [
@@ -26,6 +36,22 @@ const leadStatuses = [
   "converted",
   "disqualified",
 ];
+
+type ContactFormState = {
+  name: string;
+  role: string;
+  business_email: string;
+  business_phone: string;
+  is_publicly_listed: boolean;
+};
+
+const emptyContactForm: ContactFormState = {
+  name: "",
+  role: "",
+  business_email: "",
+  business_phone: "",
+  is_publicly_listed: false,
+};
 
 export function CompanyDetailPage({
   companyId: companyIdParam,
@@ -42,6 +68,15 @@ export function CompanyDetailPage({
     null,
   );
   const [activeCompanyInfoTab, setActiveCompanyInfoTab] = useState("about");
+  const [isContactFormOpen, setIsContactFormOpen] = useState(false);
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [deletingContactId, setDeletingContactId] = useState<string | null>(
+    null,
+  );
+  const [contactInteractionCompanyId, setContactInteractionCompanyId] =
+    useState<string | null>(null);
+  const [contactForm, setContactForm] =
+    useState<ContactFormState>(emptyContactForm);
   const [pageSpeedStrategy, setPageSpeedStrategy] = useState<
     "mobile" | "desktop"
   >("mobile");
@@ -59,6 +94,16 @@ export function CompanyDetailPage({
         throw new Error("A valid company ID is required to load this record.");
       }
       return getCompany(companyId);
+    },
+    enabled: companyId !== null,
+  });
+  const contactsQuery = useQuery({
+    queryKey: ["company-contacts", companyId],
+    queryFn: () => {
+      if (companyId === null) {
+        throw new Error("A company must be loaded before its contacts.");
+      }
+      return getCompanyContacts(companyId);
     },
     enabled: companyId !== null,
   });
@@ -174,6 +219,72 @@ export function CompanyDetailPage({
       router.push("/leads");
     },
   });
+  const createContactMutation = useMutation({
+    mutationFn: (input: ContactInput) => {
+      if (companyId === null) {
+        throw new Error("A company must be loaded before adding a contact.");
+      }
+      return createCompanyContact(companyId, input);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["company-contacts", companyId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["company", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["companies"] }),
+      ]);
+      setIsContactFormOpen(false);
+      setContactForm({ ...emptyContactForm });
+      setContactInteractionCompanyId(null);
+    },
+  });
+  const updateContactMutation = useMutation({
+    mutationFn: ({
+      contactId,
+      input,
+    }: {
+      contactId: string;
+      input: ContactInput;
+    }) => {
+      if (companyId === null) {
+        throw new Error("A company must be loaded before updating a contact.");
+      }
+      return updateCompanyContact(companyId, contactId, input);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["company-contacts", companyId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["company", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["companies"] }),
+      ]);
+      setIsContactFormOpen(false);
+      setEditingContactId(null);
+      setContactForm({ ...emptyContactForm });
+      setContactInteractionCompanyId(null);
+    },
+  });
+  const deleteContactMutation = useMutation({
+    mutationFn: (contactId: string) => {
+      if (companyId === null) {
+        throw new Error("A company must be loaded before deleting a contact.");
+      }
+      return deleteCompanyContact(companyId, contactId);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["company-contacts", companyId],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["company", companyId] }),
+        queryClient.invalidateQueries({ queryKey: ["companies"] }),
+      ]);
+      setDeletingContactId(null);
+      setContactInteractionCompanyId(null);
+    },
+  });
   useEffect(() => {
     const job = websiteCrawlJobQuery.data;
     if (job?.status === "succeeded" && job.result && companyId !== null) {
@@ -245,6 +356,10 @@ export function CompanyDetailPage({
 
   const company = companyQuery.data;
   if (!company) return null;
+  const contacts = contactsQuery.data ?? company.contacts;
+  const contactInteractionIsCurrent = contactInteractionCompanyId === companyId;
+  const isContactFormVisible =
+    isContactFormOpen && contactInteractionIsCurrent;
 
   function startEditing(record: Company) {
     setEditingForm({
@@ -282,6 +397,60 @@ export function CompanyDetailPage({
     setEditingForm((current) => ({ ...current, [key]: value }));
   }
 
+  function startContactCreation() {
+    setContactInteractionCompanyId(companyId);
+    setEditingContactId(null);
+    setDeletingContactId(null);
+    setContactForm({ ...emptyContactForm });
+    setIsContactFormOpen(true);
+    createContactMutation.reset();
+    updateContactMutation.reset();
+  }
+
+  function startContactEditing(contact: Contact) {
+    setContactInteractionCompanyId(companyId);
+    setEditingContactId(contact.id);
+    setDeletingContactId(null);
+    setContactForm({
+      name: contact.name ?? "",
+      role: contact.role ?? "",
+      business_email: contact.business_email ?? "",
+      business_phone: contact.business_phone ?? "",
+      is_publicly_listed: contact.is_publicly_listed,
+    });
+    setIsContactFormOpen(true);
+    createContactMutation.reset();
+    updateContactMutation.reset();
+  }
+
+  function cancelContactEditing() {
+    setIsContactFormOpen(false);
+    setEditingContactId(null);
+    setContactForm({ ...emptyContactForm });
+    setContactInteractionCompanyId(null);
+    createContactMutation.reset();
+    updateContactMutation.reset();
+  }
+
+  function handleContactSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const input: ContactInput = {
+      name: cleanText(contactForm.name),
+      role: cleanText(contactForm.role),
+      business_email: cleanText(contactForm.business_email),
+      business_phone: cleanText(contactForm.business_phone),
+      is_publicly_listed: contactForm.is_publicly_listed,
+    };
+    if (editingContactId && contactInteractionIsCurrent) {
+      updateContactMutation.mutate({
+        contactId: editingContactId,
+        input,
+      });
+    } else {
+      createContactMutation.mutate(input);
+    }
+  }
+
   const location = [company.city, company.state].filter(Boolean).join(", ");
   const expandedReport =
     expandedScanId !== null && scanQuery.data?.id === expandedScanId
@@ -299,51 +468,38 @@ export function CompanyDetailPage({
           label: "Home",
           url: crawl.home_page_url,
           content: crawl.home_content,
-          emails: [],
         },
         {
           id: "about",
           label: "About",
           url: crawl.about_page_url,
           content: crawl.about_content,
-          emails: [],
         },
         {
           id: "blog",
           label: "Blog",
           url: crawl.blog_page_url,
           content: crawl.blog_content,
-          emails: [],
         },
         {
           id: "service",
           label: "Services",
           url: crawl.service_page_url,
           content: crawl.service_content,
-          emails: [],
         },
         {
           id: "contact",
           label: "Contact",
           url: crawl.contact_page_url,
           content: crawl.contact_content,
-          emails: [],
         },
         {
           id: "goals",
           label: "Mission & goals",
           url: crawl.goals_page_url,
           content: crawl.goals_content,
-          emails: [],
         },
-        {
-          id: "emails",
-          label: "Email addresses",
-          url: null,
-          content: null,
-          emails: crawl.emails,
-        },
-      ].filter((tab) => tab.url || tab.content || tab.emails.length > 0)
+      ].filter((tab) => tab.url || tab.content)
     : [];
   const companyInfoTabs = [
     ...crawlInfoTabs,
@@ -352,14 +508,12 @@ export function CompanyDetailPage({
       label: "Contacts",
       url: null,
       content: null,
-      emails: [],
     },
     {
       id: "location",
       label: "Location",
       url: null,
       content: location || "No location information recorded.",
-      emails: [],
     },
   ];
   const selectedCompanyInfoTab =
@@ -585,81 +739,283 @@ export function CompanyDetailPage({
               tabIndex={0}
             >
               {selectedCompanyInfoTab.id === "contacts" ? (
-                company.contacts.length === 0 ? (
-                  <p className="company-info-empty">
-                    No public contact information has been added yet.
-                  </p>
-                ) : (
-                  <div className="company-info-contacts">
-                    {(isCompanyInfoExpanded
-                      ? company.contacts
-                      : company.contacts.slice(0, 5)
-                    ).map((contact) => (
-                      <article
-                        className="detail-record-card"
-                        key={contact.id}
+                <section aria-label="Manage company contacts">
+                  <div className="company-contact-toolbar">
+                    <p>
+                      {contacts.length} saved{" "}
+                      {contacts.length === 1 ? "contact" : "contacts"}
+                    </p>
+                    <button
+                      className="button button-secondary"
+                      onClick={startContactCreation}
+                      type="button"
+                    >
+                      <span aria-hidden="true">＋</span> Add contact
+                    </button>
+                  </div>
+
+                  {contactsQuery.isLoading && (
+                    <p className="company-info-empty" role="status">
+                      Loading contacts…
+                    </p>
+                  )}
+                  {contactsQuery.isError && (
+                    <div className="alert alert-error" role="alert">
+                      Could not load contacts: {contactsQuery.error.message}
+                      <button
+                        className="button button-secondary"
+                        onClick={() => void contactsQuery.refetch()}
+                        type="button"
                       >
-                        <span className="contact-avatar" aria-hidden="true">
-                          {(contact.name ?? "?").slice(0, 1).toUpperCase()}
-                        </span>
-                        <div className="contact-card-content">
-                          <strong>
-                            {contact.name || "Unnamed contact"}
-                          </strong>
-                          <span>{contact.role || "Role not provided"}</span>
-                          <div className="contact-links">
-                            {contact.business_email && (
-                              <a href={`mailto:${contact.business_email}`}>
-                                {contact.business_email}
-                              </a>
-                            )}
-                            {contact.business_phone && (
-                              <a href={`tel:${contact.business_phone}`}>
-                                {contact.business_phone}
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                        <span
-                          className={`public-label${contact.is_publicly_listed ? "" : " not-public"}`}
-                        >
-                          {contact.is_publicly_listed
-                            ? "Publicly listed"
-                            : "Not confirmed public"}
-                        </span>
-                        </article>
-                      ))}
+                        Try again
+                      </button>
                     </div>
-                  )
-                ) : selectedCompanyInfoTab.id === "emails" ? (
-                  <ul className="company-info-emails">
-                    {(isCompanyInfoExpanded
-                      ? selectedCompanyInfoTab.emails
-                      : selectedCompanyInfoTab.emails.slice(0, 5)
-                    ).map((email) => (
-                      <li key={email}>
-                        <a href={`mailto:${email}`}>{email}</a>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p
-                    className={
-                      (selectedCompanyInfoTab.content?.length ?? 0) > 240 &&
-                      !isCompanyInfoExpanded
-                        ? "is-collapsed"
-                        : "is-expanded"
-                    }
-                  >
-                    {selectedCompanyInfoTab.content ||
-                      "No page text was extracted."}
-                  </p>
-                )}
-              </div>
-              {((selectedCompanyInfoTab.id === "emails" &&
-                selectedCompanyInfoTab.emails.length > 5) ||
-                (selectedCompanyInfoTab.id === "contacts" &&
-                  company.contacts.length > 5) ||
+                  )}
+                  {createContactMutation.isError && (
+                    <div className="alert alert-error" role="alert">
+                      Could not add contact: {createContactMutation.error.message}
+                    </div>
+                  )}
+                  {updateContactMutation.isError && (
+                    <div className="alert alert-error" role="alert">
+                      Could not update contact: {updateContactMutation.error.message}
+                    </div>
+                  )}
+                  {deleteContactMutation.isError && (
+                    <div className="alert alert-error" role="alert">
+                      Could not delete contact: {deleteContactMutation.error.message}
+                    </div>
+                  )}
+
+                  {isContactFormVisible && (
+                    <form
+                      className="contact-management-form"
+                      onSubmit={handleContactSubmit}
+                    >
+                      <div className="contact-management-form-heading">
+                        <strong>
+                          {editingContactId ? "Edit contact" : "Add a contact"}
+                        </strong>
+                        <span>
+                          Add at least a name, role, email address, or phone number.
+                        </span>
+                      </div>
+                      <div className="contact-management-fields">
+                        <label className="contact-management-field">
+                          Name
+                          <input
+                            autoComplete="name"
+                            maxLength={200}
+                            onChange={(event) =>
+                              setContactForm((current) => ({
+                                ...current,
+                                name: event.target.value,
+                              }))
+                            }
+                            value={contactForm.name}
+                          />
+                        </label>
+                        <label className="contact-management-field">
+                          Role
+                          <input
+                            autoComplete="organization-title"
+                            maxLength={150}
+                            onChange={(event) =>
+                              setContactForm((current) => ({
+                                ...current,
+                                role: event.target.value,
+                              }))
+                            }
+                            value={contactForm.role}
+                          />
+                        </label>
+                        <label className="contact-management-field">
+                          Business email
+                          <input
+                            autoComplete="email"
+                            maxLength={320}
+                            onChange={(event) =>
+                              setContactForm((current) => ({
+                                ...current,
+                                business_email: event.target.value,
+                              }))
+                            }
+                            type="email"
+                            value={contactForm.business_email}
+                          />
+                        </label>
+                        <label className="contact-management-field">
+                          Business phone
+                          <input
+                            autoComplete="tel"
+                            maxLength={50}
+                            onChange={(event) =>
+                              setContactForm((current) => ({
+                                ...current,
+                                business_phone: event.target.value,
+                              }))
+                            }
+                            type="tel"
+                            value={contactForm.business_phone}
+                          />
+                        </label>
+                      </div>
+                      <label className="contact-public-checkbox">
+                        <input
+                          checked={contactForm.is_publicly_listed}
+                          onChange={(event) =>
+                            setContactForm((current) => ({
+                              ...current,
+                              is_publicly_listed: event.target.checked,
+                            }))
+                          }
+                          type="checkbox"
+                        />
+                        This contact information is publicly listed
+                      </label>
+                      <div className="contact-management-actions">
+                        <button
+                          className="button button-primary"
+                          disabled={
+                            createContactMutation.isPending ||
+                            updateContactMutation.isPending ||
+                            !(
+                              contactForm.name.trim() ||
+                              contactForm.role.trim() ||
+                              contactForm.business_email.trim() ||
+                              contactForm.business_phone.trim()
+                            )
+                          }
+                          type="submit"
+                        >
+                          {createContactMutation.isPending ||
+                          updateContactMutation.isPending
+                            ? "Saving…"
+                            : editingContactId
+                              ? "Save contact"
+                              : "Add contact"}
+                        </button>
+                        <button
+                          className="button button-secondary"
+                          onClick={cancelContactEditing}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {contacts.length === 0 ? (
+                    <p className="company-info-empty">
+                      No contacts have been added to this company yet.
+                    </p>
+                  ) : (
+                    <div className="company-info-contacts">
+                      {(isCompanyInfoExpanded ? contacts : contacts.slice(0, 5)).map(
+                        (contact) => (
+                          <article
+                            className="detail-record-card"
+                            key={contact.id}
+                          >
+                            <span className="contact-avatar" aria-hidden="true">
+                              {(contact.name ?? "?").slice(0, 1).toUpperCase()}
+                            </span>
+                            <div className="contact-card-content">
+                              <strong>
+                                {contact.name || "Unnamed contact"}
+                              </strong>
+                              <span>{contact.role || "Role not provided"}</span>
+                              <div className="contact-links">
+                                {contact.business_email && (
+                                  <a href={`mailto:${contact.business_email}`}>
+                                    {contact.business_email}
+                                  </a>
+                                )}
+                                {contact.business_phone && (
+                                  <a href={`tel:${contact.business_phone}`}>
+                                    {contact.business_phone}
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                            <span
+                              className={`public-label${contact.is_publicly_listed ? "" : " not-public"}`}
+                            >
+                              {contact.is_publicly_listed
+                                ? "Publicly listed"
+                                : "Not confirmed public"}
+                            </span>
+                            <div className="contact-card-actions">
+                              {contactInteractionIsCurrent &&
+                              deletingContactId === contact.id ? (
+                                <>
+                                  <span>Delete this contact?</span>
+                                  <button
+                                    className="contact-action-button"
+                                    onClick={() => setDeletingContactId(null)}
+                                    type="button"
+                                  >
+                                    Keep
+                                  </button>
+                                  <button
+                                    className="contact-action-button is-danger"
+                                    disabled={deleteContactMutation.isPending}
+                                    onClick={() =>
+                                      deleteContactMutation.mutate(contact.id)
+                                    }
+                                    type="button"
+                                  >
+                                    {deleteContactMutation.isPending
+                                      ? "Deleting…"
+                                      : "Confirm"}
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="contact-action-button"
+                                    onClick={() => startContactEditing(contact)}
+                                    type="button"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className="contact-action-button is-danger"
+                                    onClick={() => {
+                                      setContactInteractionCompanyId(companyId);
+                                      deleteContactMutation.reset();
+                                      setDeletingContactId(contact.id)
+                                    }}
+                                    type="button"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </article>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </section>
+              ) : (
+                <p
+                  className={
+                    (selectedCompanyInfoTab.content?.length ?? 0) > 240 &&
+                    !isCompanyInfoExpanded
+                      ? "is-collapsed"
+                      : "is-expanded"
+                  }
+                >
+                  {selectedCompanyInfoTab.content ||
+                    "No page text was extracted."}
+                </p>
+              )}
+            </div>
+            {((selectedCompanyInfoTab.id === "contacts" &&
+                contacts.length > 5) ||
                 (selectedCompanyInfoTab.content?.length ?? 0) > 240) && (
                 <button
                   aria-expanded={isCompanyInfoExpanded}
@@ -671,7 +1027,7 @@ export function CompanyDetailPage({
                 >
                   {isCompanyInfoExpanded ? "Show less" : "Show more"}
                 </button>
-              )}
+            )}
           </article>
         )}
         <div className="company-hero-actions">

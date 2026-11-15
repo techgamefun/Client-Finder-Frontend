@@ -73,7 +73,12 @@ function updatePipelineQuery(updates: Record<string, string | null>) {
   window.dispatchEvent(new Event(pipelineQueryChangedEvent));
 }
 
-export function LeadsPage() {
+export function LeadsPage({
+  view = "leads",
+}: {
+  view?: "companies" | "leads";
+}) {
+  const isCompanyDatabaseView = view === "companies";
   const queryClient = useQueryClient();
   const pipelineSearch = useSyncExternalStore(
     subscribeToPipelineQuery,
@@ -169,7 +174,14 @@ export function LeadsPage() {
     },
   });
 
-  const companies = companiesQuery.data ?? noCompanies;
+  const allCompanies = companiesQuery.data ?? noCompanies;
+  const companies = useMemo(
+    () =>
+      isCompanyDatabaseView
+        ? allCompanies
+        : allCompanies.filter((company) => company.contacts.length > 0),
+    [allCompanies, isCompanyDatabaseView],
+  );
   const filteredCompanies = useMemo(() => {
     const term = companyFilter.trim().toLowerCase();
     return companies.filter((company) => {
@@ -212,6 +224,24 @@ export function LeadsPage() {
       ),
     [filteredCompanies, pageSize, visiblePage],
   );
+  const emptyStateTitle =
+    companies.length > 0
+      ? isCompanyDatabaseView
+        ? "No companies match your filters"
+        : "No leads match your filters"
+      : isCompanyDatabaseView
+        ? "Your company database is empty"
+        : allCompanies.length > 0
+          ? "No leads yet"
+          : "No companies yet";
+  const emptyStateDescription =
+    companies.length > 0
+      ? "Try a different search term or filter."
+      : isCompanyDatabaseView
+        ? "Discover companies or add one manually to build your database."
+        : allCompanies.length > 0
+          ? "Add a contact to a company in Companies. It will appear here automatically."
+          : "Add or discover a company in Companies. Leads appear once a company has a contact.";
 
   function handleCreateCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -282,28 +312,36 @@ export function LeadsPage() {
         <div className="leads-filter-section">
           <div className="leads-filter-heading">
             <div>
-              <h1>Lead pipeline</h1>
+              <h1>{isCompanyDatabaseView ? "Companies" : "Lead pipeline"}</h1>
               <p className="heading-copy">
-                Manage and review your company prospects.
+                {isCompanyDatabaseView
+                  ? "Your complete company database, including companies without contacts."
+                  : "Companies with at least one contact, ready for your pipeline."}
               </p>
             </div>
-            <button
-              className="button button-primary"
-              onClick={() => {
-                createMutation.reset();
-                addCompanyDialogRef.current?.showModal();
-              }}
-              type="button"
-            >
-              <span aria-hidden="true">＋</span> Add a company
-            </button>
+            {isCompanyDatabaseView ? (
+              <button
+                className="button button-primary"
+                onClick={() => {
+                  createMutation.reset();
+                  addCompanyDialogRef.current?.showModal();
+                }}
+                type="button"
+              >
+                <span aria-hidden="true">＋</span> Add a company
+              </button>
+            ) : (
+              <Link className="button button-secondary" href="/companies">
+                Manage companies <span aria-hidden="true">→</span>
+              </Link>
+            )}
           </div>
           <div>
             <div className="pipeline-tools leads-filter-controls">
               <label className="filter-input">
                 <span aria-hidden="true">⌕</span>
                 <span className="sr-only">
-                  Search leads, source domains, and URLs
+                  Search {isCompanyDatabaseView ? "companies" : "leads"}, domains, and URLs
                 </span>
                 <input
                   onChange={(event) =>
@@ -312,7 +350,11 @@ export function LeadsPage() {
                       page: null,
                     })
                   }
-                  placeholder="Search leads or source domains"
+                  placeholder={
+                    isCompanyDatabaseView
+                      ? "Search companies or domains"
+                      : "Search leads or domains"
+                  }
                   value={companyFilter}
                 />
               </label>
@@ -367,7 +409,7 @@ export function LeadsPage() {
                 </select>
               </label>
               <button
-                aria-label="Refresh leads"
+                aria-label={`Refresh ${isCompanyDatabaseView ? "companies" : "leads"}`}
                 className="icon-button refresh-button"
                 disabled={companiesQuery.isFetching}
                 onClick={() => void companiesQuery.refetch()}
@@ -381,7 +423,9 @@ export function LeadsPage() {
 
         {companiesQuery.isError ? (
           <div className="query-error" role="alert">
-            <strong>Could not load your leads.</strong>
+            <strong>
+              Could not load {isCompanyDatabaseView ? "companies" : "leads"}.
+            </strong>
             <span>{companiesQuery.error.message}</span>
             <button
               className="button button-secondary"
@@ -392,25 +436,28 @@ export function LeadsPage() {
             </button>
           </div>
         ) : companiesQuery.isLoading ? (
-          <div className="table-state">Loading your pipeline...</div>
+          <div className="table-state">
+            Loading {isCompanyDatabaseView ? "companies" : "leads"}...
+          </div>
         ) : filteredCompanies.length === 0 ? (
           <div className="table-state empty-state">
             <span className="empty-symbol">▤</span>
-            <strong>
-              {companies.length === 0
-                ? "Your pipeline is ready"
-                : "No leads match your filters"}
-            </strong>
-            <span>
-              {companies.length === 0
-                ? "Discover companies or add one manually to get started."
-                : "Try a different search term or filter."}
-            </span>
+            <strong>{emptyStateTitle}</strong>
+            <span>{emptyStateDescription}</span>
+            {!isCompanyDatabaseView && companies.length === 0 && (
+              <Link className="text-link" href="/companies">
+                Go to Companies <span aria-hidden="true">→</span>
+              </Link>
+            )}
           </div>
         ) : (
           <>
             <div
-              aria-label="Company leads list"
+              aria-label={
+                isCompanyDatabaseView
+                  ? "Company master database"
+                  : "Company leads list"
+              }
               className="table-scroll"
               tabIndex={0}
             >
@@ -418,6 +465,7 @@ export function LeadsPage() {
               <thead>
                 <tr>
                   <th>COMPANY</th>
+                  <th>CONTACTS</th>
                   <th>INDUSTRY</th>
                   <th>LOCATION</th>
                   <th>STATUS</th>
@@ -431,6 +479,7 @@ export function LeadsPage() {
                   <Fragment key={company.id}>
                     <tr>
                       <td><CompanyName company={company} /></td>
+                      <td>{company.contacts.length}</td>
                       <td>{company.industry ?? "—"}</td>
                       <td>
                         {[company.city, company.state].filter(Boolean).join(", ") ||
@@ -482,7 +531,7 @@ export function LeadsPage() {
                     </tr>
                     {expandedCompanyId === company.id && (
                       <tr className="detail-row">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <section
                             aria-label={`${company.name} full record`}
                             className="company-record"
@@ -909,7 +958,8 @@ export function LeadsPage() {
                   ? 0
                   : (visiblePage - 1) * pageSize + 1}
                 –{Math.min(visiblePage * pageSize, filteredCompanies.length)} of{" "}
-                {filteredCompanies.length} leads
+                {filteredCompanies.length}{" "}
+                {isCompanyDatabaseView ? "companies" : "leads"}
                 {filteredCompanies.length !== companies.length &&
                   ` (from ${companies.length} total)`}
               </span>

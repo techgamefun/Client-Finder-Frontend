@@ -13,13 +13,14 @@ export function OverviewPage() {
     queryFn: getCompanies,
   });
   const companies = companiesQuery.data ?? noCompanies;
-  const reviewCount = companies.filter(
+  const leads = companies.filter((company) => company.contacts.length > 0);
+  const reviewCount = leads.filter(
     (company) => company.lead_status === "needs_review",
   ).length;
-  const scoredCount = companies.filter(
+  const scoredCount = leads.filter(
     (company) => company.lead_score !== null,
   ).length;
-  const recentCompanies = companies.slice(0, 5);
+  const recentLeads = leads.slice(0, 5);
 
   return (
     <>
@@ -32,7 +33,7 @@ export function OverviewPage() {
             websites, and move every opportunity forward.
           </p>
         </div>
-        <Link className="button button-primary" href="/leads#add-company">
+        <Link className="button button-primary" href="/companies">
           <span aria-hidden="true">＋</span> Add a company
         </Link>
       </section>
@@ -65,12 +66,12 @@ export function OverviewPage() {
         <article className="stat-card">
           <div className="stat-top">
             <span className="stat-icon violet">▤</span>
-            <span className="stat-caption">ALL LEADS</span>
+            <span className="stat-caption">COMPANIES WITH CONTACTS</span>
           </div>
           <strong className="stat-value">
-            {companiesQuery.isLoading ? "—" : companies.length}
+            {companiesQuery.isLoading ? "—" : leads.length}
           </strong>
-          <span className="stat-foot">Companies in your pipeline</span>
+          <span className="stat-foot">Included in your Lead pipeline</span>
         </article>
         <article className="stat-card">
           <div className="stat-top">
@@ -137,13 +138,21 @@ export function OverviewPage() {
           </div>
         ) : companiesQuery.isLoading ? (
           <div className="table-state">Loading your pipeline...</div>
-        ) : recentCompanies.length === 0 ? (
+        ) : recentLeads.length === 0 ? (
           <div className="table-state empty-state">
             <span className="empty-symbol">▤</span>
-            <strong>Your pipeline is ready</strong>
-            <span>Discover companies or add one manually to get started.</span>
-            <Link className="text-link" href="/discovery">
-              Discover your first leads <span aria-hidden="true">→</span>
+            <strong>
+              {companies.length === 0
+                ? "Your company database is empty"
+                : "No companies in Leads yet"}
+            </strong>
+            <span>
+              {companies.length === 0
+                ? "Add or discover a company to start building your database."
+                : "Add a contact to a company in Companies to move it into your pipeline."}
+            </span>
+            <Link className="text-link" href="/companies">
+              Go to Companies <span aria-hidden="true">→</span>
             </Link>
           </div>
         ) : (
@@ -159,7 +168,7 @@ export function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {recentCompanies.map((company) => (
+                {recentLeads.map((company) => (
                   <tr key={company.id}>
                     <td><CompanyName company={company} /></td>
                     <td>{company.industry ?? "—"}</td>

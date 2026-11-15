@@ -21,11 +21,13 @@ const noCompanies: Company[] = [];
 
 const pages = [
   { href: "/", icon: "◫", label: "Overview" },
+  { href: "/companies", icon: "▣", label: "Companies" },
   { href: "/leads", icon: "▤", label: "Lead pipeline" },
   { href: "/discovery", icon: "⌕", label: "Discover leads" },
   { href: "/websites", icon: "↗", label: "Websites" },
   { href: "/gmail", icon: "✉", label: "Gmail" },
   { href: "/templates", icon: "▧", label: "Email templates" },
+  { href: "/campaigns", icon: "↗", label: "Drip campaigns" },
   { href: "/crawler", icon: "◎", label: "Crawl a website" },
   { href: "/crawler/queue", icon: "↻", label: "Crawler queue" },
   { href: "/pagespeed-queue", icon: "◷", label: "PageSpeed queue" },
@@ -79,6 +81,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     },
   });
   const companies = companiesQuery.data ?? noCompanies;
+  const leadCount = companies.filter(
+    (company) => company.contacts.length > 0,
+  ).length;
   const connectionLabel = companiesQuery.isError
     ? "API unavailable"
     : companiesQuery.isLoading
@@ -157,7 +162,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
         <div className="sidebar-label">WORKSPACE</div>
         <Suspense fallback={<div className="sidebar-nav-loading" />}>
-          <WorkspaceNavigation companyCount={companies.length} />
+          <WorkspaceNavigation
+            companyCount={companies.length}
+            leadCount={leadCount}
+          />
         </Suspense>
 
         <button
@@ -211,7 +219,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   );
 }
 
-function WorkspaceNavigation({ companyCount }: { companyCount: number }) {
+function WorkspaceNavigation({
+  companyCount,
+  leadCount,
+}: {
+  companyCount: number;
+  leadCount: number;
+}) {
   const pathname = usePathname();
 
   return pages.map((page) => (
@@ -223,8 +237,10 @@ function WorkspaceNavigation({ companyCount }: { companyCount: number }) {
     >
       <span className="nav-icon">{page.icon}</span>
       {page.label}
-      {page.href === "/leads" && (
-        <span className="nav-count">{companyCount}</span>
+      {(page.href === "/companies" || page.href === "/leads") && (
+        <span className="nav-count">
+          {page.href === "/companies" ? companyCount : leadCount}
+        </span>
       )}
     </Link>
   ));

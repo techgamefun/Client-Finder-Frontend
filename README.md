@@ -30,6 +30,19 @@ mobile and desktop PageSpeed Insights scans across four Lighthouse categories.
 The Lead pipeline shows scan history and loads detailed audit reports on
 demand.
 
+Company detail pages include a **Contacts** tab for adding, editing, and
+removing company contacts. Contact changes are saved through the
+organization-scoped contact API and refresh the company and lead data.
+Crawled public email addresses and telephone numbers are imported as separate
+contacts, so contact details are managed in one place instead of a duplicate
+company email list. Raw crawl extractions remain visible on website profiles.
+
+The **Companies** page is the master database and includes companies with or
+without contacts. The **Lead pipeline** is a qualified view that includes only
+companies with at least one contact. Adding a contact from a company profile
+refreshes the shared company data, so that company then appears in the Lead
+pipeline automatically.
+
 The **Email templates** page lets organization admins create and manage shared
 HTML email templates. Members can render a database-backed preview for a
 company and contact, then send it using a Gmail account assigned to them.

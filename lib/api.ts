@@ -35,6 +35,15 @@ export interface SearchKeyword {
 
 export interface Contact {
   id: string;
+  company_id: string;
+  name: string | null;
+  role: string | null;
+  business_email: string | null;
+  business_phone: string | null;
+  is_publicly_listed: boolean;
+}
+
+export interface ContactInput {
   name: string | null;
   role: string | null;
   business_email: string | null;
@@ -230,6 +239,7 @@ export interface WebsiteCrawlResponse {
   goals_content: string | null;
   classification_signals: CrawlPageClassification[];
   emails: string[];
+  phones: string[];
   social_links: string[];
   crawled_at: string;
 }
@@ -626,6 +636,59 @@ export interface EmailTemplateSendResult {
   recipient_email: string;
 }
 
+export type EmailCampaignStatus =
+  | "draft"
+  | "running"
+  | "paused"
+  | "completed";
+
+export interface EmailCampaignRecipientCounts {
+  pending: number;
+  processing: number;
+  sent: number;
+  failed: number;
+  cancelled: number;
+}
+
+export interface EmailCampaign {
+  id: string;
+  org_id: string;
+  created_by: string;
+  name: string;
+  template_id: string;
+  gmail_account_ids: string[];
+  daily_limit_per_account: number;
+  min_delay_seconds: number;
+  max_delay_seconds: number;
+  send_window_start_hour: number;
+  send_window_end_hour: number;
+  timezone: string;
+  status: EmailCampaignStatus;
+  created_at: string;
+  updated_at: string;
+  recipient_counts: EmailCampaignRecipientCounts;
+}
+
+export interface EmailCampaignInput {
+  name: string;
+  template_id: string;
+  gmail_account_ids: string[];
+  daily_limit_per_account: number;
+  min_delay_seconds: number;
+  max_delay_seconds: number;
+  send_window_start_hour: number;
+  send_window_end_hour: number;
+  timezone: string;
+}
+
+export interface EmailCampaignPreview {
+  eligible_contact_count: number;
+  skipped_companies_without_email: number;
+  skipped_company_ids: string[];
+  daily_capacity_per_day: number;
+  estimated_completion_at: string | null;
+}
+
 export function getBootstrapStatus(): Promise<{ required: boolean }> {
   return request<{ required: boolean }>("/auth/bootstrap-status");
 }
@@ -923,11 +986,158 @@ export function sendEmailTemplate(
   );
 }
 
+export async function getEmailCampaigns(
+  orgId: string,
+): Promise<EmailCampaign[]> {
+  const pageSize = 100;
+  const campaigns: EmailCampaign[] = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await request<EmailCampaign[]>(
+      `/orgs/${encodeURIComponent(orgId)}/campaigns?limit=${pageSize}&offset=${offset}`,
+    );
+    campaigns.push(...page);
+    if (page.length < pageSize) return campaigns;
+  }
+}
+
+export function getEmailCampaign(
+  orgId: string,
+  campaignId: string,
+): Promise<EmailCampaign> {
+  return request<EmailCampaign>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}`,
+  );
+}
+
+export function createEmailCampaign(
+  orgId: string,
+  input: EmailCampaignInput,
+): Promise<EmailCampaign> {
+  return request<EmailCampaign>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function previewEmailCampaign(
+  orgId: string,
+  campaignId: string,
+  companyIds: string[],
+): Promise<EmailCampaignPreview> {
+  return request<EmailCampaignPreview>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds }),
+    },
+  );
+}
+
+export function startEmailCampaign(
+  orgId: string,
+  campaignId: string,
+  companyIds: string[],
+): Promise<EmailCampaign> {
+  return request<EmailCampaign>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}/start`,
+    {
+      method: "POST",
+      body: JSON.stringify({ company_ids: companyIds }),
+    },
+  );
+}
+
+export function pauseEmailCampaign(
+  orgId: string,
+  campaignId: string,
+): Promise<EmailCampaign> {
+  return request<EmailCampaign>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}/pause`,
+    { method: "POST" },
+  );
+}
+
+export function resumeEmailCampaign(
+  orgId: string,
+  campaignId: string,
+): Promise<EmailCampaign> {
+  return request<EmailCampaign>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}/resume`,
+    { method: "POST" },
+  );
+}
+
+export function deleteEmailCampaign(
+  orgId: string,
+  campaignId: string,
+): Promise<void> {
+  return request<void>(
+    `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export function createCompany(input: CompanyInput): Promise<Company> {
   return request<Company>("/companies", {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function getCompanyContacts(companyId: string): Promise<Contact[]> {
+  return request<Contact[]>(
+    `/companies/${encodeURIComponent(companyId)}/contacts`,
+  );
+}
+
+export function getCompanyContact(
+  companyId: string,
+  contactId: string,
+): Promise<Contact> {
+  return request<Contact>(
+    `/companies/${encodeURIComponent(companyId)}/contacts/${encodeURIComponent(contactId)}`,
+  );
+}
+
+export function createCompanyContact(
+  companyId: string,
+  input: ContactInput,
+): Promise<Contact> {
+  return request<Contact>(
+    `/companies/${encodeURIComponent(companyId)}/contacts`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateCompanyContact(
+  companyId: string,
+  contactId: string,
+  input: ContactInput,
+): Promise<Contact> {
+  return request<Contact>(
+    `/companies/${encodeURIComponent(companyId)}/contacts/${encodeURIComponent(contactId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteCompanyContact(
+  companyId: string,
+  contactId: string,
+): Promise<void> {
+  return request<void>(
+    `/companies/${encodeURIComponent(companyId)}/contacts/${encodeURIComponent(contactId)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function getCompany(companyId: string): Promise<Company> {
