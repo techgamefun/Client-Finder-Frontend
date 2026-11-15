@@ -91,8 +91,6 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       }
       return (await getPageSpeedScanJobs()).map(normalizePageSpeedJob);
     },
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
   });
   const retryMutation = useMutation({
     mutationFn: async (jobId: string) => {

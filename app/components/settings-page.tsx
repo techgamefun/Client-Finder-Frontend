@@ -1,13 +1,28 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
 import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
+import {
+  assignGmailAccount,
+  changePassword,
+  createOrganizationUser,
   getApplicationSettings,
+  getAuthSession,
+  getConnectedGmailAccounts,
+  getGoogleGmailAuthorizationUrl,
   getOctoparseTemplates,
   getOctoparseUsage,
+  getOrganizationUsers,
   getTavilyUsage,
+  removeGmailAssignment,
   updateApplicationSettings,
+  type AuthSession,
+  type ConnectedGmailAccount,
   type OctoparseTemplateConfiguration,
   type OctoparseTemplateOption,
   type OctoparseUsage,
@@ -30,27 +45,57 @@ const deploymentManagedSettings = [
   "GOMAXPROCS",
 ];
 
-type SettingsSection = "tavily" | "octoparse" | "crawler";
+type SettingsSection =
+  | "tavily"
+  | "octoparse"
+  | "hypestat"
+  | "pagespeed"
+  | "gmail"
+  | "crawler"
+  | "organization"
+  | "account";
 
 export function SettingsPage() {
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] =
-    useState<SettingsSection>("tavily");
+  const [activeSection, setActiveSection] = useState<SettingsSection>("tavily");
   const [maxPages, setMaxPages] = useState<number | null>(null);
   const [maxDepth, setMaxDepth] = useState<number | null>(null);
   const [tavilyApiKey, setTavilyApiKey] = useState("");
   const [octoparseApiKey, setOctoparseApiKey] = useState("");
+  const [hypestatApiKey, setHypestatApiKey] = useState("");
+  const [pagespeedApiKey, setPagespeedApiKey] = useState("");
+  const [hypestatAutoFetchEnabled, setHypestatAutoFetchEnabled] = useState<
+    boolean | null
+  >(null);
   const [templateKeyword, setTemplateKeyword] = useState("");
   const [templateDraft, setTemplateDraft] =
     useState<OctoparseTemplateConfiguration | null>(null);
-  const [additionalParametersText, setAdditionalParametersText] =
-    useState<string | null>(null);
+  const [additionalParametersText, setAdditionalParametersText] = useState<
+    string | null
+  >(null);
   const [notice, setNotice] = useState("");
   const settingsQuery = useQuery({
     queryKey: ["application-settings"],
     queryFn: getApplicationSettings,
     retry: false,
   });
+  const authSessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession,
+    retry: false,
+  });
+  const isOrganizationAdmin = authSessionQuery.data?.user.role === "admin";
+  const gmailStatus = useSyncExternalStore(
+    subscribeToLocationChanges,
+    getGmailCallbackStatus,
+    () => null,
+  );
+  useEffect(() => {
+    if (!gmailStatus) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("gmail");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [gmailStatus]);
   const usageQuery = useQuery({
     queryKey: ["tavily-usage"],
     queryFn: getTavilyUsage,
@@ -70,6 +115,10 @@ export function SettingsPage() {
     maxPages ?? settingsQuery.data?.crawl_max_pages ?? 6;
   const configuredMaxDepth =
     maxDepth ?? settingsQuery.data?.crawl_max_depth ?? 2;
+  const configuredHypestatAutoFetch =
+    hypestatAutoFetchEnabled ??
+    settingsQuery.data?.hypestat_auto_fetch_enabled ??
+    true;
   const activeOctoparseTemplate =
     templateDraft ?? settingsQuery.data?.octoparse_template ?? null;
   const selectedTemplateMetadata =
@@ -88,6 +137,9 @@ export function SettingsPage() {
     onSuccess: async (settings) => {
       setTavilyApiKey("");
       setOctoparseApiKey("");
+      setHypestatApiKey("");
+      setPagespeedApiKey("");
+      setHypestatAutoFetchEnabled(null);
       setMaxPages(null);
       setMaxDepth(null);
       setTemplateDraft(null);
@@ -102,9 +154,16 @@ export function SettingsPage() {
     event.preventDefault();
     setNotice("");
     saveMutation.mutate({
+      tavily_api_key: tavilyApiKey.trim() || null,
+    });
+  }
+
+  function saveCrawlerSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice("");
+    saveMutation.mutate({
       crawl_max_pages: configuredMaxPages,
       crawl_max_depth: configuredMaxDepth,
-      tavily_api_key: tavilyApiKey.trim() || null,
     });
   }
 
@@ -133,17 +192,22 @@ export function SettingsPage() {
       template_name: template.template_name,
       query_field:
         inputFields.find(({ field }) => /query|keyword|search/i.test(field))
-          ?.field ?? inputFields[0]?.field ?? "",
+          ?.field ??
+        inputFields[0]?.field ??
+        "",
       additional_parameters: {},
       title_field:
         outputFields.find(({ field }) => /title|name|business/i.test(field))
-          ?.field ?? outputFields[0]?.field ?? "",
+          ?.field ??
+        outputFields[0]?.field ??
+        "",
       url_field:
         outputFields.find(({ field }) => /url|link|website/i.test(field))
           ?.field ?? "",
       content_field:
-        outputFields.find(({ field }) => /description|content|summary/i.test(field))
-          ?.field ?? null,
+        outputFields.find(({ field }) =>
+          /description|content|summary/i.test(field),
+        )?.field ?? null,
       score_field: null,
     });
     setAdditionalParametersText("{}");
@@ -219,10 +283,23 @@ export function SettingsPage() {
           <p className="eyebrow">WORKSPACE CONFIGURATION</p>
           <h1>Settings</h1>
           <p className="heading-copy">
-            Manage discovery providers and crawler settings for this application.
+            Manage discovery providers and crawler settings for this
+            application. Organization admins can also connect shared Gmail
+            accounts.
           </p>
         </div>
       </section>
+
+      {gmailStatus && (
+        <p
+          className={`settings-feedback${gmailStatus === "error" ? " settings-feedback-error" : ""}`}
+          role={gmailStatus === "error" ? "alert" : "status"}
+        >
+          {gmailStatus === "connected"
+            ? "Gmail account connected."
+            : "Google did not complete the Gmail connection. You can try again."}
+        </p>
+      )}
 
       <div className="settings-section-picker">
         <label className="settings-field">
@@ -236,13 +313,24 @@ export function SettingsPage() {
           >
             <option value="tavily">Tavily</option>
             <option value="octoparse">Octoparse</option>
-            <option value="crawler">Crawler</option>
+            <option value="hypestat">HypeStat</option>
+            <option value="pagespeed">PageSpeed</option>
+            {isOrganizationAdmin && (
+              <option value="gmail">Gmail accounts</option>
+            )}
+            {isOrganizationAdmin && <option value="crawler">Crawler</option>}
+            <option value="account">My account</option>
+            {authSessionQuery.data?.user.role === "admin" && (
+              <option value="organization">Organization users</option>
+            )}
           </select>
         </label>
       </div>
 
       {settingsQuery.isPending && (
-        <p className="settings-feedback" role="status">Loading settings…</p>
+        <p className="settings-feedback" role="status">
+          Loading settings…
+        </p>
       )}
       {settingsQuery.isError && (
         <p className="settings-feedback settings-feedback-error" role="alert">
@@ -261,11 +349,13 @@ export function SettingsPage() {
                 <p className="eyebrow">TAVILY</p>
                 <h2>Search provider and usage</h2>
                 <p className="panel-subtitle">
-                  The API key is encrypted before it is stored and is never
-                  returned to this page.
+                  The API key is stored by this backend and is never returned to
+                  this page.
                 </p>
               </div>
-              <span className={`settings-connection-badge${settingsQuery.data.tavily_configured ? " is-configured" : ""}`}>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.tavily_configured ? " is-configured" : ""}`}
+              >
                 {settingsQuery.data.tavily_configured
                   ? "Configured"
                   : "Not configured"}
@@ -293,7 +383,10 @@ export function SettingsPage() {
                 </button>
                 <button
                   className="button button-secondary"
-                  disabled={usageQuery.isFetching || !settingsQuery.data.tavily_configured}
+                  disabled={
+                    usageQuery.isFetching ||
+                    !settingsQuery.data.tavily_configured
+                  }
                   onClick={() => void usageQuery.refetch()}
                   type="button"
                 >
@@ -306,25 +399,35 @@ export function SettingsPage() {
                     onClick={resetTavilyKey}
                     type="button"
                   >
-                    Use deployment key
+                    Remove personal key
                   </button>
                 )}
               </div>
             </form>
 
             {saveMutation.isError && (
-              <p className="settings-feedback settings-feedback-error" role="alert">
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
                 Could not save settings: {saveMutation.error.message}
               </p>
             )}
-            {notice && <p className="settings-feedback" role="status">{notice}</p>}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
             {usageQuery.isPending && settingsQuery.data.tavily_configured && (
               <p className="settings-feedback" role="status">
                 Loading Tavily usage…
               </p>
             )}
             {usageQuery.isError && (
-              <p className="settings-feedback settings-feedback-error" role="alert">
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
                 Could not retrieve Tavily usage: {usageQuery.error.message}
               </p>
             )}
@@ -341,10 +444,12 @@ export function SettingsPage() {
                 <h2>API key and scraper template</h2>
                 <p className="panel-subtitle">
                   Octoparse runs a configured cloud template for each search.
-                  The API key is encrypted at rest and never returned.
+                  The API key is never returned to this page.
                 </p>
               </div>
-              <span className={`settings-connection-badge${settingsQuery.data.octoparse_configured ? " is-configured" : ""}`}>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.octoparse_configured ? " is-configured" : ""}`}
+              >
                 {settingsQuery.data.octoparse_configured
                   ? "Configured"
                   : "Not configured"}
@@ -386,7 +491,7 @@ export function SettingsPage() {
                     onClick={resetOctoparseKey}
                     type="button"
                   >
-                    Use deployment key
+                    Remove personal key
                   </button>
                 )}
               </div>
@@ -410,7 +515,10 @@ export function SettingsPage() {
               </p>
             )}
             {octoparseUsageQuery.isError && (
-              <p className="settings-feedback settings-feedback-error" role="alert">
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
                 Could not retrieve Octoparse usage:{" "}
                 {octoparseUsageQuery.error.message}
               </p>
@@ -419,207 +527,347 @@ export function SettingsPage() {
               <OctoparseUsagePanel usage={octoparseUsageQuery.data} />
             )}
 
-            <form
-              className="settings-form octoparse-template-search"
-              onSubmit={searchOctoparseTemplates}
-            >
-              <label className="settings-field">
-                Find a reusable Octoparse template
-                <input
-                  minLength={2}
-                  onChange={(event) => setTemplateKeyword(event.target.value)}
-                  placeholder="e.g. business directory search"
-                  required
-                  value={templateKeyword}
-                />
-              </label>
-              <div className="settings-actions">
-                <button
-                  className="button button-secondary"
-                  disabled={
-                    !settingsQuery.data.octoparse_configured ||
-                    templateSearchMutation.isPending
-                  }
-                  type="submit"
+            {isOrganizationAdmin && (
+              <>
+                <form
+                  className="settings-form octoparse-template-search"
+                  onSubmit={searchOctoparseTemplates}
                 >
-                  {templateSearchMutation.isPending
-                    ? "Searching templates…"
-                    : "Find templates"}
-                </button>
-              </div>
-            </form>
-
-            {templateSearchMutation.isError && (
-              <p className="settings-feedback settings-feedback-error" role="alert">
-                Could not search Octoparse templates:{" "}
-                {templateSearchMutation.error.message}
-              </p>
-            )}
-            {templateSearchMutation.data && (
-              <div className="octoparse-template-list">
-                {templateSearchMutation.data.templates.length === 0 ? (
-                  <p className="empty-copy">
-                    No templates matched. Try a different keyword.
-                  </p>
-                ) : (
-                  templateSearchMutation.data.templates.map((template) => (
-                    <button
-                      aria-pressed={
-                        activeOctoparseTemplate?.template_name ===
-                        template.template_name
+                  <label className="settings-field">
+                    Find a reusable Octoparse template
+                    <input
+                      minLength={2}
+                      onChange={(event) =>
+                        setTemplateKeyword(event.target.value)
                       }
-                      className="octoparse-template-option"
-                      key={template.template_name}
-                      onClick={() => selectOctoparseTemplate(template)}
-                      type="button"
+                      placeholder="e.g. business directory search"
+                      required
+                      value={templateKeyword}
+                    />
+                  </label>
+                  <div className="settings-actions">
+                    <button
+                      className="button button-secondary"
+                      disabled={
+                        !settingsQuery.data.octoparse_configured ||
+                        templateSearchMutation.isPending
+                      }
+                      type="submit"
                     >
-                      <strong>{template.template_name}</strong>
-                      {template.template_name ===
-                        templateSearchMutation.data.recommended_template_name && (
-                        <span>Recommended</span>
-                      )}
-                      {template.description && (
-                        <small>{template.description}</small>
-                      )}
+                      {templateSearchMutation.isPending
+                        ? "Searching templates…"
+                        : "Find templates"}
                     </button>
-                  ))
-                )}
-              </div>
-            )}
+                  </div>
+                </form>
 
-            {activeOctoparseTemplate && (
-              <form
-                className="settings-form octoparse-template-config"
-                onSubmit={saveOctoparseTemplate}
-              >
-                <p className="settings-feedback">
-                  Selected template:{" "}
-                  <strong>{activeOctoparseTemplate.template_name}</strong>
-                </p>
-                {selectedTemplateMetadata && (
-                  <>
-                    <p className="panel-subtitle">
-                      Template inputs:{" "}
-                      {octoparseInputFields
-                        .map(({ field, required }) =>
-                          required ? `${field} (required)` : field,
-                        )
-                        .join(", ") || "No input fields returned"}
-                    </p>
-                    <p className="panel-subtitle">
-                      Output fields:{" "}
-                      {octoparseOutputFields
-                        .map(({ field }) => field)
-                        .join(", ") || "No output fields returned"}
-                    </p>
-                  </>
-                )}
-                <label className="settings-field">
-                  Search query input field
-                  <input
-                    list="octoparse-input-fields"
-                    onChange={(event) =>
-                      updateTemplateField("query_field", event.target.value)
-                    }
-                    required
-                    value={activeOctoparseTemplate.query_field}
-                  />
-                </label>
-                <datalist id="octoparse-input-fields">
-                  {octoparseInputFields.map(({ field }) => (
-                    <option key={field} value={field} />
-                  ))}
-                </datalist>
-                <label className="settings-field">
-                  Additional template parameters (JSON object)
-                  <textarea
-                    onChange={(event) =>
-                      setAdditionalParametersText(event.target.value)
-                    }
-                    rows={4}
-                    value={
-                      additionalParametersText ??
-                      JSON.stringify(
-                        activeOctoparseTemplate.additional_parameters,
-                        null,
-                        2,
-                      )
-                    }
-                  />
-                </label>
-                <label className="settings-field">
-                  Result title field
-                  <input
-                    list="octoparse-output-fields"
-                    onChange={(event) =>
-                      updateTemplateField("title_field", event.target.value)
-                    }
-                    required
-                    value={activeOctoparseTemplate.title_field}
-                  />
-                </label>
-                <label className="settings-field">
-                  Result URL field
-                  <input
-                    list="octoparse-output-fields"
-                    onChange={(event) =>
-                      updateTemplateField("url_field", event.target.value)
-                    }
-                    required
-                    value={activeOctoparseTemplate.url_field}
-                  />
-                </label>
-                <datalist id="octoparse-output-fields">
-                  {octoparseOutputFields.map(({ field }) => (
-                    <option key={field} value={field} />
-                  ))}
-                </datalist>
-                <label className="settings-field">
-                  Result description field (optional)
-                  <input
-                    list="octoparse-output-fields"
-                    onChange={(event) =>
-                      updateOptionalTemplateField(
-                        "content_field",
-                        event.target.value,
-                      )
-                    }
-                    value={activeOctoparseTemplate.content_field ?? ""}
-                  />
-                </label>
-                <label className="settings-field">
-                  Result score field (optional, 0 to 1)
-                  <input
-                    list="octoparse-output-fields"
-                    onChange={(event) =>
-                      updateOptionalTemplateField(
-                        "score_field",
-                        event.target.value,
-                      )
-                    }
-                    value={activeOctoparseTemplate.score_field ?? ""}
-                  />
-                </label>
-                <div className="settings-actions">
-                  <button
-                    className="button button-primary"
-                    disabled={saveMutation.isPending}
-                    type="submit"
+                {templateSearchMutation.isError && (
+                  <p
+                    className="settings-feedback settings-feedback-error"
+                    role="alert"
                   >
-                    {saveMutation.isPending
-                      ? "Saving…"
-                      : "Save Octoparse template"}
-                  </button>
-                </div>
-              </form>
+                    Could not search Octoparse templates:{" "}
+                    {templateSearchMutation.error.message}
+                  </p>
+                )}
+                {templateSearchMutation.data && (
+                  <div className="octoparse-template-list">
+                    {templateSearchMutation.data.templates.length === 0 ? (
+                      <p className="empty-copy">
+                        No templates matched. Try a different keyword.
+                      </p>
+                    ) : (
+                      templateSearchMutation.data.templates.map((template) => (
+                        <button
+                          aria-pressed={
+                            activeOctoparseTemplate?.template_name ===
+                            template.template_name
+                          }
+                          className="octoparse-template-option"
+                          key={template.template_name}
+                          onClick={() => selectOctoparseTemplate(template)}
+                          type="button"
+                        >
+                          <strong>{template.template_name}</strong>
+                          {template.template_name ===
+                            templateSearchMutation.data
+                              .recommended_template_name && (
+                            <span>Recommended</span>
+                          )}
+                          {template.description && (
+                            <small>{template.description}</small>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {activeOctoparseTemplate && (
+                  <form
+                    className="settings-form octoparse-template-config"
+                    onSubmit={saveOctoparseTemplate}
+                  >
+                    <p className="settings-feedback">
+                      Selected template:{" "}
+                      <strong>{activeOctoparseTemplate.template_name}</strong>
+                    </p>
+                    {selectedTemplateMetadata && (
+                      <>
+                        <p className="panel-subtitle">
+                          Template inputs:{" "}
+                          {octoparseInputFields
+                            .map(({ field, required }) =>
+                              required ? `${field} (required)` : field,
+                            )
+                            .join(", ") || "No input fields returned"}
+                        </p>
+                        <p className="panel-subtitle">
+                          Output fields:{" "}
+                          {octoparseOutputFields
+                            .map(({ field }) => field)
+                            .join(", ") || "No output fields returned"}
+                        </p>
+                      </>
+                    )}
+                    <label className="settings-field">
+                      Search query input field
+                      <input
+                        list="octoparse-input-fields"
+                        onChange={(event) =>
+                          updateTemplateField("query_field", event.target.value)
+                        }
+                        required
+                        value={activeOctoparseTemplate.query_field}
+                      />
+                    </label>
+                    <datalist id="octoparse-input-fields">
+                      {octoparseInputFields.map(({ field }) => (
+                        <option key={field} value={field} />
+                      ))}
+                    </datalist>
+                    <label className="settings-field">
+                      Additional template parameters (JSON object)
+                      <textarea
+                        onChange={(event) =>
+                          setAdditionalParametersText(event.target.value)
+                        }
+                        rows={4}
+                        value={
+                          additionalParametersText ??
+                          JSON.stringify(
+                            activeOctoparseTemplate.additional_parameters,
+                            null,
+                            2,
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="settings-field">
+                      Result title field
+                      <input
+                        list="octoparse-output-fields"
+                        onChange={(event) =>
+                          updateTemplateField("title_field", event.target.value)
+                        }
+                        required
+                        value={activeOctoparseTemplate.title_field}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      Result URL field
+                      <input
+                        list="octoparse-output-fields"
+                        onChange={(event) =>
+                          updateTemplateField("url_field", event.target.value)
+                        }
+                        required
+                        value={activeOctoparseTemplate.url_field}
+                      />
+                    </label>
+                    <datalist id="octoparse-output-fields">
+                      {octoparseOutputFields.map(({ field }) => (
+                        <option key={field} value={field} />
+                      ))}
+                    </datalist>
+                    <label className="settings-field">
+                      Result description field (optional)
+                      <input
+                        list="octoparse-output-fields"
+                        onChange={(event) =>
+                          updateOptionalTemplateField(
+                            "content_field",
+                            event.target.value,
+                          )
+                        }
+                        value={activeOctoparseTemplate.content_field ?? ""}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      Result score field (optional, 0 to 1)
+                      <input
+                        list="octoparse-output-fields"
+                        onChange={(event) =>
+                          updateOptionalTemplateField(
+                            "score_field",
+                            event.target.value,
+                          )
+                        }
+                        value={activeOctoparseTemplate.score_field ?? ""}
+                      />
+                    </label>
+                    <div className="settings-actions">
+                      <button
+                        className="button button-primary"
+                        disabled={saveMutation.isPending}
+                        type="submit"
+                      >
+                        {saveMutation.isPending
+                          ? "Saving…"
+                          : "Save Octoparse template"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </>
             )}
 
             {saveMutation.isError && (
-              <p className="settings-feedback settings-feedback-error" role="alert">
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
                 Could not save settings: {saveMutation.error.message}
               </p>
             )}
-            {notice && <p className="settings-feedback" role="status">{notice}</p>}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
+          </section>
+
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "hypestat"}
+          >
+            <div className="settings-section-heading">
+              <div>
+                <p className="eyebrow">HYPESTAT</p>
+                <h2>API access and lookup behavior</h2>
+                <p className="panel-subtitle">
+                  The API key is encrypted in the application database and sent
+                  only from the Agent to the crawler service. It is never
+                  returned to this page.
+                </p>
+              </div>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.hypestat_configured ? " is-configured" : ""}`}
+              >
+                {settingsQuery.data.hypestat_configured
+                  ? "Configured"
+                  : "Not configured"}
+              </span>
+            </div>
+            <p className="settings-feedback">
+              Agent-to-crawler authentication:{" "}
+              <strong>
+                {settingsQuery.data.hypestat_service_auth_configured
+                  ? "configured"
+                  : "not configured"}
+              </strong>
+              . The shared token is kept in server environment settings and must
+              match the crawler-service value; it is not editable here.
+            </p>
+            <form
+              className="settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNotice("");
+                saveMutation.mutate({
+                  hypestat_api_key: hypestatApiKey.trim() || null,
+                  ...(authSessionQuery.data?.user.role === "admin"
+                    ? {
+                        hypestat_auto_fetch_enabled:
+                          configuredHypestatAutoFetch,
+                      }
+                    : {}),
+                });
+              }}
+            >
+              <label className="settings-field">
+                HypeStat API key
+                <input
+                  autoComplete="new-password"
+                  onChange={(event) => setHypestatApiKey(event.target.value)}
+                  placeholder={
+                    settingsQuery.data.hypestat_configured
+                      ? "Leave blank to keep the current key"
+                      : "Enter your HypeStat API key"
+                  }
+                  type="password"
+                  value={hypestatApiKey}
+                />
+              </label>
+              {authSessionQuery.data?.user.role === "admin" && (
+                <label className="settings-checkbox-field">
+                  <input
+                    checked={configuredHypestatAutoFetch}
+                    onChange={(event) =>
+                      setHypestatAutoFetchEnabled(event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Automatically fetch HypeStat profiles when websites are
+                    saved from discovery
+                  </span>
+                </label>
+              )}
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={saveMutation.isPending}
+                  type="submit"
+                >
+                  {saveMutation.isPending
+                    ? "Saving…"
+                    : "Save HypeStat settings"}
+                </button>
+                {settingsQuery.data.hypestat_configured && (
+                  <button
+                    className="button button-secondary"
+                    disabled={saveMutation.isPending}
+                    onClick={() => {
+                      setNotice("");
+                      saveMutation.mutate({ hypestat_api_key: "" });
+                    }}
+                    type="button"
+                  >
+                    Remove saved key
+                  </button>
+                )}
+              </div>
+            </form>
+            {saveMutation.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not save HypeStat settings: {saveMutation.error.message}
+              </p>
+            )}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
+            {!settingsQuery.data.hypestat_configured && (
+              <p className="settings-feedback">
+                Add an API key to enable HypeStat lookups. The crawler-service
+                shared token remains a server-only deployment setting.
+              </p>
+            )}
           </section>
 
           <section
@@ -636,14 +884,16 @@ export function SettingsPage() {
                 </p>
               </div>
             </div>
-            <form className="settings-form" onSubmit={saveSettings}>
+            <form className="settings-form" onSubmit={saveCrawlerSettings}>
               <div className="settings-limit-grid">
                 <label className="settings-field">
                   Maximum pages
                   <input
                     max={6}
                     min={1}
-                    onChange={(event) => setMaxPages(Number(event.target.value))}
+                    onChange={(event) =>
+                      setMaxPages(Number(event.target.value))
+                    }
                     required
                     type="number"
                     value={configuredMaxPages}
@@ -654,7 +904,9 @@ export function SettingsPage() {
                   <input
                     max={2}
                     min={0}
-                    onChange={(event) => setMaxDepth(Number(event.target.value))}
+                    onChange={(event) =>
+                      setMaxDepth(Number(event.target.value))
+                    }
                     required
                     type="number"
                     value={configuredMaxDepth}
@@ -688,9 +940,115 @@ export function SettingsPage() {
             </div>
             <ul className="deployment-settings-list">
               {deploymentManagedSettings.map((setting) => (
-                <li key={setting}><code>{setting}</code></li>
+                <li key={setting}>
+                  <code>{setting}</code>
+                </li>
               ))}
             </ul>
+          </section>
+
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "pagespeed"}
+          >
+            <div className="settings-section-heading">
+              <div>
+                <p className="eyebrow">GOOGLE PAGESPEED</p>
+                <h2>Your personal API key</h2>
+                <p className="panel-subtitle">
+                  PageSpeed jobs use the key belonging to the user who created
+                  the job. The encrypted key is never returned.
+                </p>
+              </div>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.pagespeed_configured ? " is-configured" : ""}`}
+              >
+                {settingsQuery.data.pagespeed_configured
+                  ? "Configured"
+                  : "Not configured"}
+              </span>
+            </div>
+            <form
+              className="settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNotice("");
+                saveMutation.mutate({
+                  pagespeed_api_key: pagespeedApiKey.trim() || null,
+                });
+              }}
+            >
+              <label className="settings-field">
+                Google PageSpeed API key
+                <input
+                  autoComplete="new-password"
+                  onChange={(event) => setPagespeedApiKey(event.target.value)}
+                  placeholder="Leave blank to keep the current key"
+                  type="password"
+                  value={pagespeedApiKey}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={saveMutation.isPending}
+                  type="submit"
+                >
+                  Save PageSpeed key
+                </button>
+                {settingsQuery.data.pagespeed_configured && (
+                  <button
+                    className="button button-secondary"
+                    disabled={saveMutation.isPending}
+                    onClick={() => {
+                      setNotice("");
+                      saveMutation.mutate({ pagespeed_api_key: "" });
+                    }}
+                    type="button"
+                  >
+                    Remove personal key
+                  </button>
+                )}
+              </div>
+            </form>
+            {saveMutation.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not save PageSpeed key: {saveMutation.error.message}
+              </p>
+            )}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
+          </section>
+
+          {authSessionQuery.data?.user.role === "admin" && (
+            <section
+              className="panel settings-panel"
+              hidden={activeSection !== "organization"}
+            >
+              <OrganizationUsersPanel />
+            </section>
+          )}
+
+          {isOrganizationAdmin && authSessionQuery.data && (
+            <section
+              className="panel settings-panel"
+              hidden={activeSection !== "gmail"}
+            >
+              <GmailAccountsPanel session={authSessionQuery.data} />
+            </section>
+          )}
+
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "account"}
+          >
+            <ChangePasswordPanel />
           </section>
         </>
       )}
@@ -793,13 +1151,471 @@ function getTemplateFields(
   return schema.flatMap((item) => {
     const rawField = item.field ?? item.name ?? item.key;
     if (typeof rawField !== "string" || !rawField.trim()) return [];
-    return [{
-      field: rawField,
-      required: item.required === true,
-    }];
+    return [
+      {
+        field: rawField,
+        required: item.required === true,
+      },
+    ];
   });
 }
 
 function isSettingsSection(value: string): value is SettingsSection {
-  return value === "tavily" || value === "octoparse" || value === "crawler";
+  return (
+    value === "tavily" ||
+    value === "octoparse" ||
+    value === "hypestat" ||
+    value === "pagespeed" ||
+    value === "gmail" ||
+    value === "crawler" ||
+    value === "organization" ||
+    value === "account"
+  );
+}
+
+function subscribeToLocationChanges(callback: () => void) {
+  window.addEventListener("popstate", callback);
+  return () => window.removeEventListener("popstate", callback);
+}
+
+function getGmailCallbackStatus(): "connected" | "error" | null {
+  const status = new URLSearchParams(window.location.search).get("gmail");
+  return status === "connected" || status === "error" ? status : null;
+}
+
+function ChangePasswordPanel() {
+  const queryClient = useQueryClient();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const passwordMutation = useMutation({
+    mutationFn: changePassword,
+    onSuccess: async (session) => {
+      setCurrentPassword("");
+      setNewPassword("");
+      queryClient.setQueryData(["auth-session"], session);
+    },
+  });
+
+  return (
+    <>
+      <div>
+        <p className="eyebrow">MY ACCOUNT</p>
+        <h2>Change password</h2>
+        <p className="panel-subtitle">
+          Changing your password signs out other active sessions for this
+          account.
+        </p>
+      </div>
+      <form
+        className="settings-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          passwordMutation.mutate({
+            current_password: currentPassword,
+            new_password: newPassword,
+          });
+        }}
+      >
+        <label className="settings-field">
+          Current password
+          <input
+            autoComplete="current-password"
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            required
+            type="password"
+            value={currentPassword}
+          />
+        </label>
+        <label className="settings-field">
+          New password
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            onChange={(event) => setNewPassword(event.target.value)}
+            required
+            type="password"
+            value={newPassword}
+          />
+        </label>
+        {passwordMutation.isError && (
+          <p className="settings-feedback settings-feedback-error" role="alert">
+            Could not change password: {passwordMutation.error.message}
+          </p>
+        )}
+        {passwordMutation.isSuccess && (
+          <p className="settings-feedback" role="status">
+            Password changed. Other active sessions were signed out.
+          </p>
+        )}
+        <div className="settings-actions">
+          <button
+            className="button button-primary"
+            disabled={passwordMutation.isPending}
+            type="submit"
+          >
+            {passwordMutation.isPending ? "Saving…" : "Change password"}
+          </button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+function GmailAccountsPanel({ session }: { session: AuthSession }) {
+  const queryClient = useQueryClient();
+  const [selectedUsers, setSelectedUsers] = useState<Record<string, string>>(
+    {},
+  );
+  const accountsQuery = useQuery({
+    queryKey: ["gmail-accounts"],
+    queryFn: getConnectedGmailAccounts,
+    retry: false,
+  });
+  const usersQuery = useQuery({
+    queryKey: ["organization-users"],
+    queryFn: getOrganizationUsers,
+    retry: false,
+  });
+  const assignMutation = useMutation({
+    mutationFn: ({
+      gmailAccountId,
+      userId,
+    }: {
+      gmailAccountId: string;
+      userId: string;
+    }) => assignGmailAccount(gmailAccountId, userId),
+    onSuccess: async (_assignment, variables) => {
+      setSelectedUsers((current) => ({
+        ...current,
+        [variables.gmailAccountId]: "",
+      }));
+      await queryClient.invalidateQueries({ queryKey: ["gmail-accounts"] });
+    },
+  });
+  const removeMutation = useMutation({
+    mutationFn: removeGmailAssignment,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["gmail-accounts"] });
+    },
+  });
+
+  function connectGmailAccount() {
+    window.location.assign(
+      getGoogleGmailAuthorizationUrl(
+        session.organization_id,
+        session.user.id,
+      ),
+    );
+  }
+
+  return (
+    <>
+      <div>
+        <p className="eyebrow">GOOGLE WORKSPACE</p>
+        <h2>Connected Gmail accounts</h2>
+        <p className="panel-subtitle">
+          Connect shared inboxes and assign each account to active organization
+          users. Assigned users can use the approved Gmail read, modify, and
+          send permissions.
+        </p>
+      </div>
+      <div className="settings-actions">
+        <button
+          className="button button-primary"
+          onClick={connectGmailAccount}
+          type="button"
+        >
+          Connect a Gmail account
+        </button>
+      </div>
+      {accountsQuery.isPending && (
+        <p className="settings-feedback" role="status">
+          Loading connected Gmail accounts…
+        </p>
+      )}
+      {accountsQuery.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not load Gmail accounts: {accountsQuery.error.message}
+        </p>
+      )}
+      {usersQuery.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not load organization users: {usersQuery.error.message}
+        </p>
+      )}
+      {accountsQuery.data?.length === 0 && (
+        <p className="empty-copy">
+          No Gmail accounts are connected to this organization yet.
+        </p>
+      )}
+      {accountsQuery.data && usersQuery.data && (
+        <div className="gmail-account-list">
+          {accountsQuery.data.map((account) => (
+            <GmailAccountCard
+              account={account}
+              assignPending={assignMutation.isPending}
+              onAssign={(userId) =>
+                assignMutation.mutate({
+                  gmailAccountId: account.id,
+                  userId,
+                })
+              }
+              onRemoveAssignment={(assignmentId) => {
+                if (
+                  window.confirm(
+                    "Unassign this Gmail account from the user? Their access will stop immediately.",
+                  )
+                ) {
+                  removeMutation.mutate(assignmentId);
+                }
+              }}
+              onUserChange={(userId) =>
+                setSelectedUsers((current) => ({
+                  ...current,
+                  [account.id]: userId,
+                }))
+              }
+              removePending={removeMutation.isPending}
+              selectedUserId={selectedUsers[account.id] ?? ""}
+              users={usersQuery.data.users}
+              key={account.id}
+            />
+          ))}
+        </div>
+      )}
+      {assignMutation.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not assign the Gmail account: {assignMutation.error.message}
+        </p>
+      )}
+      {removeMutation.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not remove the Gmail assignment: {removeMutation.error.message}
+        </p>
+      )}
+    </>
+  );
+}
+
+function GmailAccountCard({
+  account,
+  users,
+  selectedUserId,
+  assignPending,
+  removePending,
+  onUserChange,
+  onAssign,
+  onRemoveAssignment,
+}: {
+  account: ConnectedGmailAccount;
+  users: { id: string; email: string; is_active: boolean }[];
+  selectedUserId: string;
+  assignPending: boolean;
+  removePending: boolean;
+  onUserChange: (userId: string) => void;
+  onAssign: (userId: string) => void;
+  onRemoveAssignment: (assignmentId: string) => void;
+}) {
+  const availableUsers = users.filter(
+    (user) =>
+      user.is_active &&
+      !account.assigned_users.some(
+        (assignedUser) => assignedUser.user_id === user.id,
+      ),
+  );
+
+  return (
+    <article className="gmail-account-card">
+      <div className="settings-section-heading">
+        <div>
+          <h3>{account.email_address}</h3>
+          <p className="settings-feedback">
+            Refresh token updated{" "}
+            {new Date(account.token_updated_at).toLocaleString()}
+          </p>
+        </div>
+        <span className="settings-connection-badge is-configured">
+          Connected
+        </span>
+      </div>
+      <div>
+        <h4 className="gmail-account-subheading">Assigned users</h4>
+        {account.assigned_users.length === 0 ? (
+          <p className="settings-feedback">No users are assigned yet.</p>
+        ) : (
+          <ul className="gmail-assignment-list">
+            {account.assigned_users.map((assignedUser) => (
+              <li
+                className="gmail-assignment-row"
+                key={assignedUser.assignment_id}
+              >
+                <span>{assignedUser.email}</span>
+                <button
+                  aria-label={`Unassign Gmail from ${assignedUser.email}`}
+                  className="button button-secondary"
+                  disabled={removePending}
+                  onClick={() =>
+                    onRemoveAssignment(assignedUser.assignment_id)
+                  }
+                  type="button"
+                >
+                  Unassign
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <form
+        className="gmail-assignment-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (selectedUserId) onAssign(selectedUserId);
+        }}
+      >
+        <label className="settings-field">
+          Assign to an organization user
+          <select
+            disabled={availableUsers.length === 0 || assignPending}
+            onChange={(event) => onUserChange(event.target.value)}
+            value={selectedUserId}
+          >
+            <option value="">
+              {availableUsers.length === 0
+                ? "No unassigned active users"
+                : "Select a user"}
+            </option>
+            {availableUsers.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.email}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="button button-secondary"
+          disabled={!selectedUserId || assignPending}
+          type="submit"
+        >
+          {assignPending ? "Assigning…" : "Assign account"}
+        </button>
+      </form>
+    </article>
+  );
+}
+
+function OrganizationUsersPanel() {
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"admin" | "user">("user");
+  const usersQuery = useQuery({
+    queryKey: ["organization-users"],
+    queryFn: getOrganizationUsers,
+    retry: false,
+  });
+  const createUserMutation = useMutation({
+    mutationFn: createOrganizationUser,
+    onSuccess: async () => {
+      setEmail("");
+      setPassword("");
+      setRole("user");
+      await queryClient.invalidateQueries({ queryKey: ["organization-users"] });
+    },
+  });
+
+  return (
+    <>
+      <div>
+        <p className="eyebrow">ORGANIZATION</p>
+        <h2>Manage organization users</h2>
+        <p className="panel-subtitle">
+          Members share organization business records. Each member manages their
+          own provider API keys.
+        </p>
+      </div>
+      <form
+        className="settings-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          createUserMutation.mutate({ email: email.trim(), password, role });
+        }}
+      >
+        <label className="settings-field">
+          User email
+          <input
+            autoComplete="off"
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            type="email"
+            value={email}
+          />
+        </label>
+        <label className="settings-field">
+          Temporary password
+          <input
+            autoComplete="new-password"
+            minLength={12}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            type="password"
+            value={password}
+          />
+        </label>
+        <label className="settings-field">
+          Role
+          <select
+            onChange={(event) =>
+              setRole(event.target.value === "admin" ? "admin" : "user")
+            }
+            value={role}
+          >
+            <option value="user">Normal user</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <div className="settings-actions">
+          <button
+            className="button button-primary"
+            disabled={createUserMutation.isPending}
+            type="submit"
+          >
+            {createUserMutation.isPending ? "Adding…" : "Add organization user"}
+          </button>
+        </div>
+      </form>
+      {createUserMutation.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not add user: {createUserMutation.error.message}
+        </p>
+      )}
+      {usersQuery.isError && (
+        <p className="settings-feedback settings-feedback-error" role="alert">
+          Could not load users: {usersQuery.error.message}
+        </p>
+      )}
+      {usersQuery.data && (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usersQuery.data.users.map((user) => (
+                <tr key={user.id}>
+                  <td>{user.email}</td>
+                  <td>{user.role === "admin" ? "Admin" : "Normal user"}</td>
+                  <td>{new Date(user.created_at).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
 }

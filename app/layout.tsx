@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
 import { Providers } from "./providers";
 import { WorkspaceShell } from "./components/workspace-shell";
 import "./globals.css";
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body>
         <Providers>
-          <WorkspaceShell>{children}</WorkspaceShell>
+          <Suspense fallback={<main className="main-content" />}>
+            <WorkspaceShell>{children}</WorkspaceShell>
+          </Suspense>
         </Providers>
       </body>
     </html>

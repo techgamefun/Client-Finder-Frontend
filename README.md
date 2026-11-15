@@ -30,6 +30,12 @@ mobile and desktop PageSpeed Insights scans across four Lighthouse categories.
 The Lead pipeline shows scan history and loads detailed audit reports on
 demand.
 
+The **Email templates** page lets organization admins create and manage shared
+HTML email templates. Members can render a database-backed preview for a
+company and contact, then send it using a Gmail account assigned to them.
+Available `company`, `contact`, and `sender` placeholders are listed in the
+editor and can be inserted directly into the subject or message body.
+
 ## Useful commands
 
 ```powershell

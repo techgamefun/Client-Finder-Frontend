@@ -1,5 +1,14 @@
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+
+export function getQueueEventsWebSocketUrl(): string {
+  const url = new URL(API_BASE_URL, window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/queue/events`;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
 
 export interface Company {
   id: string;
@@ -13,9 +22,8 @@ export interface Company {
   lead_score: number | null;
   lead_status: string;
   created_at: string;
+  created_by_email: string | null;
   contacts: Contact[];
-  sources: LeadSource[];
-  search_keywords: SearchKeyword[];
   pagespeed_scans: PageSpeedScanSummary[];
 }
 
@@ -32,16 +40,6 @@ export interface Contact {
   business_email: string | null;
   business_phone: string | null;
   is_publicly_listed: boolean;
-}
-
-export interface LeadSource {
-  id: string;
-  source_url: string;
-  source_domain: string;
-  source_type: string | null;
-  evidence: string | null;
-  verified_at: string | null;
-  created_at: string;
 }
 
 export interface PageSpeedScanSummary {
@@ -184,7 +182,6 @@ export interface IngestResponse {
   query: string;
   results_found: number;
   candidates_created: number;
-  sources_added: number;
   results_skipped: number;
   websites_crawled: number;
   companies_enriched: number;
@@ -204,6 +201,11 @@ export interface DiscoveryWebsiteSaveResponse {
   crawl_jobs_enqueued: number;
   crawl_jobs_already_present: number;
   domains_skipped: number;
+  hypestat_profiles_requested: number;
+  hypestat_profiles_reused: number;
+  hypestat_profiles_succeeded: number;
+  hypestat_profiles_queued: number;
+  hypestat_profiles_failed: number;
 }
 
 export interface WebsiteCrawlInput {
@@ -298,20 +300,80 @@ export interface WebsiteRecord {
   page_type: WebsitePageType | null;
   site_topic: string[];
   language: string | null;
-  status: "new";
-  site_type: "normal" | "listing";
+  status: WebsiteStatus;
   discovery_source: string;
   discovery_provider: DiscoveryProviderId | null;
   created_at: string;
+  created_by_email: string | null;
   crawled_at: string | null;
   crawl_signals: CrawlPageClassification[];
+  hypestat_monthly_visits: number | null;
+  hypestat_referring_domains: number | null;
+  hypestat_global_rank: number | null;
+  hypestat_country: string | null;
+  hypestat_referring_domains_by_country: {
+    country: string;
+    domains: number;
+  }[];
+  hypestat_audience_countries: string[];
 }
 
 export interface WebsiteDetailResponse {
   website: WebsiteRecord;
   crawl: WebsiteCrawlResponse | null;
+  hypestat_profile: WebsiteHypeStatProfile | null;
   crawl_jobs: WebsiteCrawlJobHistory[];
+  discovery_keywords: SearchKeyword[];
 }
+
+export interface WebsiteHypeStatProfile {
+  status:
+    | "pending"
+    | "succeeded"
+    | "queued"
+    | "failed"
+    | "invalid_domain"
+    | "removed";
+  payload: Record<string, unknown> | null;
+  error: string | null;
+  checked_at: string | null;
+  fetched_at: string | null;
+}
+
+export interface WebsiteCorpusWordStat {
+  word: string;
+  score: number;
+  is_phrase: boolean;
+}
+
+export interface WebsiteCorpusAnalysis {
+  website_id: string;
+  domain: string;
+  words: WebsiteCorpusWordStat[];
+  computed_at: string | null;
+}
+
+export interface WebsiteCorpusWordsResponse {
+  websites: WebsiteCorpusAnalysis[];
+}
+
+export interface WebsiteReclassificationBatchResult {
+  eligible_count: number;
+  recomputed_count: number;
+  skipped_count: number;
+}
+
+export interface WebsiteAddToLeadsResult {
+  requested_count: number;
+  created_count: number;
+  already_existing_count: number;
+  status_updated_count: number;
+  skipped_listing_count: number;
+  skipped_uncrawled_count: number;
+  not_found_count: number;
+}
+
+export type WebsiteStatus = "new" | "lead" | "checked";
 
 export type WebsitePageType =
   | "business_site"
@@ -328,11 +390,8 @@ export type WebsitePageType =
   | "media"
   | "other";
 
-export interface ResearchSourceCrawlInput {
-  source_url: string;
-}
-
 export interface WebsiteUpdateInput {
+  status?: WebsiteStatus;
   page_type?: WebsitePageType | null;
   site_topic?: string[];
   language?: string | null;
@@ -342,9 +401,14 @@ export interface ApplicationSettings {
   crawl_max_pages: number;
   crawl_max_depth: number;
   tavily_configured: boolean;
-  tavily_key_source: "database" | "environment" | "unset";
+  tavily_key_source: "database" | "unset";
   octoparse_configured: boolean;
-  octoparse_key_source: "database" | "environment" | "unset";
+  octoparse_key_source: "database" | "unset";
+  hypestat_configured: boolean;
+  hypestat_auto_fetch_enabled: boolean;
+  hypestat_service_auth_configured: boolean;
+  pagespeed_configured: boolean;
+  pagespeed_key_source: "database" | "unset";
   selected_discovery_tools: DiscoveryProviderId[];
   octoparse_template: OctoparseTemplateConfiguration | null;
 }
@@ -382,14 +446,35 @@ export interface OctoparseUsage {
   all_time_tasks_started: number;
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+let refreshRequest: Promise<boolean> | undefined;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const sendRequest = () =>
+    fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+
+  let response = await sendRequest();
+  if (response.status === 401 && !isAuthEntryPoint(path)) {
+    if (await refreshAuthSession()) {
+      response = await sendRequest();
+    }
+  }
 
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
@@ -403,7 +488,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         : detail === undefined
           ? `API request failed (${response.status})`
           : JSON.stringify(detail);
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {
@@ -411,6 +496,287 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+function isAuthEntryPoint(path: string): boolean {
+  return [
+    "/auth/login",
+    "/auth/bootstrap",
+    "/auth/register-organization",
+    "/auth/refresh",
+  ].includes(path);
+}
+
+function refreshAuthSession(): Promise<boolean> {
+  if (!refreshRequest) {
+    refreshRequest = fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then((response) => response.ok)
+      .finally(() => {
+        refreshRequest = undefined;
+      });
+  }
+  return refreshRequest;
+}
+
+export interface AuthSession {
+  user: {
+    id: string;
+    email: string;
+    role: "admin" | "user";
+    is_active: boolean;
+    created_at: string;
+  };
+  organization_id: string;
+  organization_name: string;
+}
+
+export interface OrganizationUser {
+  id: string;
+  email: string;
+  role: "admin" | "user";
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface GmailAccountAssignee {
+  assignment_id: string;
+  user_id: string;
+  email: string;
+  assigned_at: string;
+}
+
+export interface ConnectedGmailAccount {
+  id: string;
+  email_address: string;
+  google_account_id: string;
+  token_updated_at: string;
+  assigned_users: GmailAccountAssignee[];
+}
+
+export interface AssignedGmailAccount {
+  id: string;
+  email_address: string;
+}
+
+export interface GmailMessageSummary {
+  id: string;
+  thread_id: string;
+  from_address: string;
+  subject: string;
+  date: string;
+  snippet: string;
+  is_unread: boolean;
+}
+
+export interface GmailMessagesResponse {
+  messages: GmailMessageSummary[];
+  next_page_token: string | null;
+  result_size_estimate: number;
+}
+
+export interface GmailMessageDetail extends GmailMessageSummary {
+  body_text: string;
+}
+
+export interface UserGmailAssignment {
+  id: string;
+  org_id: string;
+  user_id: string;
+  gmail_account_id: string;
+  assigned_by: string;
+  created_at: string;
+}
+
+export interface EmailTemplate {
+  id: string;
+  org_id: string;
+  name: string;
+  subject: string;
+  body_content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailTemplateVariableMetadata {
+  path: string;
+  placeholder: string;
+  label: string;
+  description: string;
+}
+
+export interface EmailTemplateInput {
+  name: string;
+  subject: string;
+  body_content: string;
+}
+
+export interface EmailTemplatePreview {
+  subject: string;
+  body_content: string;
+}
+
+export interface EmailTemplateSendResult {
+  status: string;
+  message_id: string;
+  thread_id: string;
+  recipient_email: string;
+}
+
+export function getBootstrapStatus(): Promise<{ required: boolean }> {
+  return request<{ required: boolean }>("/auth/bootstrap-status");
+}
+
+export function getAuthSession(): Promise<AuthSession> {
+  return request<AuthSession>("/auth/me");
+}
+
+export function bootstrapAdmin(input: {
+  organization_name: string;
+  email: string;
+  password: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>("/auth/bootstrap", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function registerOrganization(input: {
+  organization_name: string;
+  email: string;
+  password: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>("/auth/register-organization", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function login(input: {
+  email: string;
+  password: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function logout(): Promise<void> {
+  return request("/auth/logout", { method: "POST" });
+}
+
+export function changePassword(input: {
+  current_password: string;
+  new_password: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>("/auth/password", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getOrganizationUsers(): Promise<{ users: OrganizationUser[] }> {
+  return request<{ users: OrganizationUser[] }>("/auth/users");
+}
+
+export function createOrganizationUser(input: {
+  email: string;
+  password: string;
+  role: "admin" | "user";
+}): Promise<OrganizationUser> {
+  return request<OrganizationUser>("/auth/users", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getConnectedGmailAccounts(): Promise<ConnectedGmailAccount[]> {
+  return request<ConnectedGmailAccount[]>("/gmail/accounts");
+}
+
+export function getAssignedGmailAccounts(): Promise<AssignedGmailAccount[]> {
+  return request<AssignedGmailAccount[]>("/gmail/accounts/assigned");
+}
+
+export function getGmailMessages(
+  gmailAccountId: string,
+  options: {
+    q?: string;
+    page_token?: string;
+    max_results?: number;
+  } = {},
+): Promise<GmailMessagesResponse> {
+  const query = new URLSearchParams();
+  if (options.q) query.set("q", options.q);
+  if (options.page_token) query.set("page_token", options.page_token);
+  if (options.max_results !== undefined) {
+    query.set("max_results", String(options.max_results));
+  }
+  const search = query.size > 0 ? `?${query.toString()}` : "";
+  return request<GmailMessagesResponse>(
+    `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/messages${search}`,
+  );
+}
+
+export function getGmailMessage(
+  gmailAccountId: string,
+  messageId: string,
+): Promise<GmailMessageDetail> {
+  return request<GmailMessageDetail>(
+    `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/messages/${encodeURIComponent(messageId)}`,
+  );
+}
+
+export function replyToGmailMessage(
+  gmailAccountId: string,
+  messageId: string,
+  bodyText: string,
+): Promise<{ id: string; thread_id: string }> {
+  return request<{ id: string; thread_id: string }>(
+    `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/messages/${encodeURIComponent(messageId)}/reply`,
+    {
+      method: "POST",
+      body: JSON.stringify({ body_text: bodyText }),
+    },
+  );
+}
+
+export function getGoogleGmailAuthorizationUrl(
+  orgId: string,
+  adminUserId: string,
+): string {
+  const url = new URL(
+    `${API_BASE_URL.replace(/\/+$/, "")}/auth/google/login`,
+    window.location.origin,
+  );
+  url.searchParams.set("org_id", orgId);
+  url.searchParams.set("admin_user_id", adminUserId);
+  return url.toString();
+}
+
+export function assignGmailAccount(
+  gmailAccountId: string,
+  userId: string,
+): Promise<UserGmailAssignment> {
+  return request<UserGmailAssignment>(
+    `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/assignments`,
+    {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    },
+  );
+}
+
+export function removeGmailAssignment(assignmentId: string): Promise<void> {
+  return request<void>(
+    `/gmail/assignments/${encodeURIComponent(assignmentId)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function getApplicationSettings(): Promise<ApplicationSettings> {
@@ -423,6 +789,9 @@ export function updateApplicationSettings(
     crawl_max_depth?: number;
     tavily_api_key?: string | null;
     octoparse_api_key?: string | null;
+    hypestat_api_key?: string | null;
+    pagespeed_api_key?: string | null;
+    hypestat_auto_fetch_enabled?: boolean;
     selected_discovery_tools?: DiscoveryProviderId[];
     octoparse_template?: OctoparseTemplateConfiguration | null;
   },
@@ -463,6 +832,95 @@ export async function getCompanies(): Promise<Company[]> {
     companies.push(...page);
     if (page.length < pageSize) return companies;
   }
+}
+
+export function getEmailTemplates(
+  orgId: string,
+): Promise<EmailTemplate[]> {
+  return request<EmailTemplate[]>(
+    `/orgs/${encodeURIComponent(orgId)}/templates`,
+  );
+}
+
+export function getEmailTemplateVariables(
+  orgId: string,
+): Promise<EmailTemplateVariableMetadata[]> {
+  return request<EmailTemplateVariableMetadata[]>(
+    `/orgs/${encodeURIComponent(orgId)}/templates/variables`,
+  );
+}
+
+export function createEmailTemplate(
+  orgId: string,
+  input: EmailTemplateInput,
+): Promise<EmailTemplate> {
+  return request<EmailTemplate>(
+    `/orgs/${encodeURIComponent(orgId)}/templates`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateEmailTemplate(
+  orgId: string,
+  templateId: string,
+  input: EmailTemplateInput,
+): Promise<EmailTemplate> {
+  return request<EmailTemplate>(
+    `/orgs/${encodeURIComponent(orgId)}/templates/${encodeURIComponent(templateId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteEmailTemplate(
+  orgId: string,
+  templateId: string,
+): Promise<void> {
+  return request<void>(
+    `/orgs/${encodeURIComponent(orgId)}/templates/${encodeURIComponent(templateId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function previewEmailTemplate(
+  orgId: string,
+  templateId: string,
+  input: {
+    company_id: string;
+    contact_id?: string;
+    gmail_account_id?: string;
+  },
+): Promise<EmailTemplatePreview> {
+  return request<EmailTemplatePreview>(
+    `/orgs/${encodeURIComponent(orgId)}/templates/${encodeURIComponent(templateId)}/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function sendEmailTemplate(
+  orgId: string,
+  templateId: string,
+  input: {
+    company_id: string;
+    contact_id: string;
+    gmail_account_id: string;
+  },
+): Promise<EmailTemplateSendResult> {
+  return request<EmailTemplateSendResult>(
+    `/orgs/${encodeURIComponent(orgId)}/templates/${encodeURIComponent(templateId)}/send`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function createCompany(input: CompanyInput): Promise<Company> {
@@ -584,10 +1042,45 @@ export function updateWebsite(
   });
 }
 
+export function addWebsitesToLeads(
+  websiteIds: string[],
+): Promise<WebsiteAddToLeadsResult> {
+  return request<WebsiteAddToLeadsResult>("/websites/add-to-leads", {
+    method: "POST",
+    body: JSON.stringify({ website_ids: websiteIds }),
+  });
+}
+
+export function reclassifyWebsite(websiteId: string): Promise<WebsiteRecord> {
+  return request<WebsiteRecord>(`/websites/${websiteId}/reclassify`, {
+    method: "POST",
+  });
+}
+
+export function reclassifyUnclassifiedWebsites(): Promise<WebsiteReclassificationBatchResult> {
+  return request<WebsiteReclassificationBatchResult>(
+    "/websites/reclassify-unclassified",
+    { method: "POST" },
+  );
+}
+
 export function getWebsiteDetail(
   websiteId: string,
 ): Promise<WebsiteDetailResponse> {
   return request<WebsiteDetailResponse>(`/websites/${websiteId}`);
+}
+
+export function refetchWebsiteHypeStat(
+  websiteId: string,
+): Promise<WebsiteHypeStatProfile> {
+  return request<WebsiteHypeStatProfile>(
+    `/websites/${websiteId}/hypestat/refetch`,
+    { method: "POST" },
+  );
+}
+
+export function getWebsiteCorpusWords(): Promise<WebsiteCorpusWordsResponse> {
+  return request<WebsiteCorpusWordsResponse>("/websites/corpus-words");
 }
 
 export function crawlWebsite(
@@ -660,12 +1153,3 @@ export function crawlCompanyWebsite(
   );
 }
 
-export function crawlResearchSource(
-  companyId: string,
-  input: ResearchSourceCrawlInput,
-): Promise<Company> {
-  return request<Company>(`/companies/${companyId}/sources/crawl`, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}

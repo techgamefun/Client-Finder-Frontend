@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { getWebsiteDetail } from "@/lib/api";
+import { getWebsiteDetail, refetchWebsiteHypeStat } from "@/lib/api";
 import type {
   CrawlPageClassification,
   WebsiteDetailResponse,
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
+import { WebsiteHypeStatProfileView } from "./website-hypestat-profile";
 
 const uuidPattern =
   /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -24,10 +25,6 @@ export function WebsiteDetailPage({ websiteId }: { websiteId: string }) {
       return getWebsiteDetail(websiteId);
     },
     enabled: validId,
-    refetchInterval: (query) => {
-      const status = query.state.data?.website.crawl_job_status;
-      return status === "queued" || status === "running" ? 3000 : false;
-    },
   });
 
   if (!validId) {
@@ -62,7 +59,25 @@ export function WebsiteDetailPage({ websiteId }: { websiteId: string }) {
 }
 
 function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
-  const { website, crawl, crawl_jobs: crawlJobs } = data;
+  const queryClient = useQueryClient();
+  const refetchHypeStat = useMutation({
+    mutationFn: () => refetchWebsiteHypeStat(data.website.id),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["website-detail", data.website.id],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
+      ]);
+    },
+  });
+  const {
+    website,
+    crawl,
+    hypestat_profile: hypestatProfile,
+    crawl_jobs: crawlJobs,
+    discovery_keywords: discoveryKeywords,
+  } = data;
   const crawlStatus =
     website.crawl_job_status ??
     (website.is_crawled ? "succeeded" : "not_queued");
@@ -104,7 +119,6 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
               <span className={`status-badge website-crawl-${crawlStatus}`}>
                 Crawl: {crawlStatus.replaceAll("_", " ")}
               </span>
-              <span>{formatSiteType(website.site_type)}</span>
               {crawl?.site_type && (
                 <span>Classification: {formatSiteType(crawl.site_type)}</span>
               )}
@@ -131,9 +145,6 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
               </a>
             </DetailField>
             <DetailField label="Website status">{website.status}</DetailField>
-            <DetailField label="Site type">
-              {formatSiteType(website.site_type)}
-            </DetailField>
             <DetailField label="Crawl category">
               {website.category ? formatSiteType(website.category) : "—"}
             </DetailField>
@@ -155,6 +166,9 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
                 : "—"}
             </DetailField>
             <DetailField label="Added">{formatDate(website.created_at)}</DetailField>
+            <DetailField label="Added by">
+              {website.created_by_email ?? "An existing account"}
+            </DetailField>
             <DetailField label="Last crawled">
               {crawl?.crawled_at ? formatDate(crawl.crawled_at) : "—"}
             </DetailField>
@@ -162,6 +176,97 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
               {website.crawl_id ?? "No crawl record"}
             </DetailField>
           </dl>
+        </section>
+
+        <section className="panel detail-section">
+          <div className="detail-section-heading website-hypestat-heading">
+            <div>
+              <h2>HypeStat profile</h2>
+            </div>
+            <button
+              className="button button-secondary"
+              disabled={refetchHypeStat.isPending}
+              onClick={() => refetchHypeStat.mutate()}
+              type="button"
+            >
+              {refetchHypeStat.isPending ? "Fetching…" : "Refetch HypeStat"}
+            </button>
+          </div>
+          {refetchHypeStat.isError && (
+            <p className="website-job-error" role="alert">
+              Could not refetch HypeStat data: {refetchHypeStat.error.message}
+            </p>
+          )}
+          {!hypestatProfile ? (
+            <p className="detail-empty">
+              HypeStat data is requested when this website is saved from
+              discovery.
+            </p>
+          ) : (
+            <div className="website-hypestat-panel">
+              <div className="website-job-heading">
+                <span className="status-badge">
+                  {hypestatProfile.status.replaceAll("_", " ")}
+                </span>
+                {hypestatProfile.fetched_at && (
+                  <time>
+                    Fetched {formatDate(hypestatProfile.fetched_at)}
+                  </time>
+                )}
+                {!hypestatProfile.fetched_at && hypestatProfile.checked_at && (
+                  <time>
+                    Checked {formatDate(hypestatProfile.checked_at)}
+                  </time>
+                )}
+              </div>
+              {hypestatProfile.status === "pending" && (
+                <p>HypeStat lookup is in progress.</p>
+              )}
+              {hypestatProfile.status === "queued" && (
+                <p>
+                  HypeStat queued this domain for analysis. Save it again later
+                  to check for the completed profile.
+                </p>
+              )}
+              {hypestatProfile.error && (
+                <p className="website-job-error">{hypestatProfile.error}</p>
+              )}
+              {hypestatProfile.error ===
+                "Crawler service shared token is not configured." && (
+                <p>
+                  Set <code>CRAWLER_SERVICE_SHARED_TOKEN</code> in the Agent
+                  environment and the same value in the crawler-service
+                  environment, then restart both services and refetch.
+                </p>
+              )}
+              {hypestatProfile.payload && (
+                <WebsiteHypeStatProfileView
+                  payload={hypestatProfile.payload}
+                />
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="panel detail-section">
+          <SectionHeading title="Discovery keywords" />
+          {discoveryKeywords.length ? (
+            <div className="keyword-list">
+              {discoveryKeywords.map((keyword) => (
+                <article className="keyword-card" key={keyword.id}>
+                  <span aria-hidden="true">⌕</span>
+                  <div>
+                    <strong>{keyword.keyword}</strong>
+                    <small>{formatDate(keyword.searched_at)}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="detail-empty">
+              No discovery keywords are linked to this website yet.
+            </p>
+          )}
         </section>
 
         <section className="panel detail-section">

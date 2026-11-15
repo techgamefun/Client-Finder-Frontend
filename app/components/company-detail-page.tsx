@@ -7,7 +7,6 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   createPageSpeedScan,
   crawlCompanyWebsite,
-  crawlResearchSource,
   deleteCompany,
   getCompany,
   getCompanyWebsiteCrawl,
@@ -82,12 +81,6 @@ export function CompanyDetailPage({
       return getWebsiteCrawlJob(websiteCrawlJobId);
     },
     enabled: websiteCrawlJobId !== null,
-    refetchInterval: (query) => {
-      const currentStatus = query.state.data?.status;
-      return currentStatus === "queued" || currentStatus === "running"
-        ? 1000
-        : false;
-    },
   });
   const websiteCrawlMutation = useMutation({
     mutationFn: () => {
@@ -99,23 +92,6 @@ export function CompanyDetailPage({
     onMutate: () => setWebsiteCrawlJobId(null),
     onSuccess: (job) => {
       setWebsiteCrawlJobId(job.id);
-    },
-  });
-  const researchSourceMutation = useMutation({
-    mutationFn: (sourceUrl: string) => {
-      if (companyId === null) {
-        throw new Error("A company must be loaded before adding a source.");
-      }
-      return crawlResearchSource(companyId, { source_url: sourceUrl });
-    },
-    onSuccess: async (updatedCompany) => {
-      queryClient.setQueryData(["company", updatedCompany.id], updatedCompany);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["companies"] }),
-        queryClient.invalidateQueries({
-          queryKey: ["company-website-crawl", updatedCompany.id],
-        }),
-      ]);
     },
   });
   const scanQuery = useQuery({
@@ -443,6 +419,9 @@ export function CompanyDetailPage({
                   <span aria-hidden="true"> ↗</span>
                 </a>
               )}
+              <span>
+                Added by {company.created_by_email ?? "an existing account"}
+              </span>
               {crawl?.site_type && (
                 <span>Type: {formatSiteType(crawl.site_type)}</span>
               )}
@@ -901,93 +880,6 @@ export function CompanyDetailPage({
             </section>
           )}
 
-          <RecordSection
-            title="Research sources"
-            subtitle="Evidence gathered from discovery and company research"
-            icon="↗"
-            count={company.sources.length}
-            empty="No research sources are attached to this company."
-          >
-            {company.sources.map((source) => (
-              <article
-                className="detail-record-card source-card"
-                key={source.id}
-              >
-                <div className="source-card-top">
-                  <span className="source-kind">
-                    {source.source_type?.replaceAll("_", " ") ||
-                      "Research source"}
-                  </span>
-                  <span>{formatDate(source.created_at)}</span>
-                </div>
-                <a href={source.source_url} rel="noreferrer" target="_blank">
-                  {source.source_url}
-                  <span aria-hidden="true"> ↗</span>
-                </a>
-                <button
-                  className="button button-secondary research-source-crawl-button"
-                  disabled={researchSourceMutation.isPending}
-                  onClick={() =>
-                    researchSourceMutation.mutate(source.source_url)
-                  }
-                  type="button"
-                >
-                  {researchSourceMutation.isPending &&
-                  researchSourceMutation.variables === source.source_url
-                    ? "Crawling…"
-                    : "Crawl and enrich"}
-                </button>
-                {researchSourceMutation.isSuccess &&
-                  researchSourceMutation.variables === source.source_url && (
-                    <p className="research-source-success" role="status">
-                      Crawl complete. Missing company details were filled when
-                      they could be verified.
-                    </p>
-                  )}
-                {researchSourceMutation.isError &&
-                  researchSourceMutation.variables === source.source_url && (
-                    <div className="research-source-error" role="alert">
-                      <strong>Crawl failed</strong>
-                      <p>{researchSourceMutation.error.message}</p>
-                      <span>
-                        Temporary network or server errors may clear on retry.
-                        Sites that deny automated access require an approved API
-                        or permission from the site owner.
-                      </span>
-                    </div>
-                  )}
-                {source.evidence && <p>{source.evidence}</p>}
-                {source.verified_at && (
-                  <span className="verified-copy">
-                    Verified {formatDate(source.verified_at)}
-                  </span>
-                )}
-              </article>
-            ))}
-          </RecordSection>
-
-          <RecordSection
-            title="Discovery keywords"
-            subtitle="Searches that surfaced or were linked to this company"
-            icon="⌕"
-            count={company.search_keywords.length}
-            empty="No discovery keywords are attached to this company."
-          >
-            <div className="keyword-list">
-              {company.search_keywords.map((keyword, index) => (
-                <article
-                  className="keyword-card"
-                  key={`${keyword.keyword}-${keyword.searched_at}-${index}`}
-                >
-                  <span aria-hidden="true">⌕</span>
-                  <div>
-                    <strong>{keyword.keyword}</strong>
-                    <small>{formatDate(keyword.searched_at)}</small>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </RecordSection>
         </main>
 
         <aside className="company-detail-aside">

@@ -22,12 +22,6 @@ export function CrawlerPage() {
       return getWebsiteCrawlJob(jobId);
     },
     enabled: jobId !== null,
-    refetchInterval: (query) => {
-      const currentStatus = query.state.data?.status;
-      return currentStatus === "queued" || currentStatus === "running"
-        ? 1000
-        : false;
-    },
   });
   const crawlJob = jobQuery.data;
   const crawlResult = crawlJob?.result;

@@ -26,15 +26,39 @@ export function OverviewPage() {
       <section className="page-heading">
         <div>
           <p className="eyebrow">YOUR BUSINESS AT A GLANCE</p>
-          <h1>Lead intelligence</h1>
+          <h1>Your growth, in focus.</h1>
           <p className="heading-copy">
-            Find promising companies, organize your pipeline, and keep every
-            source in reach.
+            One workspace to discover promising companies, research their
+            websites, and move every opportunity forward.
           </p>
         </div>
         <Link className="button button-primary" href="/leads#add-company">
           <span aria-hidden="true">＋</span> Add a company
         </Link>
+      </section>
+
+      <section className="home-welcome" aria-label="Workspace introduction">
+        <div className="home-welcome-copy">
+          <span className="home-welcome-label">
+            <span className="home-welcome-dot" />
+            YOUR LEAD WORKSPACE
+          </span>
+          <h2>Make every discovery count.</h2>
+          <p>
+            Start with a search, explore a company’s website, then keep the
+            strongest opportunities organized in your pipeline.
+          </p>
+          <Link className="home-welcome-link" href="/discovery">
+            Find your next lead <span aria-hidden="true">→</span>
+          </Link>
+        </div>
+        <div className="home-welcome-art" aria-hidden="true">
+          <span className="home-art-ring home-art-ring-one" />
+          <span className="home-art-ring home-art-ring-two" />
+          <span className="home-art-orb">BI</span>
+          <span className="home-art-spark home-art-spark-one">✦</span>
+          <span className="home-art-spark home-art-spark-two">✧</span>
+        </div>
       </section>
 
       <section className="stats-grid" aria-label="Lead summary">

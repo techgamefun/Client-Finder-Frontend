@@ -55,7 +55,7 @@ export function DiscoveryPage() {
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["websites"] });
       setSaveResult(
-        `Saved ${result.websites_saved} unique domains and queued ${result.crawl_jobs_enqueued} crawl jobs. ${result.crawl_jobs_already_present} domains were already queued or crawled. No companies were created.${result.domains_skipped ? ` Skipped ${result.domains_skipped} duplicate domains.` : ""}`,
+        `Saved ${result.websites_saved} unique domains and queued ${result.crawl_jobs_enqueued} crawl jobs. ${result.crawl_jobs_already_present} domains were already queued or crawled. HypeStat: ${result.hypestat_profiles_succeeded} loaded, ${result.hypestat_profiles_reused} reused, ${result.hypestat_profiles_queued} waiting for analysis, ${result.hypestat_profiles_failed} failed. No companies were created.${result.domains_skipped ? ` Skipped ${result.domains_skipped} duplicate domains.` : ""}`,
       );
     },
   });
