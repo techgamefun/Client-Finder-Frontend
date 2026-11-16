@@ -126,12 +126,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const isPublicPage =
-    pathname === "/" || pathname === "/login" || pathname === "/signup";
+  const isPublicAuthPage = pathname === "/login" || pathname === "/signup";
+  const isPublicPage = pathname === "/" || isPublicAuthPage;
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
-    enabled: !isPublicPage,
     retry: false,
   });
   const themePreference = useSyncExternalStore(
@@ -147,17 +146,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const companiesQuery = useQuery({
     queryKey: ["companies"],
     queryFn: getCompanies,
-    enabled: sessionQuery.data !== undefined,
+    enabled: !isPublicPage && sessionQuery.data !== undefined,
   });
   const crawlerJobsQuery = useQuery({
     queryKey: ["crawler", "queue-jobs"],
     queryFn: getWebsiteCrawlJobs,
-    enabled: sessionQuery.data !== undefined,
+    enabled: !isPublicPage && sessionQuery.data !== undefined,
   });
   const pageSpeedJobsQuery = useQuery({
     queryKey: ["pagespeed", "queue-jobs"],
     queryFn: getPageSpeedScanJobs,
-    enabled: sessionQuery.data !== undefined,
+    enabled: !isPublicPage && sessionQuery.data !== undefined,
   });
   const logoutMutation = useMutation({
     mutationFn: logout,
@@ -264,6 +263,25 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (
+      isPublicAuthPage &&
+      sessionQuery.data &&
+      !sessionIsUnauthorized &&
+      !sessionQuery.isFetching
+    ) {
+      router.replace(
+        sessionQuery.data.user.role === "admin" ? "/admin" : "/overview",
+      );
+    }
+  }, [
+    isPublicAuthPage,
+    router,
+    sessionIsUnauthorized,
+    sessionQuery.data,
+    sessionQuery.isFetching,
+  ]);
+
+  useEffect(() => {
+    if (
       !isPublicPage &&
       !sessionQuery.isLoading &&
       sessionIsUnauthorized
@@ -277,7 +295,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     sessionQuery.isLoading,
   ]);
 
-  if (isPublicPage) return children;
+  if (pathname === "/") return children;
+  if (isPublicAuthPage) {
+    if (
+      sessionQuery.isLoading ||
+      sessionQuery.isFetching ||
+      (sessionQuery.data && !sessionIsUnauthorized)
+    ) {
+      return <PublicAuthChecking />;
+    }
+    return children;
+  }
   if (sessionQuery.isLoading || (!sessionQuery.data && !sessionQuery.isError)) {
     return <WorkspaceSessionLoading />;
   }
@@ -1385,6 +1413,15 @@ function getAccountInitials(email: string) {
     .map((word) => word.charAt(0))
     .join("");
   return (initials || localPart.slice(0, 2) || "?").toUpperCase();
+}
+
+function PublicAuthChecking() {
+  return (
+    <main className="public-auth-checking" role="status">
+      <span aria-hidden="true" className="auth-spinner" />
+      Checking your session…
+    </main>
+  );
 }
 
 function WorkspaceSessionLoading() {
