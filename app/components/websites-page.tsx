@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -925,6 +926,25 @@ export function WebsitesPage() {
                     <tr key={website.id}>
                       <td className="website-url-cell">
                         <span className="website-domain-links">
+                          <span
+                            aria-hidden="true"
+                            className="website-favicon-badge"
+                          >
+                            {website.domain.charAt(0).toUpperCase()}
+                            {website.favicon_url && (
+                              <Image
+                                alt=""
+                                className="website-favicon-image"
+                                height={16}
+                                onError={(event) => {
+                                  event.currentTarget.style.visibility = "hidden";
+                                }}
+                                src={website.favicon_url}
+                                unoptimized
+                                width={16}
+                              />
+                            )}
+                          </span>
                           <Link
                             className="website-domain-link"
                             href={`/websites/${website.id}`}

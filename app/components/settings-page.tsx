@@ -27,7 +27,10 @@ import {
   type OctoparseTemplateOption,
   type OctoparseUsage,
   type TavilyUsage,
+  type TavilySearchDepth,
 } from "@/lib/api";
+import { TAVILY_COUNTRIES } from "@/lib/discovery-options";
+import { DomainChipInput } from "./domain-chip-input";
 
 const deploymentManagedSettings = [
   "HTTP_ADDR",
@@ -43,6 +46,16 @@ const deploymentManagedSettings = [
   "CRAWL_USER_AGENT",
   "GOMEMLIMIT",
   "GOMAXPROCS",
+];
+
+const tavilySearchDepthOptions: {
+  value: TavilySearchDepth;
+  label: string;
+}[] = [
+  { value: "basic", label: "Basic · 1 credit" },
+  { value: "fast", label: "Fast · 1 credit" },
+  { value: "ultra-fast", label: "Ultra-Fast · 1 credit" },
+  { value: "advanced", label: "Advanced · 2 credits" },
 ];
 
 type SettingsSection =
@@ -61,6 +74,16 @@ export function SettingsPage() {
   const [maxPages, setMaxPages] = useState<number | null>(null);
   const [maxDepth, setMaxDepth] = useState<number | null>(null);
   const [tavilyApiKey, setTavilyApiKey] = useState("");
+  const [
+    tavilyDefaultSearchDepthOverride,
+    setTavilyDefaultSearchDepthOverride,
+  ] = useState<TavilySearchDepth | null>(null);
+  const [tavilyDefaultCountryOverride, setTavilyDefaultCountryOverride] =
+    useState<string | null>(null);
+  const [
+    tavilyDefaultExcludeDomainsOverride,
+    setTavilyDefaultExcludeDomainsOverride,
+  ] = useState<string[] | null>(null);
   const [octoparseApiKey, setOctoparseApiKey] = useState("");
   const [hypestatApiKey, setHypestatApiKey] = useState("");
   const [pagespeedApiKey, setPagespeedApiKey] = useState("");
@@ -79,6 +102,18 @@ export function SettingsPage() {
     queryFn: getApplicationSettings,
     retry: false,
   });
+  const tavilyDefaultSearchDepth =
+    tavilyDefaultSearchDepthOverride ??
+    settingsQuery.data?.tavily_default_search_depth ??
+    "basic";
+  const tavilyDefaultCountry =
+    tavilyDefaultCountryOverride ??
+    settingsQuery.data?.tavily_default_country ??
+    "";
+  const tavilyDefaultExcludeDomains =
+    tavilyDefaultExcludeDomainsOverride ??
+    settingsQuery.data?.tavily_default_exclude_domains ??
+    [];
   const authSessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
@@ -142,6 +177,9 @@ export function SettingsPage() {
       setHypestatAutoFetchEnabled(null);
       setMaxPages(null);
       setMaxDepth(null);
+      setTavilyDefaultSearchDepthOverride(null);
+      setTavilyDefaultCountryOverride(null);
+      setTavilyDefaultExcludeDomainsOverride(null);
       setTemplateDraft(null);
       setAdditionalParametersText(null);
       setNotice("Settings saved.");
@@ -155,6 +193,16 @@ export function SettingsPage() {
     setNotice("");
     saveMutation.mutate({
       tavily_api_key: tavilyApiKey.trim() || null,
+    });
+  }
+
+  function saveTavilyDefaults(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice("");
+    saveMutation.mutate({
+      tavily_default_search_depth: tavilyDefaultSearchDepth,
+      tavily_default_country: tavilyDefaultCountry || null,
+      tavily_default_exclude_domains: tavilyDefaultExcludeDomains,
     });
   }
 
@@ -402,6 +450,88 @@ export function SettingsPage() {
                     Remove personal key
                   </button>
                 )}
+              </div>
+            </form>
+
+            <form
+              className="settings-form tavily-default-preferences"
+              onSubmit={saveTavilyDefaults}
+            >
+              <div>
+                <p className="eyebrow">DISCOVERY DEFAULTS</p>
+                <h3>Default Tavily search preferences</h3>
+                <p className="panel-subtitle">
+                  These organization defaults prefill the Discover Leads filters.
+                </p>
+              </div>
+              {!isOrganizationAdmin && (
+                <p className="settings-feedback">
+                  An organization administrator can change these defaults.
+                </p>
+              )}
+              <div className="settings-form-grid">
+                <label className="settings-field">
+                  Default search depth
+                  <select
+                    disabled={!isOrganizationAdmin || saveMutation.isPending}
+                    onChange={(event) => {
+                      const depth = tavilySearchDepthOptions.find(
+                        (option) => option.value === event.target.value,
+                      );
+                      if (depth) {
+                        setTavilyDefaultSearchDepthOverride(depth.value);
+                      }
+                    }}
+                    value={tavilyDefaultSearchDepth}
+                  >
+                    {tavilySearchDepthOptions.map(({ label, value }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="settings-field">
+                  Default country
+                  <select
+                    disabled={!isOrganizationAdmin || saveMutation.isPending}
+                    onChange={(event) =>
+                      setTavilyDefaultCountryOverride(event.target.value)
+                    }
+                    value={tavilyDefaultCountry}
+                  >
+                    <option value="">Any country</option>
+                    {TAVILY_COUNTRIES.map(({ label, value }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <fieldset disabled={!isOrganizationAdmin || saveMutation.isPending}>
+                <DomainChipInput
+                  domains={tavilyDefaultExcludeDomains}
+                  label="Default excluded domains"
+                  maxDomains={150}
+                  onChange={setTavilyDefaultExcludeDomainsOverride}
+                  placeholder="example.com"
+                />
+              </fieldset>
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={
+                    !isOrganizationAdmin ||
+                    authSessionQuery.isPending ||
+                    saveMutation.isPending
+                  }
+                  type="submit"
+                >
+                  {saveMutation.isPending
+                    ? "Saving…"
+                    : "Save search preferences"}
+                </button>
               </div>
             </form>
 

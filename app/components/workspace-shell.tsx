@@ -4,8 +4,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronDown,
+  LogOut,
+  Menu,
+  Moon,
+  Monitor,
+  Settings,
+  Sun,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import {
   Suspense,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -17,40 +29,48 @@ import {
   logout,
   type Company,
 } from "@/lib/api";
+import {
+  navigationSections,
+  type NavigationItem,
+  type NavigationRole,
+} from "./nav.config";
 
 const noCompanies: Company[] = [];
-
-const pages = [
-  { href: "/", icon: "◫", label: "Overview" },
-  { href: "/companies", icon: "▣", label: "Companies" },
-  { href: "/leads", icon: "▤", label: "Lead pipeline" },
-  { href: "/discovery", icon: "⌕", label: "Discover leads" },
-  { href: "/websites", icon: "↗", label: "Websites" },
-  { href: "/gmail", icon: "✉", label: "Mail Box" },
-  { href: "/templates", icon: "▧", label: "Email templates" },
-  { href: "/campaigns", icon: "↗", label: "Drip campaigns" },
-  { href: "/crawler", icon: "◎", label: "Crawl a website" },
-  { href: "/crawler/queue", icon: "↻", label: "Crawler queue" },
-  { href: "/pagespeed-queue", icon: "◷", label: "PageSpeed queue" },
-  { href: "/settings", icon: "⚙", label: "Settings" },
-];
+type ThemePreference = "light" | "dark" | "system";
 
 function subscribeToTheme(onChange: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
   window.addEventListener("storage", onChange);
   window.addEventListener("lead-intelligence-theme-change", onChange);
+  mediaQuery.addEventListener("change", onChange);
   return () => {
     window.removeEventListener("storage", onChange);
     window.removeEventListener("lead-intelligence-theme-change", onChange);
+    mediaQuery.removeEventListener("change", onChange);
   };
 }
 
-function getThemeSnapshot() {
+function getThemePreferenceSnapshot(): ThemePreference {
   const savedTheme = window.localStorage.getItem("lead-intelligence-theme");
+  return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "system";
+}
+
+function getThemeSnapshot() {
+  const preference = getThemePreferenceSnapshot();
   return (
-    savedTheme === "dark" ||
-    (savedTheme !== "light" &&
+    preference === "dark" ||
+    (preference === "system" &&
       window.matchMedia("(prefers-color-scheme: dark)").matches)
   );
+}
+
+function persistThemePreference(preference: ThemePreference) {
+  if (preference === "system") {
+    window.localStorage.removeItem("lead-intelligence-theme");
+  } else {
+    window.localStorage.setItem("lead-intelligence-theme", preference);
+  }
+  window.dispatchEvent(new Event("lead-intelligence-theme-change"));
 }
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
@@ -65,6 +85,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     enabled: !isPublicAuthPage,
     retry: false,
   });
+  const themePreference = useSyncExternalStore(
+    subscribeToTheme,
+    getThemePreferenceSnapshot,
+    (): ThemePreference => "system",
+  );
   const isDarkMode = useSyncExternalStore(
     subscribeToTheme,
     getThemeSnapshot,
@@ -92,6 +117,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = isDarkMode ? "dark" : "light";
+    document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
   }, [isDarkMode]);
 
   useEffect(() => {
@@ -108,14 +134,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     sessionIsUnauthorized,
     sessionQuery.isLoading,
   ]);
-
-  function toggleTheme() {
-    window.localStorage.setItem(
-      "lead-intelligence-theme",
-      isDarkMode ? "light" : "dark",
-    );
-    window.dispatchEvent(new Event("lead-intelligence-theme-change"));
-  }
 
   if (isPublicAuthPage) return children;
   if (sessionQuery.isLoading || (!sessionQuery.data && !sessionQuery.isError)) {
@@ -148,6 +166,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <aside className={`sidebar${mobileMenuOpen ? " is-open" : ""}`}>
         <div className="sidebar-header">
           <Link className="brand" href="/" aria-label="Lead Intelligence home">
@@ -157,61 +178,50 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               <small>BUSINESS WORKSPACE</small>
             </span>
           </Link>
-
-          <button
-            aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
-            aria-pressed={isDarkMode}
-            className="theme-toggle"
-            onClick={toggleTheme}
-            type="button"
-          >
-            <span aria-hidden="true">{isDarkMode ? "☀" : "☾"}</span>
-            {isDarkMode ? "Light mode" : "Dark mode"}
-          </button>
-
           <button
             aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+            aria-controls="primary-navigation"
             className="mobile-menu-toggle"
             onClick={() => setMobileMenuOpen((open) => !open)}
             type="button"
           >
-            <span aria-hidden="true">{mobileMenuOpen ? "×" : "☰"}</span>
-            {mobileMenuOpen ? "Close" : "Menu"}
+            {mobileMenuOpen ? (
+              <X aria-hidden="true" size={18} strokeWidth={2} />
+            ) : (
+              <Menu aria-hidden="true" size={18} strokeWidth={2} />
+            )}
+            <span>{mobileMenuOpen ? "Close" : "Menu"}</span>
           </button>
         </div>
-
-        <div className="sidebar-label">WORKSPACE</div>
-        <nav aria-label="Workspace navigation" className="sidebar-navigation">
+        <nav
+          aria-label="Primary"
+          className="sidebar-navigation"
+          id="primary-navigation"
+        >
           <Suspense fallback={<div className="sidebar-nav-loading" />}>
             <WorkspaceNavigation
               companyCount={companies.length}
               leadCount={leadCount}
+              key={pathname}
               onNavigate={() => setMobileMenuOpen(false)}
+              role={sessionQuery.data.user.role}
             />
           </Suspense>
         </nav>
-
-        <div className="sidebar-spacer" />
-        <div className="sidebar-note">
-          <span>
-            <strong>{sessionQuery.data.user.email}</strong>
-            <small>
-              {sessionQuery.data.organization_name} ·{" "}
-              {sessionQuery.data.user.role === "admin" ? "Admin" : "User"}
-            </small>
-          </span>
-          <button
-            className="button button-secondary"
-            disabled={logoutMutation.isPending}
-            onClick={() => logoutMutation.mutate()}
-            type="button"
-          >
-            {logoutMutation.isPending ? "Signing out…" : "Sign out"}
-          </button>
-        </div>
+        <AccountMenu
+          email={sessionQuery.data.user.email}
+          logoutPending={logoutMutation.isPending}
+          onLogout={() => logoutMutation.mutate()}
+          onNavigate={() => setMobileMenuOpen(false)}
+          onThemeChange={persistThemePreference}
+          organizationName={sessionQuery.data.organization_name}
+          role={sessionQuery.data.user.role}
+          themePreference={themePreference}
+        />
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" id="main-content" tabIndex={-1}>
         <div className="content-wrap">
           {children}
           <footer className="page-footer">
@@ -228,90 +238,415 @@ function WorkspaceNavigation({
   companyCount,
   leadCount,
   onNavigate,
+  role,
 }: {
   companyCount: number;
   leadCount: number;
   onNavigate: () => void;
+  role: NavigationRole;
 }) {
   const pathname = usePathname();
-  const [mailboxExpanded, setMailboxExpanded] = useState(() =>
-    ["/gmail", "/templates", "/campaigns"].includes(pathname),
+  const badgeCounts = { companies: companyCount, leads: leadCount };
+  const visibleSections = navigationSections
+    .map((section) => ({
+      ...section,
+      items: section.items
+        .map((item) => filterNavigationItem(item, role))
+        .filter((item): item is NavigationItem => item !== null),
+    }))
+    .filter((section) => section.items.length > 0);
+  const primarySections = visibleSections.filter((section) => !section.bottom);
+  const bottomSections = visibleSections.filter((section) => section.bottom);
+
+  return (
+    <>
+      <ul className="nav-sections">
+        {primarySections.map((section) => (
+          <li className="nav-section" key={section.id}>
+            {section.label && (
+              <div className="sidebar-label">{section.label}</div>
+            )}
+            <ul className="nav-section-items">
+              {section.items.map((item) => (
+                <NavigationEntry
+                  badgeCount={
+                    item.badgeKey ? badgeCounts[item.badgeKey] : undefined
+                  }
+                  item={item}
+                  key={item.id}
+                  onNavigate={onNavigate}
+                  pathname={pathname}
+                />
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      {bottomSections.map((section) => (
+        <ul className="nav-bottom" key={section.id}>
+          {section.items.map((item) => (
+            <NavigationEntry
+              badgeCount={
+                item.badgeKey ? badgeCounts[item.badgeKey] : undefined
+              }
+              item={item}
+              key={item.id}
+              onNavigate={onNavigate}
+              pathname={pathname}
+            />
+          ))}
+        </ul>
+      ))}
+    </>
   );
+}
 
-  return pages.map((page) => {
-    if (page.href === "/gmail") {
-      const mailboxChildren = pages.filter(
-        (item) =>
-          item.href === "/gmail" ||
-          item.href === "/templates" ||
-          item.href === "/campaigns",
-      );
-      const isMailboxActive = mailboxChildren.some(
-        (item) => pathname === item.href,
-      );
+function filterNavigationItem(
+  item: NavigationItem,
+  role: NavigationRole,
+): NavigationItem | null {
+  if (item.role && item.role !== role) return null;
+  if (!item.children) return item;
 
-      return (
-        <div className="nav-group" key={page.href}>
-          <button
-            aria-controls="mailbox-navigation"
-            aria-expanded={mailboxExpanded}
-            className={`nav-link nav-group-toggle${isMailboxActive ? " active" : ""}`}
-            onClick={() => setMailboxExpanded((expanded) => !expanded)}
-            type="button"
-          >
-            <span className="nav-icon">{page.icon}</span>
-            {page.label}
-            <span aria-hidden="true" className="nav-group-chevron">
-              {mailboxExpanded ? "⌄" : "›"}
-            </span>
-          </button>
-          <div
-            className="nav-group-children"
-            hidden={!mailboxExpanded}
-            id="mailbox-navigation"
-          >
-            {mailboxChildren.map((child) => (
-              <Link
-                aria-current={pathname === child.href ? "page" : undefined}
-                className={`nav-link${pathname === child.href ? " active" : ""}`}
-                href={child.href}
-                key={child.href}
-                onClick={onNavigate}
-              >
-                <span className="nav-icon">{child.icon}</span>
-                {child.href === "/gmail" ? "Inbox" : child.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      );
-    }
+  const children = item.children
+    .map((child) => filterNavigationItem(child, role))
+    .filter((child): child is NavigationItem => child !== null);
+  return children.length > 0 ? { ...item, children } : null;
+}
 
-    if (page.href === "/templates" || page.href === "/campaigns") {
-      return null;
-    }
-
+function NavigationEntry({
+  badgeCount,
+  item,
+  onNavigate,
+  pathname,
+}: {
+  badgeCount?: number;
+  item: NavigationItem;
+  onNavigate: () => void;
+  pathname: string;
+}) {
+  const Icon = item.icon;
+  if (item.children?.length) {
     return (
+      <MailNavigationGroup
+        badgeCount={badgeCount}
+        item={item}
+        onNavigate={onNavigate}
+        pathname={pathname}
+      />
+    );
+  }
+
+  const isActive = isActiveRoute(pathname, item.href);
+  return (
+    <li>
       <Link
-        aria-current={pathname === page.href ? "page" : undefined}
-        className={`nav-link${pathname === page.href ? " active" : ""}`}
-        href={page.href}
-        key={page.href}
+        aria-current={isActive ? "page" : undefined}
+        className={`nav-link${isActive ? " active" : ""}`}
+        href={item.href}
         onClick={onNavigate}
       >
-        <span className="nav-icon">{page.icon}</span>
-        {page.label}
-        {(page.href === "/companies" || page.href === "/leads") && (
-          <span className="nav-count">
-            {page.href === "/companies" ? companyCount : leadCount}
-          </span>
+        <Icon aria-hidden="true" className="nav-icon" size={18} strokeWidth={2} />
+        <span className="nav-link-label">{item.label}</span>
+        {badgeCount !== undefined && (
+          <NavigationBadge count={badgeCount} itemLabel={item.label} />
         )}
       </Link>
-    );
-  });
+    </li>
+  );
+}
+
+function MailNavigationGroup({
+  badgeCount,
+  item,
+  onNavigate,
+  pathname,
+}: {
+  badgeCount?: number;
+  item: NavigationItem;
+  onNavigate: () => void;
+  pathname: string;
+}) {
+  const isActive = item.children?.some((child) =>
+    isActiveRoute(pathname, child.href),
+  ) ?? false;
+  const [expanded, setExpanded] = useState(isActive);
+  const Icon = item.icon;
+  const childrenId = `${item.id}-navigation`;
+
+  return (
+    <li className="nav-group">
+      <button
+        aria-controls={childrenId}
+        aria-expanded={expanded}
+        className={`nav-link nav-group-toggle${isActive ? " is-parent-active" : ""}`}
+        onClick={() => setExpanded((current) => !current)}
+        type="button"
+      >
+        <Icon aria-hidden="true" className="nav-icon" size={18} strokeWidth={2} />
+        <span className="nav-link-label">{item.label}</span>
+        {badgeCount !== undefined && (
+          <NavigationBadge count={badgeCount} itemLabel={item.label} />
+        )}
+        <ChevronDown
+          aria-hidden="true"
+          className={`nav-group-chevron${expanded ? " is-expanded" : ""}`}
+          size={16}
+          strokeWidth={2}
+        />
+      </button>
+      <ul
+        className="nav-group-children"
+        hidden={!expanded}
+        id={childrenId}
+      >
+        {item.children?.map((child) => {
+          const ChildIcon = child.icon;
+          const childIsActive = isActiveRoute(pathname, child.href);
+          return (
+            <li key={child.id}>
+              <Link
+                aria-current={childIsActive ? "page" : undefined}
+                className={`nav-link${childIsActive ? " active" : ""}`}
+                href={child.href}
+                onClick={onNavigate}
+              >
+                <ChildIcon
+                  aria-hidden="true"
+                  className="nav-icon"
+                  size={18}
+                  strokeWidth={2}
+                />
+                <span className="nav-link-label">{child.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </li>
+  );
+}
+
+function NavigationBadge({
+  count,
+  itemLabel,
+}: {
+  count: number;
+  itemLabel: string;
+}) {
+  if (count < 1) return null;
+
+  const pluralLabel = itemLabel === "Companies" ? "companies" : "leads";
+  // TODO(Phase 2): Replace entity totals with actionable "needs attention" counts.
+  return (
+    <span
+      aria-label={`${count} ${pluralLabel}`}
+      className="nav-count"
+      title={`${count} ${pluralLabel}`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+function isActiveRoute(pathname: string, href: string) {
+  if (pathname === href) return true;
+  if (href === "/" || !pathname.startsWith(`${href}/`)) return false;
+
+  const moreSpecificRouteIsActive = navigationSections.some((section) =>
+    section.items.some((item) =>
+      [item, ...(item.children ?? [])].some(
+        (candidate) =>
+          candidate.href.startsWith(`${href}/`) &&
+          (pathname === candidate.href ||
+            pathname.startsWith(`${candidate.href}/`)),
+      ),
+    ),
+  );
+  return !moreSpecificRouteIsActive;
+}
+
+function AccountMenu({
+  email,
+  logoutPending,
+  onLogout,
+  onNavigate,
+  onThemeChange,
+  organizationName,
+  role,
+  themePreference,
+}: {
+  email: string;
+  logoutPending: boolean;
+  onLogout: () => void;
+  onNavigate: () => void;
+  onThemeChange: (preference: ThemePreference) => void;
+  organizationName: string;
+  role: NavigationRole;
+  themePreference: ThemePreference;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const initials = getAccountInitials(email);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !triggerRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  function closeMenu() {
+    setIsOpen(false);
+    onNavigate();
+  }
+
+  return (
+    <div className="sidebar-account">
+      <button
+        aria-controls="account-popover"
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        className="account-trigger"
+        onClick={() => setIsOpen((open) => !open)}
+        ref={triggerRef}
+        type="button"
+      >
+        <span aria-hidden="true" className="avatar account-avatar">
+          {initials}
+        </span>
+        <span className="account-trigger-copy">
+          <span className="account-trigger-email">{email}</span>
+          <span className="account-trigger-organization">{organizationName}</span>
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={`account-trigger-chevron${isOpen ? " is-open" : ""}`}
+          size={16}
+          strokeWidth={2}
+        />
+      </button>
+      {isOpen && (
+        <div
+          aria-label="Account menu"
+          className="account-popover"
+          id="account-popover"
+          ref={popoverRef}
+          role="dialog"
+        >
+          <div className="account-popover-identity">
+            <strong>{email}</strong>
+            <span>{role === "admin" ? "Administrator" : "Member"}</span>
+          </div>
+          <fieldset className="account-theme-options">
+            <legend>Theme</legend>
+            <div className="account-theme-buttons">
+              <ThemeOption
+                icon={Sun}
+                label="Light"
+                onSelect={() => onThemeChange("light")}
+                selected={themePreference === "light"}
+              />
+              <ThemeOption
+                icon={Moon}
+                label="Dark"
+                onSelect={() => onThemeChange("dark")}
+                selected={themePreference === "dark"}
+              />
+              <ThemeOption
+                icon={Monitor}
+                label="System"
+                onSelect={() => onThemeChange("system")}
+                selected={themePreference === "system"}
+              />
+            </div>
+          </fieldset>
+          <Link className="account-menu-link" href="/settings" onClick={closeMenu}>
+            <Settings aria-hidden="true" size={18} strokeWidth={2} />
+            Settings
+          </Link>
+          <div aria-hidden="true" className="account-menu-divider" />
+          <button
+            className="account-sign-out"
+            disabled={logoutPending}
+            onClick={() => {
+              closeMenu();
+              onLogout();
+            }}
+            type="button"
+          >
+            <LogOut aria-hidden="true" size={18} strokeWidth={2} />
+            {logoutPending ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThemeOption({
+  icon: Icon,
+  label,
+  onSelect,
+  selected,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onSelect: () => void;
+  selected: boolean;
+}) {
+  return (
+    <button
+      aria-pressed={selected}
+      className={`account-theme-option${selected ? " is-selected" : ""}`}
+      onClick={onSelect}
+      type="button"
+    >
+      <Icon aria-hidden="true" size={16} strokeWidth={2} />
+      {label}
+    </button>
+  );
+}
+
+function getAccountInitials(email: string) {
+  const localPart = email.split("@")[0] ?? "";
+  const words = localPart.split(/[._-]+/).filter(Boolean);
+  const initials = words
+    .slice(0, 2)
+    .map((word) => word.charAt(0))
+    .join("");
+  return (initials || localPart.slice(0, 2) || "?").toUpperCase();
 }
 
 function WorkspaceSessionLoading() {
+  const skeletonItems = navigationSections.flatMap((section) =>
+    section.items.flatMap((item) => item.children ?? [item]),
+  );
+
   return (
     <div
       aria-busy="true"
@@ -332,18 +667,21 @@ function WorkspaceSessionLoading() {
           <span className="workspace-skeleton-mobile-action" />
           <span className="workspace-skeleton-mobile-action" />
         </div>
-        <div className="sidebar-label">WORKSPACE</div>
-        <nav className="sidebar-navigation workspace-skeleton-nav">
-          {pages.map((page, index) => (
-            <div className="workspace-skeleton-nav-row" key={page.href}>
-              <span className="workspace-skeleton-block workspace-skeleton-icon" />
-              <span
-                className={`workspace-skeleton-block workspace-skeleton-nav-label skeleton-width-${index % 3}`}
-              />
-            </div>
-          ))}
+        <nav
+          aria-label="Primary"
+          className="sidebar-navigation workspace-skeleton-nav"
+        >
+          <ul className="nav-sections">
+            {skeletonItems.map((item, index) => (
+              <li className="workspace-skeleton-nav-row" key={item.id}>
+                <span className="workspace-skeleton-block workspace-skeleton-icon" />
+                <span
+                  className={`workspace-skeleton-block workspace-skeleton-nav-label skeleton-width-${index % 3}`}
+                />
+              </li>
+            ))}
+          </ul>
         </nav>
-        <div className="sidebar-spacer" />
         <div className="workspace-skeleton-account">
           <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
           <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-2" />

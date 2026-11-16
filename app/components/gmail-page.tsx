@@ -225,14 +225,6 @@ export function GmailPage() {
         </div>
         {accounts.length > 0 && (
           <div className="gmail-heading-actions">
-            <button
-              className="button button-primary gmail-compose-open"
-              onClick={openCompose}
-              type="button"
-            >
-              <ComposeIcon />
-              Compose
-            </button>
             <label className="gmail-account-picker">
               <span className="gmail-account-picker-icon" aria-hidden="true">
                 <MailIcon />
@@ -305,6 +297,14 @@ export function GmailPage() {
         <>
           <nav aria-label="Gmail mailboxes and labels" className="gmail-mailboxes">
             <button
+              className="button button-primary gmail-compose-open"
+              onClick={openCompose}
+              type="button"
+            >
+              <ComposeIcon />
+              Compose
+            </button>
+            <button
               aria-current={selectedLabelId === "INBOX" ? "page" : undefined}
               className={`gmail-mailbox-button${selectedLabelId === "INBOX" ? " is-active" : ""}`}
               onClick={() => selectMailbox("INBOX")}
@@ -322,6 +322,9 @@ export function GmailPage() {
               <SpamIcon />
               Spam
             </button>
+            {otherLabels.length > 0 && (
+              <span className="gmail-labels-heading">Labels</span>
+            )}
             {otherLabels.map((label) => (
               <button
                 aria-current={
@@ -343,6 +346,7 @@ export function GmailPage() {
             )}
           </nav>
 
+          <div className="gmail-main-content">
           {composeSent && (
             <div className="gmail-compose-success" role="status">
               Email sent successfully.
@@ -635,6 +639,7 @@ export function GmailPage() {
                 </>
               )}
             </section>
+          </div>
           </div>
         </>
       )}

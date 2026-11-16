@@ -59,6 +59,16 @@ setup. The pipeline also shows whether each company has received a successful
 campaign email and when it was sent; this does not change the company's sales
 pipeline status.
 
+The **Discover websites** page lets you choose configured search providers,
+search with a natural-language query, review provider and relevance details,
+and explicitly add selected results to the website registry. Saving queues
+website crawls; it does not create companies. Tavily searches support
+collapsible advanced filters, and bulk registry saves include every displayed
+result. **Auto Find More Results** can continue searching until no new domains
+are found, excluding displayed and already-registered domains; each additional
+Tavily search uses credits. Search depth, default country, and excluded domains
+can be configured by organization admins in **Settings → Tavily**.
+
 ## Useful commands
 
 ```powershell

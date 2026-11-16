@@ -123,9 +123,31 @@ export interface DiscoveryInput {
 }
 
 export type DiscoveryProviderId = "tavily" | "octoparse";
+export type TavilySearchDepth = "basic" | "fast" | "ultra-fast" | "advanced";
+export type TavilyTopic = "general" | "news" | "finance";
+export type TavilyTimeRange = "day" | "week" | "month" | "year";
 export type DiscoveryToolCategory =
   | "search_engine"
   | "business_listing_website";
+
+export interface DiscoverySearchInput extends DiscoveryInput {
+  search_depth?: TavilySearchDepth;
+  topic?: TavilyTopic;
+  chunks_per_source?: number;
+  country?: string;
+  time_range?: TavilyTimeRange;
+  start_date?: string;
+  end_date?: string;
+  filter_by_published_date?: boolean;
+  include_domains?: string[];
+  include_domains_mode?: "restrict" | "prefer";
+  exclude_domains?: string[];
+  include_answer?: boolean | "basic" | "advanced";
+  include_favicon?: boolean;
+  auto_parameters?: boolean;
+  min_score?: number;
+  providers?: DiscoveryProviderId[];
+}
 
 export interface OctoparseTemplateConfiguration {
   template_name: string;
@@ -178,12 +200,16 @@ export interface DiscoveryResult {
   content: string;
   score: number;
   provider: DiscoveryProviderId;
+  favicon: string | null;
+  published_date: string | null;
 }
 
 export interface DiscoveryResponse {
   query: string;
   results: DiscoveryResult[];
   search_id: string;
+  answer: string | null;
+  credits_used: number | null;
   provider_jobs: DiscoveryProviderJob[];
   provider_failures: {
     provider: DiscoveryProviderId;
@@ -307,6 +333,7 @@ export interface WebsiteRecord {
   id: string;
   website_url: string;
   domain: string;
+  favicon_url: string | null;
   crawl_id: string | null;
   is_crawled: boolean;
   crawl_job_status: "queued" | "running" | "succeeded" | "failed" | null;
@@ -424,6 +451,9 @@ export interface ApplicationSettings {
   pagespeed_configured: boolean;
   pagespeed_key_source: "database" | "unset";
   selected_discovery_tools: DiscoveryProviderId[];
+  tavily_default_search_depth: TavilySearchDepth;
+  tavily_default_country: string | null;
+  tavily_default_exclude_domains: string[];
   octoparse_template: OctoparseTemplateConfiguration | null;
 }
 
@@ -895,6 +925,9 @@ export function updateApplicationSettings(
     pagespeed_api_key?: string | null;
     hypestat_auto_fetch_enabled?: boolean;
     selected_discovery_tools?: DiscoveryProviderId[];
+    tavily_default_search_depth?: TavilySearchDepth;
+    tavily_default_country?: string | null;
+    tavily_default_exclude_domains?: string[];
     octoparse_template?: OctoparseTemplateConfiguration | null;
   },
 ): Promise<ApplicationSettings> {
@@ -1241,7 +1274,7 @@ export function deleteCompany(companyId: string): Promise<void> {
 }
 
 export function searchCompanies(
-  input: DiscoveryInput,
+  input: DiscoverySearchInput,
 ): Promise<DiscoveryResponse> {
   return request<DiscoveryResponse>("/discovery/search", {
     method: "POST",
