@@ -59,8 +59,9 @@ function QueueEventsListener() {
               ["websites"],
               ["website-corpus-words"],
               ["company"],
+              ["overview"],
             ]
-          : [["pagespeed", "queue-jobs"], ["company"]];
+          : [["pagespeed", "queue-jobs"], ["company"], ["overview"]];
       for (const queryKey of queryKeys) {
         void queryClient.invalidateQueries({ queryKey });
       }

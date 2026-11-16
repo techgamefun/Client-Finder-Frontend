@@ -31,6 +31,101 @@ export interface Company {
   pagespeed_scans: PageSpeedScanSummary[];
 }
 
+export type OverviewRange = "7d" | "30d" | "90d";
+
+export interface OverviewKpi {
+  current: number;
+  previous: number;
+  absolute_change: number;
+  delta_percent: number | null;
+  sparkline: number[];
+  denominator: number | null;
+  percentage: number | null;
+}
+
+export interface OverviewCoverageRate {
+  count: number;
+  total: number;
+  percentage: number | null;
+}
+
+export interface OverviewQueueHealth {
+  queued: number;
+  running: number;
+  failed: number;
+}
+
+export interface OverviewResponse {
+  range: OverviewRange;
+  previous_range: {
+    start: string;
+    end: string;
+  };
+  kpis: {
+    websites_discovered: OverviewKpi;
+    leads_created: OverviewKpi;
+    reachable_leads: OverviewKpi;
+    emails_sent: OverviewKpi;
+  };
+  funnel: {
+    stages: {
+      key: string;
+      label: string;
+      count: number;
+      conversion_percent: number | null;
+    }[];
+    biggest_drop: string | null;
+  };
+  series: {
+    date: string;
+    websites_discovered: number;
+    leads_created: number;
+  }[];
+  status_breakdown: {
+    status: string;
+    count: number;
+    percentage: number | null;
+  }[];
+  coverage: {
+    companies_total: number;
+    with_email: OverviewCoverageRate;
+    with_phone: OverviewCoverageRate;
+    with_website: OverviewCoverageRate;
+    with_industry: OverviewCoverageRate;
+    crawl_success: OverviewCoverageRate;
+  };
+  jobs: {
+    crawler: OverviewQueueHealth;
+    pagespeed: OverviewQueueHealth;
+    failed_badge_count: number;
+  };
+  attention: {
+    id: string;
+    count: number;
+    message: string;
+    href: string;
+    metric_key: string;
+  }[];
+  onboarding: {
+    steps: {
+      id: string;
+      label: string;
+      href: string;
+      completed: boolean;
+    }[];
+  } | null;
+  recent_leads: {
+    id: string;
+    name: string;
+    domain: string | null;
+    contact_count: number;
+    source_keyword: string | null;
+    lead_status: string;
+    created_at: string;
+    last_email_sent_at: string | null;
+  }[];
+}
+
 export interface SearchKeyword {
   id: string;
   keyword: string;
@@ -967,6 +1062,17 @@ export async function getCompanies(): Promise<Company[]> {
     companies.push(...page);
     if (page.length < pageSize) return companies;
   }
+}
+
+export function getOverview(
+  range: OverviewRange,
+  timezone: string,
+): Promise<OverviewResponse> {
+  const search = new URLSearchParams({
+    range,
+    tz: timezone,
+  });
+  return request<OverviewResponse>(`/overview?${search.toString()}`);
 }
 
 export function getEmailTemplates(
