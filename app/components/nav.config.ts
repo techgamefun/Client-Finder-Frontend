@@ -3,6 +3,7 @@ import {
   Compass,
   FileText,
   Globe,
+  House,
   Inbox,
   LayoutDashboard,
   Mail,
@@ -36,12 +37,36 @@ export interface NavigationSection {
 
 export const navigationSections: NavigationSection[] = [
   {
+    id: "administration",
+    label: "Administration",
+    items: [
+      {
+        id: "admin-dashboard",
+        label: "Admin dashboard",
+        href: "/admin",
+        icon: ShieldCheck,
+        role: "admin",
+      },
+    ],
+  },
+  {
+    id: "home",
+    items: [
+      {
+        id: "home",
+        label: "Home",
+        href: "/",
+        icon: House,
+      },
+    ],
+  },
+  {
     id: "overview",
     items: [
       {
         id: "overview",
         label: "Overview",
-        href: "/",
+        href: "/overview",
         icon: LayoutDashboard,
         role: "user",
       },
@@ -62,19 +87,6 @@ export const navigationSections: NavigationSection[] = [
         label: "Websites",
         href: "/websites",
         icon: Globe,
-      },
-    ],
-  },
-  {
-    id: "administration",
-    label: "Administration",
-    items: [
-      {
-        id: "admin-dashboard",
-        label: "Admin dashboard",
-        href: "/admin",
-        icon: ShieldCheck,
-        role: "admin",
       },
     ],
   },
