@@ -1,13 +1,29 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { ScanSearch, X } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import { crawlWebsite, getWebsiteCrawlJob } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
 
-export function CrawlerPage() {
+export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
   const crawlMutation = useMutation({
     mutationFn: crawlWebsite,
     onMutate: () => setJobId(null),
@@ -69,18 +85,39 @@ export function CrawlerPage() {
     crawlMutation.mutate({ website_url: websiteUrl.trim() });
   }
 
+  function handleDialogClick(event: MouseEvent<HTMLDialogElement>) {
+    if (event.target === event.currentTarget) onClose();
+  }
+
   return (
-    <>
-      <section className="page-heading">
+    <dialog
+      aria-labelledby="crawl-dialog-title"
+      className="crawl-dialog"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={handleDialogClick}
+      ref={dialogRef}
+    >
+      <header className="crawl-dialog-header">
         <div>
           <p className="eyebrow">WEBSITE RESEARCH</p>
-          <h1>Crawl a website</h1>
+          <h2 id="crawl-dialog-title">Crawl a website</h2>
           <p className="heading-copy">
             Collect public company information from its homepage and relevant
             About, Blog, Services, Contact, and Mission pages.
           </p>
         </div>
-      </section>
+        <button
+          aria-label="Close crawl dialog"
+          className="icon-button crawl-dialog-close"
+          onClick={onClose}
+          type="button"
+        >
+          <X aria-hidden="true" size={18} strokeWidth={2} />
+        </button>
+      </header>
 
       <article className="panel crawler-panel crawler-page-panel">
         <div className="panel-heading">
@@ -92,7 +129,7 @@ export function CrawlerPage() {
               website and extracts page text, email addresses, and social links.
             </p>
           </div>
-          <span className="sparkle" aria-hidden="true">◎</span>
+          <ScanSearch aria-hidden="true" className="sparkle" size={22} />
         </div>
 
         <form className="crawler-form" onSubmit={handleCrawlWebsite}>
@@ -201,7 +238,7 @@ export function CrawlerPage() {
           </div>
         )}
       </article>
-    </>
+    </dialog>
   );
 }
 

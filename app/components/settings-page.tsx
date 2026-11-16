@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useEffect,
@@ -69,6 +70,9 @@ type SettingsSection =
   | "account";
 
 export function SettingsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedSection = searchParams.get("section");
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<SettingsSection>("tavily");
   const [maxPages, setMaxPages] = useState<number | null>(null);
@@ -120,6 +124,17 @@ export function SettingsPage() {
     retry: false,
   });
   const isOrganizationAdmin = authSessionQuery.data?.user.role === "admin";
+  useEffect(() => {
+    if (!requestedSection) return;
+    if (
+      isSettingsSection(requestedSection) &&
+      (requestedSection !== "organization" || isOrganizationAdmin)
+    ) {
+      window.requestAnimationFrame(() =>
+        setActiveSection(requestedSection),
+      );
+    }
+  }, [isOrganizationAdmin, requestedSection]);
   const gmailStatus = useSyncExternalStore(
     subscribeToLocationChanges,
     getGmailCallbackStatus,
@@ -355,7 +370,12 @@ export function SettingsPage() {
           <select
             onChange={(event) => {
               const value = event.currentTarget.value;
-              if (isSettingsSection(value)) setActiveSection(value);
+              if (isSettingsSection(value)) {
+                setActiveSection(value);
+                router.replace(`/settings?section=${value}`, {
+                  scroll: false,
+                });
+              }
             }}
             value={activeSection}
           >

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addWebsitesToLeads,
@@ -19,6 +20,7 @@ import type {
   WebsiteUpdateInput,
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
+import { CrawlWebsiteDialog } from "./crawler-page";
 
 const pageTypes: WebsitePageType[] = [
   "business_site",
@@ -172,7 +174,17 @@ function SortableHeader({
 }
 
 export function WebsitesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldOpenCrawlDialog = searchParams.get("crawl") === "1";
   const queryClient = useQueryClient();
+  const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (!shouldOpenCrawlDialog) return;
+    window.requestAnimationFrame(() => setCrawlDialogOpen(true));
+    router.replace("/websites", { scroll: false });
+  }, [router, shouldOpenCrawlDialog]);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -461,6 +473,9 @@ export function WebsitesPage() {
           </p>
         </div>
       </section>
+      {crawlDialogOpen && (
+        <CrawlWebsiteDialog onClose={() => setCrawlDialogOpen(false)} />
+      )}
 
       <section className="panel website-registry-panel">
         <div className="website-registry-toolbar">

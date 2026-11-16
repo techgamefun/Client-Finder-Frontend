@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   composeGmailMessage,
   getAssignedGmailAccounts,
@@ -15,6 +16,9 @@ import {
 const PAGE_SIZE = 25;
 
 export function GmailPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldOpenCompose = searchParams.get("compose") === "1";
   const queryClient = useQueryClient();
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedLabelId, setSelectedLabelId] = useState("INBOX");
@@ -196,6 +200,15 @@ export function GmailPage() {
     setComposeOpen(false);
     composeMutation.reset();
   }
+
+  useEffect(() => {
+    if (!shouldOpenCompose) return;
+    window.requestAnimationFrame(() => {
+      setComposeSent(false);
+      setComposeOpen(true);
+    });
+    router.replace("/gmail", { scroll: false });
+  }, [router, shouldOpenCompose]);
 
   const selectedAccount = accounts.find(
     (account) => account.id === activeAccountId,

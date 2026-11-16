@@ -1,5 +1,5 @@
-import { JobQueuePage } from "@/app/components/job-queue-page";
+import { redirect } from "next/navigation";
 
-export default function CrawlerQueuePage() {
-  return <JobQueuePage kind="crawler" />;
+export default function CrawlerQueuePage(): never {
+  redirect("/jobs?tab=crawler");
 }

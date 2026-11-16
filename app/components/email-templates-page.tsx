@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   createEmailTemplate,
   deleteEmailTemplate,
@@ -24,6 +25,9 @@ const emptyDraft: EmailTemplateInput = {
 };
 
 export function EmailTemplatesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldCreateFromQuery = searchParams.get("create") === "1";
   const queryClient = useQueryClient();
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
@@ -117,6 +121,7 @@ export function EmailTemplatesPage() {
       setSendResult(null);
     },
   });
+  const resetSaveMutation = saveMutation.reset;
   const deleteMutation = useMutation({
     mutationFn: (templateId: string) =>
       deleteEmailTemplate(organizationId, templateId),
@@ -187,14 +192,28 @@ export function EmailTemplatesPage() {
     sendMutation.reset();
   }
 
-  function startNewTemplate() {
+  const startNewTemplate = useCallback(() => {
     setEditingTemplateId(null);
     setDraft({ ...emptyDraft });
     setEditorOpen(true);
     setPreview(null);
     setSendResult(null);
-    saveMutation.reset();
-  }
+    resetSaveMutation();
+  }, [resetSaveMutation]);
+
+  useEffect(() => {
+    if (!shouldCreateFromQuery || sessionQuery.isPending) return;
+    if (isAdmin) {
+      window.requestAnimationFrame(startNewTemplate);
+    }
+    router.replace("/templates", { scroll: false });
+  }, [
+    isAdmin,
+    router,
+    sessionQuery.isPending,
+    shouldCreateFromQuery,
+    startNewTemplate,
+  ]);
 
   function startEditingTemplate(template: EmailTemplate) {
     setEditingTemplateId(template.id);
@@ -315,15 +334,6 @@ export function EmailTemplatesPage() {
             records, then preview and send through a shared Gmail account.
           </p>
         </div>
-        {isAdmin && (
-          <button
-            className="button button-primary"
-            onClick={startNewTemplate}
-            type="button"
-          >
-            <span aria-hidden="true">＋</span> New template
-          </button>
-        )}
       </header>
 
       {sessionQuery.isError && (

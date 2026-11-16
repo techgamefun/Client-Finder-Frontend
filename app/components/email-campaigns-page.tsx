@@ -506,15 +506,6 @@ export function EmailCampaignsPage() {
             accounts, with controlled pacing and live delivery progress.
           </p>
         </div>
-        {isAdmin && (
-          <button
-            className="button button-primary"
-            onClick={startNewCampaign}
-            type="button"
-          >
-            <span aria-hidden="true">＋</span> New campaign
-          </button>
-        )}
       </header>
 
       {sessionQuery.isError && (

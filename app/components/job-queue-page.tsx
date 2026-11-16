@@ -83,15 +83,19 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
     "all",
   );
-  const jobsQuery = useQuery<QueueJob[]>({
-    queryKey: [kind, "queue-jobs"],
-    queryFn: async () => {
-      if (kind === "crawler") {
-        return (await getWebsiteCrawlJobs()).map(normalizeCrawlerJob);
-      }
-      return (await getPageSpeedScanJobs()).map(normalizePageSpeedJob);
-    },
+  const crawlerJobsQuery = useQuery({
+    queryKey: ["crawler", "queue-jobs"],
+    queryFn: getWebsiteCrawlJobs,
+    select: (jobs) => jobs.map(normalizeCrawlerJob),
+    enabled: kind === "crawler",
   });
+  const pageSpeedJobsQuery = useQuery({
+    queryKey: ["pagespeed", "queue-jobs"],
+    queryFn: getPageSpeedScanJobs,
+    select: (jobs) => jobs.map(normalizePageSpeedJob),
+    enabled: kind === "pagespeed",
+  });
+  const jobsQuery = kind === "crawler" ? crawlerJobsQuery : pageSpeedJobsQuery;
   const retryMutation = useMutation({
     mutationFn: async (jobId: string) => {
       if (kind === "crawler") {
@@ -210,8 +214,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             <h2 id="queue-jobs-heading">Recent jobs</h2>
             <p className="panel-subtitle">
               Showing {visibleJobs.length} of the latest {jobs.length} jobs.
-              This page refreshes
-              automatically.
+              Job status updates are streamed in real time.
             </p>
           </div>
           {kind === "crawler" && (

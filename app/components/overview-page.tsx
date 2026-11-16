@@ -104,11 +104,11 @@ export function OverviewPage() {
           </span>
           <span className="overview-arrow" aria-hidden="true">→</span>
         </Link>
-        <Link className="overview-action" href="/crawler">
+        <Link className="overview-action" href="/websites">
           <span className="stat-icon green">◎</span>
           <span>
-            <strong>Research a website</strong>
-            <small>Extract public contact and company information.</small>
+            <strong>Browse websites</strong>
+            <small>Review saved websites or start a new crawl.</small>
           </span>
           <span className="overview-arrow" aria-hidden="true">→</span>
         </Link>

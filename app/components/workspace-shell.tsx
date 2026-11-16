@@ -1,14 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowUpRight,
+  Building2,
   ChevronDown,
+  ChevronRight,
+  Compass,
+  Globe,
+  LoaderCircle,
   LogOut,
   Menu,
+  Megaphone,
   Moon,
   Monitor,
+  PanelLeft,
+  PanelLeftClose,
+  Plus,
+  Search,
   Settings,
   Sun,
   X,
@@ -20,12 +31,15 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type RefObject,
   type ReactNode,
 } from "react";
 import {
   ApiError,
   getAuthSession,
   getCompanies,
+  getPageSpeedScanJobs,
+  getWebsiteCrawlJobs,
   logout,
   type Company,
 } from "@/lib/api";
@@ -37,6 +51,8 @@ import {
 
 const noCompanies: Company[] = [];
 type ThemePreference = "light" | "dark" | "system";
+const sidebarPreferenceKey = "lead-intelligence-sidebar-collapsed";
+const sidebarPreferenceChangedEvent = "lead-intelligence-sidebar-changed";
 
 function subscribeToTheme(onChange: () => void) {
   const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -73,11 +89,43 @@ function persistThemePreference(preference: ThemePreference) {
   window.dispatchEvent(new Event("lead-intelligence-theme-change"));
 }
 
+function subscribeToSidebarPreference(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(sidebarPreferenceChangedEvent, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(sidebarPreferenceChangedEvent, onChange);
+  };
+}
+
+function getSidebarCollapsedSnapshot() {
+  return window.localStorage.getItem(sidebarPreferenceKey) === "true";
+}
+
+function persistSidebarPreference(collapsed: boolean) {
+  window.localStorage.setItem(sidebarPreferenceKey, String(collapsed));
+  window.dispatchEvent(new Event(sidebarPreferenceChangedEvent));
+}
+
+function toggleSidebarPreference() {
+  persistSidebarPreference(!getSidebarCollapsedSnapshot());
+}
+
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const search = useSearchParams().toString();
+  const currentLocation = `${pathname}${search ? `?${search}` : ""}`;
   const router = useRouter();
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const sidebarCollapsed = useSyncExternalStore(
+    subscribeToSidebarPreference,
+    getSidebarCollapsedSnapshot,
+    () => false,
+  );
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const isPublicAuthPage = pathname === "/login" || pathname === "/signup";
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
@@ -100,6 +148,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     queryFn: getCompanies,
     enabled: sessionQuery.data !== undefined,
   });
+  const crawlerJobsQuery = useQuery({
+    queryKey: ["crawler", "queue-jobs"],
+    queryFn: getWebsiteCrawlJobs,
+    enabled: sessionQuery.data !== undefined,
+  });
+  const pageSpeedJobsQuery = useQuery({
+    queryKey: ["pagespeed", "queue-jobs"],
+    queryFn: getPageSpeedScanJobs,
+    enabled: sessionQuery.data !== undefined,
+  });
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: async () => {
@@ -108,12 +166,95 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     },
   });
   const companies = companiesQuery.data ?? noCompanies;
-  const leadCount = companies.filter(
-    (company) => company.contacts.length > 0,
+  const leadsNeedingReview = companies.filter(
+    (company) =>
+      company.contacts.length > 0 && company.lead_status === "needs_review",
   ).length;
+  const jobs = [
+    ...(crawlerJobsQuery.data ?? []),
+    ...(pageSpeedJobsQuery.data ?? []),
+  ];
+  const runningJobs = jobs.filter((job) => job.status === "running").length;
+  const failedJobs = jobs.filter((job) => job.status === "failed").length;
   const sessionIsUnauthorized =
     sessionQuery.error instanceof ApiError &&
     sessionQuery.error.status === 401;
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setMobileMenuOpen(false);
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        if (window.matchMedia("(max-width: 1023px)").matches) {
+          setMobileMenuOpen((open) => !open);
+        } else {
+          toggleSidebarPreference();
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    if (!sidebarRef.current) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusableElements = () => {
+      const drawer = sidebarRef.current;
+      if (!drawer) return [];
+      return Array.from(
+        drawer.querySelectorAll<HTMLElement>(focusableSelector),
+      ).filter((element) => element.getClientRects().length > 0);
+    };
+    const frame = window.requestAnimationFrame(() => {
+      focusableElements()[0]?.focus();
+    });
+
+    function handleDrawerKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (sidebarRef.current?.querySelector(".account-popover")) return;
+        event.preventDefault();
+        setMobileMenuOpen(false);
+        mobileMenuButtonRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const elements = focusableElements();
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (!first || !last) {
+        event.preventDefault();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleDrawerKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleDrawerKeyDown);
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = isDarkMode ? "dark" : "light";
@@ -165,13 +306,32 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <aside className={`sidebar${mobileMenuOpen ? " is-open" : ""}`}>
+      {mobileMenuOpen && (
+        <button
+          aria-label="Close navigation"
+          className="sidebar-backdrop"
+          onClick={() => {
+            setMobileMenuOpen(false);
+            mobileMenuButtonRef.current?.focus();
+          }}
+          type="button"
+        />
+      )}
+      <aside
+        className={`sidebar${mobileMenuOpen ? " is-open" : ""}`}
+        ref={sidebarRef}
+      >
         <div className="sidebar-header">
-          <Link className="brand" href="/" aria-label="Lead Intelligence home">
+          <Link
+            aria-label="Lead Intelligence home"
+            className="brand"
+            href="/"
+            title="Lead Intelligence"
+          >
             <span className="brand-mark">BI</span>
             <span>
               <strong>Lead Intelligence</strong>
@@ -179,19 +339,28 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             </span>
           </Link>
           <button
-            aria-expanded={mobileMenuOpen}
-            aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
-            aria-controls="primary-navigation"
-            className="mobile-menu-toggle"
-            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="sidebar-collapse-toggle"
+            onClick={() => persistSidebarPreference(!sidebarCollapsed)}
+            title={`${sidebarCollapsed ? "Expand" : "Collapse"} sidebar (Ctrl/Cmd+B)`}
             type="button"
           >
-            {mobileMenuOpen ? (
-              <X aria-hidden="true" size={18} strokeWidth={2} />
+            {sidebarCollapsed ? (
+              <PanelLeft aria-hidden="true" size={18} strokeWidth={2} />
             ) : (
-              <Menu aria-hidden="true" size={18} strokeWidth={2} />
+              <PanelLeftClose aria-hidden="true" size={18} strokeWidth={2} />
             )}
-            <span>{mobileMenuOpen ? "Close" : "Menu"}</span>
+          </button>
+          <button
+            aria-label="Close navigation"
+            className="mobile-drawer-close"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              mobileMenuButtonRef.current?.focus();
+            }}
+            type="button"
+          >
+            <X aria-hidden="true" size={18} strokeWidth={2} />
           </button>
         </div>
         <nav
@@ -201,10 +370,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         >
           <Suspense fallback={<div className="sidebar-nav-loading" />}>
             <WorkspaceNavigation
-              companyCount={companies.length}
-              leadCount={leadCount}
+              failedJobs={failedJobs}
               key={pathname}
+              leadsNeedingReview={leadsNeedingReview}
+              location={currentLocation}
               onNavigate={() => setMobileMenuOpen(false)}
+              runningJobs={runningJobs}
               role={sessionQuery.data.user.role}
             />
           </Suspense>
@@ -222,6 +393,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="main-content" id="main-content" tabIndex={-1}>
+        <WorkspaceTopBar
+          companies={companies}
+          mobileMenuOpen={mobileMenuOpen}
+          onCommandPaletteOpen={() => setCommandPaletteOpen(true)}
+          onMobileMenuOpen={() => setMobileMenuOpen(true)}
+          location={currentLocation}
+          pathname={pathname}
+          role={sessionQuery.data.user.role}
+          mobileMenuButtonRef={mobileMenuButtonRef}
+        />
         <div className="content-wrap">
           {children}
           <footer className="page-footer">
@@ -230,23 +411,484 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </footer>
         </div>
       </main>
+      <CommandPalette
+        companies={companies}
+        onClose={() => setCommandPaletteOpen(false)}
+        open={commandPaletteOpen}
+        role={sessionQuery.data.user.role}
+      />
     </div>
   );
 }
 
-function WorkspaceNavigation({
-  companyCount,
-  leadCount,
-  onNavigate,
+interface WorkspaceBreadcrumb {
+  label: string;
+  href?: string;
+}
+
+interface WorkspaceAction {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+function WorkspaceTopBar({
+  companies,
+  location,
+  mobileMenuOpen,
+  mobileMenuButtonRef,
+  onCommandPaletteOpen,
+  onMobileMenuOpen,
+  pathname,
   role,
 }: {
-  companyCount: number;
-  leadCount: number;
-  onNavigate: () => void;
+  companies: Company[];
+  location: string;
+  mobileMenuOpen: boolean;
+  mobileMenuButtonRef: RefObject<HTMLButtonElement | null>;
+  onCommandPaletteOpen: () => void;
+  onMobileMenuOpen: () => void;
+  pathname: string;
   role: NavigationRole;
 }) {
-  const pathname = usePathname();
-  const badgeCounts = { companies: companyCount, leads: leadCount };
+  const breadcrumbs = getWorkspaceBreadcrumbs(location, companies);
+  const action = getWorkspaceAction(pathname, role);
+
+  return (
+    <header className="workspace-topbar">
+      <div className="workspace-topbar-inner">
+        <button
+          aria-expanded={mobileMenuOpen}
+          aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+          aria-controls="primary-navigation"
+          className="topbar-menu-button"
+          onClick={onMobileMenuOpen}
+          ref={mobileMenuButtonRef}
+          type="button"
+        >
+          <Menu aria-hidden="true" size={19} strokeWidth={2} />
+        </button>
+        <nav aria-label="Breadcrumb" className="workspace-breadcrumbs">
+          <ol>
+            {breadcrumbs.map((breadcrumb, index) => {
+              const isCurrent = index === breadcrumbs.length - 1;
+              return (
+                <li key={`${breadcrumb.label}-${index}`}>
+                  {index > 0 && (
+                    <ChevronRight
+                      aria-hidden="true"
+                      className="breadcrumb-separator"
+                      size={15}
+                      strokeWidth={2}
+                    />
+                  )}
+                  {breadcrumb.href && !isCurrent ? (
+                    <Link href={breadcrumb.href}>{breadcrumb.label}</Link>
+                  ) : (
+                    <span aria-current={isCurrent ? "page" : undefined}>
+                      {breadcrumb.label}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+        <div className="workspace-topbar-actions">
+          {action && (
+            <Link
+              aria-label={action.label}
+              className="topbar-context-action"
+              href={action.href}
+            >
+              <action.icon aria-hidden="true" size={17} strokeWidth={2} />
+              <span>{action.label}</span>
+            </Link>
+          )}
+          <button
+            aria-label="Search pages and companies (Ctrl or Command+K)"
+            className="command-palette-trigger"
+            onClick={onCommandPaletteOpen}
+            type="button"
+          >
+            <Search aria-hidden="true" size={17} strokeWidth={2} />
+            <span>Search</span>
+            <kbd>
+              Ctrl K
+            </kbd>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function getWorkspaceBreadcrumbs(
+  location: string,
+  companies: Company[],
+): WorkspaceBreadcrumb[] {
+  const pathname = location.split("?")[0] ?? "/";
+  const companyDetailMatch = pathname.match(/^\/company\/([^/]+)$/);
+  if (companyDetailMatch) {
+    const company = companies.find(
+      (candidate) => candidate.id === companyDetailMatch[1],
+    );
+    return [
+      { label: "Companies", href: "/companies" },
+      { label: company?.name ?? "Company details" },
+    ];
+  }
+  if (/^\/websites\/[^/]+$/.test(pathname)) {
+    return [
+      { label: "Websites", href: "/websites" },
+      { label: "Website details" },
+    ];
+  }
+
+  const route = navigationSections
+    .flatMap((section) =>
+      section.items.flatMap((item) =>
+        (item.children ?? [item]).map((entry) => ({
+          section,
+          entry,
+        })),
+      ),
+    )
+    .filter(({ entry }) => isActiveRoute(location, entry.href))
+    .sort((left, right) => right.entry.href.length - left.entry.href.length)[0];
+  if (!route) return [{ label: "Workspace", href: "/" }, { label: "Page" }];
+
+  const sectionHref = route.section.items[0]?.href.split("?")[0];
+  const parent =
+    route.section.label && route.section.label !== route.entry.label
+      ? [{ label: route.section.label, href: sectionHref }]
+      : [];
+  return [...parent, { label: route.entry.label }];
+}
+
+function getWorkspaceAction(
+  pathname: string,
+  role: NavigationRole,
+): WorkspaceAction | null {
+  if (pathname === "/") {
+    return { label: "Discover websites", href: "/discovery", icon: Compass };
+  }
+  if (pathname === "/discovery") {
+    return { label: "Open website registry", href: "/websites", icon: Globe };
+  }
+  if (pathname === "/websites" || pathname.startsWith("/websites/")) {
+    return {
+      label: "Crawl website",
+      href: "/websites?crawl=1",
+      icon: Plus,
+    };
+  }
+  if (pathname === "/companies") {
+    return {
+      label: "Add company",
+      href: "/companies?add=1",
+      icon: Plus,
+    };
+  }
+  if (pathname === "/leads") {
+    return role === "admin"
+      ? {
+          label: "New campaign",
+          href: "/campaigns?create=1",
+          icon: Megaphone,
+        }
+      : {
+          label: "Manage companies",
+          href: "/companies",
+          icon: Building2,
+        };
+  }
+  if (pathname === "/jobs") {
+    return { label: "Start crawl", href: "/websites?crawl=1", icon: Plus };
+  }
+  if (pathname === "/gmail") {
+    return {
+      label: "Compose email",
+      href: "/gmail?compose=1",
+      icon: Plus,
+    };
+  }
+  if (pathname === "/campaigns") {
+    return role === "admin"
+      ? {
+          label: "New campaign",
+          href: "/campaigns?create=1",
+          icon: Megaphone,
+        }
+      : {
+          label: "View lead pipeline",
+          href: "/leads",
+          icon: Building2,
+        };
+  }
+  if (pathname === "/templates") {
+    return { label: "New template", href: "/templates?create=1", icon: Plus };
+  }
+  if (pathname === "/settings") {
+    return role === "admin"
+      ? {
+          label: "Organization users",
+          href: "/settings?section=organization",
+          icon: Settings,
+        }
+      : {
+          label: "My account",
+          href: "/settings?section=account",
+          icon: Settings,
+        };
+  }
+  if (pathname.startsWith("/company/")) {
+    return { label: "Start crawl", href: "/websites?crawl=1", icon: Plus };
+  }
+  return null;
+}
+
+interface CommandEntry {
+  id: string;
+  label: string;
+  description: string;
+  href: string;
+  icon: LucideIcon;
+  keywords: string;
+}
+
+function CommandPalette({
+  companies,
+  onClose,
+  open,
+  role,
+}: {
+  companies: Company[];
+  onClose: () => void;
+  open: boolean;
+  role: NavigationRole;
+}) {
+  const router = useRouter();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open && !dialog.open) {
+      setQuery("");
+      dialog.showModal();
+      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    } else if (!open && dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  const entries = navigationSections.flatMap((section) =>
+    section.items.flatMap((item) =>
+      (item.children ?? [item])
+        .filter((entry) => !entry.role || entry.role === role)
+        .map((entry) => ({
+          id: entry.id,
+          label: entry.label,
+          description: section.label ?? "Workspace",
+          href: entry.href,
+          icon: entry.icon,
+          keywords: `${section.label ?? ""} ${entry.label} ${entry.href}`,
+        })),
+    ),
+  );
+  const quickActions: CommandEntry[] = [
+    {
+      id: "add-company",
+      label: "Add company",
+      description: "Create a company record",
+      href: "/companies?add=1",
+      icon: Building2,
+      keywords: "company create new add",
+    },
+    {
+      id: "start-crawl",
+      label: "Start crawl",
+      description: "Crawl a website and extract business details",
+      href: "/websites?crawl=1",
+      icon: Globe,
+      keywords: "crawl website research",
+    },
+    ...(role === "admin"
+      ? [
+          {
+            id: "new-campaign",
+            label: "New campaign",
+            description: "Set up an email campaign",
+            href: "/campaigns?create=1",
+            icon: Megaphone,
+            keywords: "email outreach create",
+          },
+        ]
+      : []),
+  ];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matches = (entry: CommandEntry) =>
+    !normalizedQuery ||
+    `${entry.label} ${entry.description} ${entry.keywords}`
+      .toLocaleLowerCase()
+      .includes(normalizedQuery);
+  const matchingPages = entries.filter(matches).slice(0, 6);
+  const matchingActions = quickActions.filter(matches);
+  const matchingCompanies = normalizedQuery
+    ? companies
+        .filter((company) =>
+          [company.name, company.domain, company.website]
+            .filter(Boolean)
+            .some((value) =>
+              value?.toLocaleLowerCase().includes(normalizedQuery),
+            ),
+        )
+        .slice(0, 5)
+    : [];
+
+  function navigateTo(href: string) {
+    onClose();
+    router.push(href);
+  }
+
+  return (
+    <dialog
+      aria-labelledby="command-palette-title"
+      className="command-palette-dialog"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      ref={dialogRef}
+    >
+      <h2 className="sr-only" id="command-palette-title">
+        Command palette
+      </h2>
+      <label className="command-palette-search">
+        <Search aria-hidden="true" size={20} strokeWidth={2} />
+        <span className="sr-only">Search pages, companies, and actions</span>
+        <input
+          autoComplete="off"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search pages, companies, and actions..."
+          ref={searchInputRef}
+          type="search"
+          value={query}
+        />
+        <kbd>Esc</kbd>
+      </label>
+      <div className="command-palette-results">
+        {matchingActions.length > 0 && (
+          <section aria-label="Quick actions">
+            <h3>Quick actions</h3>
+            {matchingActions.map((entry) => (
+              <CommandPaletteButton
+                entry={entry}
+                key={entry.id}
+                onSelect={navigateTo}
+              />
+            ))}
+          </section>
+        )}
+        {matchingPages.length > 0 && (
+          <section aria-label="Pages">
+            <h3>Pages</h3>
+            {matchingPages.map((entry) => (
+              <CommandPaletteButton
+                entry={entry}
+                key={entry.id}
+                onSelect={navigateTo}
+              />
+            ))}
+          </section>
+        )}
+        {matchingCompanies.length > 0 && (
+          <section aria-label="Companies">
+            <h3>Companies</h3>
+            {matchingCompanies.map((company) => (
+              <button
+                className="command-palette-result"
+                key={company.id}
+                onClick={() => navigateTo(`/company/${company.id}`)}
+                type="button"
+              >
+                <Building2 aria-hidden="true" size={18} strokeWidth={2} />
+                <span>
+                  <strong>{company.name}</strong>
+                  <small>{company.domain || company.website || "Company record"}</small>
+                </span>
+                <ArrowUpRight
+                  aria-hidden="true"
+                  className="command-palette-result-tail"
+                  size={16}
+                  strokeWidth={2}
+                />
+              </button>
+            ))}
+          </section>
+        )}
+        {matchingActions.length === 0 &&
+          matchingPages.length === 0 &&
+          matchingCompanies.length === 0 && (
+            <p className="command-palette-empty">No matching results.</p>
+          )}
+      </div>
+    </dialog>
+  );
+}
+
+function CommandPaletteButton({
+  entry,
+  onSelect,
+}: {
+  entry: CommandEntry;
+  onSelect: (href: string) => void;
+}) {
+  const Icon = entry.icon;
+  return (
+    <button
+      className="command-palette-result"
+      onClick={() => onSelect(entry.href)}
+      type="button"
+    >
+      <Icon aria-hidden="true" size={18} strokeWidth={2} />
+      <span>
+        <strong>{entry.label}</strong>
+        <small>{entry.description}</small>
+      </span>
+      <ArrowUpRight
+        aria-hidden="true"
+        className="command-palette-result-tail"
+        size={16}
+        strokeWidth={2}
+      />
+    </button>
+  );
+}
+
+function WorkspaceNavigation({
+  failedJobs,
+  leadsNeedingReview,
+  location,
+  onNavigate,
+  runningJobs,
+  role,
+}: {
+  failedJobs: number;
+  leadsNeedingReview: number;
+  location: string;
+  onNavigate: () => void;
+  runningJobs: number;
+  role: NavigationRole;
+}) {
+  const pathname = location;
+  const badgeCounts = { leads: leadsNeedingReview, jobs: failedJobs };
   const visibleSections = navigationSections
     .map((section) => ({
       ...section,
@@ -276,6 +918,7 @@ function WorkspaceNavigation({
                   key={item.id}
                   onNavigate={onNavigate}
                   pathname={pathname}
+                  runningJobs={item.badgeKey === "jobs" ? runningJobs : 0}
                 />
               ))}
             </ul>
@@ -293,6 +936,7 @@ function WorkspaceNavigation({
               key={item.id}
               onNavigate={onNavigate}
               pathname={pathname}
+              runningJobs={item.badgeKey === "jobs" ? runningJobs : 0}
             />
           ))}
         </ul>
@@ -319,11 +963,13 @@ function NavigationEntry({
   item,
   onNavigate,
   pathname,
+  runningJobs,
 }: {
   badgeCount?: number;
   item: NavigationItem;
   onNavigate: () => void;
   pathname: string;
+  runningJobs: number;
 }) {
   const Icon = item.icon;
   if (item.children?.length) {
@@ -341,15 +987,25 @@ function NavigationEntry({
   return (
     <li>
       <Link
+        aria-label={item.label}
+        data-tooltip={item.label}
         aria-current={isActive ? "page" : undefined}
         className={`nav-link${isActive ? " active" : ""}`}
         href={item.href}
         onClick={onNavigate}
+        title={item.label}
       >
         <Icon aria-hidden="true" className="nav-icon" size={18} strokeWidth={2} />
         <span className="nav-link-label">{item.label}</span>
-        {badgeCount !== undefined && (
-          <NavigationBadge count={badgeCount} itemLabel={item.label} />
+        {item.badgeKey === "jobs" ? (
+          <JobNavigationStatus
+            failedCount={badgeCount ?? 0}
+            runningCount={runningJobs}
+          />
+        ) : (
+          badgeCount !== undefined && (
+            <NavigationBadge count={badgeCount} itemLabel={item.label} />
+          )
         )}
       </Link>
     </li>
@@ -377,10 +1033,13 @@ function MailNavigationGroup({
   return (
     <li className="nav-group">
       <button
+        aria-label={item.label}
         aria-controls={childrenId}
         aria-expanded={expanded}
         className={`nav-link nav-group-toggle${isActive ? " is-parent-active" : ""}`}
         onClick={() => setExpanded((current) => !current)}
+        data-tooltip={item.label}
+        title={item.label}
         type="button"
       >
         <Icon aria-hidden="true" className="nav-icon" size={18} strokeWidth={2} />
@@ -406,10 +1065,13 @@ function MailNavigationGroup({
           return (
             <li key={child.id}>
               <Link
+                aria-label={child.label}
+                data-tooltip={child.label}
                 aria-current={childIsActive ? "page" : undefined}
                 className={`nav-link${childIsActive ? " active" : ""}`}
                 href={child.href}
                 onClick={onNavigate}
+                title={child.label}
               >
                 <ChildIcon
                   aria-hidden="true"
@@ -436,31 +1098,109 @@ function NavigationBadge({
 }) {
   if (count < 1) return null;
 
-  const pluralLabel = itemLabel === "Companies" ? "companies" : "leads";
-  // TODO(Phase 2): Replace entity totals with actionable "needs attention" counts.
+  const badgeLabel =
+    itemLabel === "Lead pipeline"
+      ? "leads needing review"
+      : itemLabel.toLowerCase();
+  // TODO: Move actionable counts to an aggregated API endpoint when available.
   return (
     <span
-      aria-label={`${count} ${pluralLabel}`}
+      aria-label={`${count} ${badgeLabel}`}
       className="nav-count"
-      title={`${count} ${pluralLabel}`}
+      role="img"
+      title={`${count} ${badgeLabel}`}
     >
       {count > 99 ? "99+" : count}
     </span>
   );
 }
 
-function isActiveRoute(pathname: string, href: string) {
-  if (pathname === href) return true;
-  if (href === "/" || !pathname.startsWith(`${href}/`)) return false;
+function JobNavigationStatus({
+  failedCount,
+  runningCount,
+}: {
+  failedCount: number;
+  runningCount: number;
+}) {
+  if (failedCount === 0 && runningCount === 0) return null;
+
+  return (
+    <span className="nav-job-status">
+      {runningCount > 0 && (
+        <span
+          aria-label={`${runningCount} jobs running`}
+          className="nav-job-running"
+          role="img"
+        >
+          <LoaderCircle aria-hidden="true" size={17} strokeWidth={2} />
+        </span>
+      )}
+      {failedCount > 0 && (
+        <span
+          aria-label={`${failedCount} failed jobs`}
+          className="nav-count nav-count-error"
+          role="img"
+          title={`${failedCount} failed jobs`}
+        >
+          {failedCount > 99 ? "99+" : failedCount}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function isActiveRoute(location: string, href: string) {
+  const currentUrl = new URL(location, "http://lead-intelligence.local");
+  const targetUrl = new URL(href, "http://lead-intelligence.local");
+  if (targetUrl.searchParams.size > 0) {
+    for (const [key, value] of targetUrl.searchParams) {
+      if (currentUrl.searchParams.get(key) !== value) return false;
+    }
+  }
+  if (currentUrl.pathname === targetUrl.pathname) {
+    if (targetUrl.searchParams.size > 0) return true;
+    const querySpecificRouteIsActive = navigationSections.some((section) =>
+      section.items.some((item) =>
+        [item, ...(item.children ?? [])].some((candidate) => {
+          const candidateUrl = new URL(
+            candidate.href,
+            "http://lead-intelligence.local",
+          );
+          return (
+            candidateUrl.pathname === currentUrl.pathname &&
+            candidateUrl.searchParams.size > 0 &&
+            [...candidateUrl.searchParams].every(
+              ([key, value]) => currentUrl.searchParams.get(key) === value,
+            )
+          );
+        }),
+      ),
+    );
+    return !querySpecificRouteIsActive;
+  }
+  if (
+    targetUrl.pathname === "/" ||
+    !currentUrl.pathname.startsWith(`${targetUrl.pathname}/`)
+  ) {
+    return false;
+  }
 
   const moreSpecificRouteIsActive = navigationSections.some((section) =>
     section.items.some((item) =>
-      [item, ...(item.children ?? [])].some(
-        (candidate) =>
-          candidate.href.startsWith(`${href}/`) &&
-          (pathname === candidate.href ||
-            pathname.startsWith(`${candidate.href}/`)),
-      ),
+      [item, ...(item.children ?? [])].some((candidate) => {
+        const candidateUrl = new URL(
+          candidate.href,
+          "http://lead-intelligence.local",
+        );
+        return (
+          candidateUrl.pathname.startsWith(`${targetUrl.pathname}/`) &&
+          (currentUrl.pathname === candidateUrl.pathname ||
+            currentUrl.pathname.startsWith(`${candidateUrl.pathname}/`)) &&
+          [...candidateUrl.searchParams].every(
+            ([key, value]) => currentUrl.searchParams.get(key) === value,
+          )
+        );
+      }),
     ),
   );
   return !moreSpecificRouteIsActive;
@@ -528,12 +1268,14 @@ function AccountMenu({
   return (
     <div className="sidebar-account">
       <button
+        aria-label={`${email}, ${organizationName}`}
         aria-controls="account-popover"
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         className="account-trigger"
         onClick={() => setIsOpen((open) => !open)}
         ref={triggerRef}
+        title={email}
         type="button"
       >
         <span aria-hidden="true" className="avatar account-avatar">

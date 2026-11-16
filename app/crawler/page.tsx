@@ -1,5 +1,5 @@
-import { CrawlerPage } from "../components/crawler-page";
+import { redirect } from "next/navigation";
 
-export default function CrawlerRoute() {
-  return <CrawlerPage />;
+export default function CrawlerRoute(): never {
+  redirect("/websites");
 }

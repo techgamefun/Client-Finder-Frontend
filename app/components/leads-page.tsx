@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Fragment,
@@ -87,6 +87,9 @@ export function LeadsPage({
   const isCompanyDatabaseView = view === "companies";
   const queryClient = useQueryClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldOpenAddCompany =
+    isCompanyDatabaseView && searchParams.get("add") === "1";
   const pipelineSearch = useSyncExternalStore(
     subscribeToPipelineQuery,
     getPipelineSearchSnapshot,
@@ -128,6 +131,13 @@ export function LeadsPage({
   >(null);
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
+
+  useEffect(() => {
+    if (!shouldOpenAddCompany) return;
+    const dialog = addCompanyDialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    router.replace("/companies", { scroll: false });
+  }, [router, shouldOpenAddCompany]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedLeadCompanyIds, setSelectedLeadCompanyIds] = useState<
     string[]
@@ -484,18 +494,7 @@ export function LeadsPage({
                   : "Companies with at least one contact, ready for your pipeline."}
               </p>
             </div>
-            {isCompanyDatabaseView ? (
-              <button
-                className="button button-primary"
-                onClick={() => {
-                  createMutation.reset();
-                  addCompanyDialogRef.current?.showModal();
-                }}
-                type="button"
-              >
-                <span aria-hidden="true">＋</span> Add a company
-              </button>
-            ) : (
+            {isCompanyDatabaseView ? null : (
               <Link className="button button-secondary" href="/companies">
                 Manage companies <span aria-hidden="true">→</span>
               </Link>

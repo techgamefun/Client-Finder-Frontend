@@ -1,5 +1,5 @@
-import { JobQueuePage } from "@/app/components/job-queue-page";
+import { redirect } from "next/navigation";
 
-export default function PageSpeedQueuePage() {
-  return <JobQueuePage kind="pagespeed" />;
+export default function PageSpeedQueuePage(): never {
+  redirect("/jobs?tab=pagespeed");
 }

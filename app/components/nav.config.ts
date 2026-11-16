@@ -2,21 +2,19 @@ import {
   Building2,
   Compass,
   FileText,
-  Gauge,
   Globe,
   Inbox,
   LayoutDashboard,
-  ListChecks,
   Mail,
   Megaphone,
-  ScanSearch,
   Settings,
   UsersRound,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
 export type NavigationRole = "admin" | "user";
-export type NavigationBadgeKey = "companies" | "leads";
+export type NavigationBadgeKey = "leads" | "jobs";
 
 export interface NavigationItem {
   id: string;
@@ -63,12 +61,6 @@ export const navigationSections: NavigationSection[] = [
         href: "/websites",
         icon: Globe,
       },
-      {
-        id: "crawl",
-        label: "Crawl a website",
-        href: "/crawler",
-        icon: ScanSearch,
-      },
     ],
   },
   {
@@ -80,7 +72,6 @@ export const navigationSections: NavigationSection[] = [
         label: "Companies",
         href: "/companies",
         icon: Building2,
-        badgeKey: "companies",
       },
       {
         id: "lead-pipeline",
@@ -128,16 +119,11 @@ export const navigationSections: NavigationSection[] = [
     label: "Activity",
     items: [
       {
-        id: "crawler-queue",
-        label: "Crawler queue",
-        href: "/crawler/queue",
-        icon: ListChecks,
-      },
-      {
-        id: "pagespeed-queue",
-        label: "PageSpeed queue",
-        href: "/pagespeed-queue",
-        icon: Gauge,
+        id: "jobs",
+        label: "Jobs",
+        href: "/jobs",
+        icon: Workflow,
+        badgeKey: "jobs",
       },
     ],
   },
@@ -150,6 +136,13 @@ export const navigationSections: NavigationSection[] = [
         label: "Settings",
         href: "/settings",
         icon: Settings,
+      },
+      {
+        id: "organization-users",
+        label: "Organization users",
+        href: "/settings?section=organization",
+        icon: UsersRound,
+        role: "admin",
       },
     ],
   },
