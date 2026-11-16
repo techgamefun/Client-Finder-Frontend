@@ -3,10 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import {
+  composeGmailMessage,
   getAssignedGmailAccounts,
+  getGmailLabels,
   getGmailMessage,
   getGmailMessages,
   replyToGmailMessage,
+  type GmailLabel,
 } from "@/lib/api";
 
 const PAGE_SIZE = 25;
@@ -14,12 +17,20 @@ const PAGE_SIZE = 25;
 export function GmailPage() {
   const queryClient = useQueryClient();
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [selectedLabelId, setSelectedLabelId] = useState("INBOX");
   const [selectedMessageId, setSelectedMessageId] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [pageTokens, setPageTokens] = useState<(string | null)[]>([null]);
   const [pageIndex, setPageIndex] = useState(0);
   const [replyBody, setReplyBody] = useState("");
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
+  const [composeCc, setComposeCc] = useState("");
+  const [composeBcc, setComposeBcc] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const [composeSent, setComposeSent] = useState(false);
 
   const accountsQuery = useQuery({
     queryKey: ["gmail-assigned-accounts"],
@@ -31,15 +42,45 @@ export function GmailPage() {
     selectedAccountId || accounts[0]?.id || "";
   const pageToken = pageTokens[pageIndex] ?? null;
 
+  const composeMutation = useMutation({
+    mutationFn: () =>
+      composeGmailMessage(activeAccountId, {
+        to: splitRecipients(composeTo),
+        cc: splitRecipients(composeCc),
+        bcc: splitRecipients(composeBcc),
+        subject: composeSubject.trim(),
+        body_text: composeBody.trim(),
+      }),
+    onSuccess: async () => {
+      setComposeOpen(false);
+      setComposeTo("");
+      setComposeCc("");
+      setComposeBcc("");
+      setComposeSubject("");
+      setComposeBody("");
+      setComposeSent(true);
+      await queryClient.invalidateQueries({
+        queryKey: ["gmail-messages", activeAccountId],
+      });
+    },
+  });
+  const labelsQuery = useQuery({
+    queryKey: ["gmail-labels", activeAccountId],
+    queryFn: () => getGmailLabels(activeAccountId),
+    enabled: Boolean(activeAccountId),
+    retry: false,
+  });
   const messagesQuery = useQuery({
     queryKey: [
       "gmail-messages",
       activeAccountId,
+      selectedLabelId,
       appliedSearch,
       pageToken,
     ],
     queryFn: () =>
       getGmailMessages(activeAccountId, {
+        label_id: selectedLabelId,
         q: appliedSearch || undefined,
         page_token: pageToken ?? undefined,
         max_results: PAGE_SIZE,
@@ -82,7 +123,15 @@ export function GmailPage() {
 
   function selectAccount(accountId: string) {
     setSelectedAccountId(accountId);
+    setSelectedLabelId("INBOX");
+    setComposeSent(false);
     replyMutation.reset();
+    resetInboxPaging();
+  }
+
+  function selectMailbox(labelId: string) {
+    setSelectedLabelId(labelId);
+    setComposeSent(false);
     resetInboxPaging();
   }
 
@@ -129,9 +178,39 @@ export function GmailPage() {
     replyMutation.mutate();
   }
 
+  function sendComposedMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    composeMutation.reset();
+    if (!activeAccountId || composeMutation.isPending) return;
+    composeMutation.mutate();
+  }
+
+  function openCompose() {
+    composeMutation.reset();
+    setComposeSent(false);
+    setComposeOpen(true);
+  }
+
+  function closeCompose() {
+    if (composeMutation.isPending) return;
+    setComposeOpen(false);
+    composeMutation.reset();
+  }
+
   const selectedAccount = accounts.find(
     (account) => account.id === activeAccountId,
   );
+  const currentLabelName =
+    selectedLabelId === "INBOX"
+      ? "Inbox"
+      : selectedLabelId === "SPAM"
+        ? "Spam"
+        : (labelsQuery.data?.find((label) => label.id === selectedLabelId)
+            ?.name ?? "Label");
+  const otherLabels =
+    labelsQuery.data?.filter(
+      (label) => label.id !== "INBOX" && label.id !== "SPAM",
+    ) ?? [];
   const hasSelection = Boolean(selectedMessageId);
 
   return (
@@ -141,32 +220,42 @@ export function GmailPage() {
           <p className="eyebrow">YOUR WORKSPACE / MESSAGES</p>
           <h1>Gmail</h1>
           <p className="heading-copy">
-            Read and reply from the Gmail accounts shared with you.
+            Read, organize, and send from your assigned Gmail accounts.
           </p>
         </div>
         {accounts.length > 0 && (
-          <label className="gmail-account-picker">
-            <span className="gmail-account-picker-icon" aria-hidden="true">
-              <MailIcon />
-            </span>
-            <span className="gmail-account-picker-copy">
-              <span>CONNECTED ACCOUNT</span>
-              <select
-                aria-label="Gmail account"
-                onChange={(event) => selectAccount(event.target.value)}
-                value={activeAccountId}
-              >
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.email_address}
-                  </option>
-                ))}
-              </select>
-            </span>
-            <span className="gmail-account-chevron" aria-hidden="true">
-              <ChevronDownIcon />
-            </span>
-          </label>
+          <div className="gmail-heading-actions">
+            <button
+              className="button button-primary gmail-compose-open"
+              onClick={openCompose}
+              type="button"
+            >
+              <ComposeIcon />
+              Compose
+            </button>
+            <label className="gmail-account-picker">
+              <span className="gmail-account-picker-icon" aria-hidden="true">
+                <MailIcon />
+              </span>
+              <span className="gmail-account-picker-copy">
+                <span>CONNECTED ACCOUNT</span>
+                <select
+                  aria-label="Gmail account"
+                  onChange={(event) => selectAccount(event.target.value)}
+                  value={activeAccountId}
+                >
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.email_address}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <span className="gmail-account-chevron" aria-hidden="true">
+                <ChevronDownIcon />
+              </span>
+            </label>
+          </div>
         )}
       </section>
 
@@ -214,17 +303,63 @@ export function GmailPage() {
 
       {selectedAccount && (
         <>
+          <nav aria-label="Gmail mailboxes and labels" className="gmail-mailboxes">
+            <button
+              aria-current={selectedLabelId === "INBOX" ? "page" : undefined}
+              className={`gmail-mailbox-button${selectedLabelId === "INBOX" ? " is-active" : ""}`}
+              onClick={() => selectMailbox("INBOX")}
+              type="button"
+            >
+              <MailIcon />
+              Inbox
+            </button>
+            <button
+              aria-current={selectedLabelId === "SPAM" ? "page" : undefined}
+              className={`gmail-mailbox-button${selectedLabelId === "SPAM" ? " is-active" : ""}`}
+              onClick={() => selectMailbox("SPAM")}
+              type="button"
+            >
+              <SpamIcon />
+              Spam
+            </button>
+            {otherLabels.map((label) => (
+              <button
+                aria-current={
+                  selectedLabelId === label.id ? "page" : undefined
+                }
+                className={`gmail-mailbox-button${selectedLabelId === label.id ? " is-active" : ""}`}
+                key={label.id}
+                onClick={() => selectMailbox(label.id)}
+                type="button"
+              >
+                <LabelIcon />
+                {formatGmailLabelName(label)}
+              </button>
+            ))}
+            {labelsQuery.isError && (
+              <span className="gmail-labels-error" role="alert">
+                Could not load labels: {labelsQuery.error.message}
+              </span>
+            )}
+          </nav>
+
+          {composeSent && (
+            <div className="gmail-compose-success" role="status">
+              Email sent successfully.
+            </div>
+          )}
+
           <form className="gmail-search-bar" onSubmit={searchInbox}>
             <div className="gmail-search-field">
               <SearchIcon />
               <label className="sr-only" htmlFor="gmail-search">
-                Search in this inbox
+                Search in this mailbox
               </label>
               <input
                 autoComplete="off"
                 id="gmail-search"
                 onChange={(event) => setSearchDraft(event.target.value)}
-                placeholder="Search in this inbox"
+                placeholder={`Search in ${currentLabelName.toLowerCase()}`}
                 value={searchDraft}
               />
               {searchDraft && (
@@ -246,7 +381,7 @@ export function GmailPage() {
           {messagesQuery.isError && (
             <div className="gmail-inline-alert" role="alert">
               <div>
-                <strong>Couldn’t load the inbox.</strong>
+                <strong>Couldn’t load {currentLabelName.toLowerCase()}.</strong>
                 <span>{messagesQuery.error.message}</span>
               </div>
               <button
@@ -263,13 +398,13 @@ export function GmailPage() {
             className={`gmail-inbox-layout${hasSelection ? " has-selection" : ""}`}
           >
             <section
-              aria-label="Inbox messages"
+              aria-label={`${currentLabelName} messages`}
               aria-busy={messagesQuery.isFetching}
               className="gmail-message-list"
             >
               <div className="gmail-list-heading">
                 <div>
-                  <h2>Inbox</h2>
+                  <h2>{currentLabelName}</h2>
                   <span className="gmail-result-count">
                     {messagesQuery.data
                       ? `${messagesQuery.data.result_size_estimate.toLocaleString()} messages`
@@ -277,11 +412,11 @@ export function GmailPage() {
                   </span>
                 </div>
                 <button
-                  aria-label="Refresh inbox"
+                  aria-label={`Refresh ${currentLabelName.toLowerCase()}`}
                   className="gmail-icon-button"
                   disabled={messagesQuery.isFetching}
                   onClick={() => void messagesQuery.refetch()}
-                  title="Refresh inbox"
+                  title={`Refresh ${currentLabelName.toLowerCase()}`}
                   type="button"
                 >
                   <RefreshIcon />
@@ -307,12 +442,14 @@ export function GmailPage() {
                       <SearchIcon />
                     </span>
                     <strong>
-                      {appliedSearch ? "No matches found" : "You’re all caught up"}
+                      {appliedSearch
+                        ? "No matches found"
+                        : `No messages in ${currentLabelName}`}
                     </strong>
                     <p>
                       {appliedSearch
                         ? "Try a different search or clear your filters."
-                        : "New messages in this inbox will show up here."}
+                        : `Messages in ${currentLabelName} will show up here.`}
                     </p>
                     {appliedSearch && (
                       <button onClick={clearSearch} type="button">
@@ -354,7 +491,7 @@ export function GmailPage() {
                 ))}
               </div>
 
-              <nav aria-label="Inbox pages" className="gmail-pagination">
+              <nav aria-label={`${currentLabelName} pages`} className="gmail-pagination">
                 <span>
                   Page <strong>{pageIndex + 1}</strong>
                 </span>
@@ -394,7 +531,7 @@ export function GmailPage() {
                 type="button"
               >
                 <ChevronLeftIcon />
-                Back to inbox
+                Back to {currentLabelName.toLowerCase()}
               </button>
 
               {!selectedMessageId && (
@@ -501,8 +638,128 @@ export function GmailPage() {
           </div>
         </>
       )}
+
+      {composeOpen && selectedAccount && (
+        <div className="gmail-compose-overlay">
+          <section
+            aria-labelledby="gmail-compose-title"
+            aria-modal="true"
+            className="gmail-compose-dialog"
+            role="dialog"
+          >
+            <header className="gmail-compose-heading">
+              <div>
+                <p className="eyebrow">NEW MESSAGE</p>
+                <h2 id="gmail-compose-title">Compose email</h2>
+                <span>From {selectedAccount.email_address}</span>
+              </div>
+              <button
+                aria-label="Close compose"
+                className="gmail-compose-close"
+                disabled={composeMutation.isPending}
+                onClick={closeCompose}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+            <form className="gmail-compose-form" onSubmit={sendComposedMessage}>
+              <label>
+                To
+                <input
+                  autoComplete="email"
+                  disabled={composeMutation.isPending}
+                  onChange={(event) => setComposeTo(event.target.value)}
+                  placeholder="name@example.com, another@example.com"
+                  required
+                  value={composeTo}
+                />
+              </label>
+              <label>
+                Cc
+                <input
+                  disabled={composeMutation.isPending}
+                  onChange={(event) => setComposeCc(event.target.value)}
+                  placeholder="Optional; separate addresses with commas"
+                  value={composeCc}
+                />
+              </label>
+              <label>
+                Bcc
+                <input
+                  disabled={composeMutation.isPending}
+                  onChange={(event) => setComposeBcc(event.target.value)}
+                  placeholder="Optional; separate addresses with commas"
+                  value={composeBcc}
+                />
+              </label>
+              <label>
+                Subject
+                <input
+                  autoComplete="off"
+                  disabled={composeMutation.isPending}
+                  maxLength={998}
+                  onChange={(event) => setComposeSubject(event.target.value)}
+                  placeholder="Subject"
+                  value={composeSubject}
+                />
+              </label>
+              <label>
+                Message
+                <textarea
+                  disabled={composeMutation.isPending}
+                  maxLength={20_000}
+                  onChange={(event) => setComposeBody(event.target.value)}
+                  placeholder="Write your message..."
+                  required
+                  rows={9}
+                  value={composeBody}
+                />
+              </label>
+              {composeMutation.isError && (
+                <p className="gmail-compose-error" role="alert">
+                  Couldn’t send email: {composeMutation.error.message}
+                </p>
+              )}
+              <footer className="gmail-compose-footer">
+                <span>
+                  {composeMutation.isPending ? "Sending..." : "Sent from the selected Gmail account"}
+                </span>
+                <button
+                  className="button button-primary gmail-send-button"
+                  disabled={
+                    composeMutation.isPending ||
+                    splitRecipients(composeTo).length === 0 ||
+                    !composeBody.trim()
+                  }
+                  type="submit"
+                >
+                  <SendIcon />
+                  {composeMutation.isPending ? "Sending..." : "Send"}
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
+}
+
+function splitRecipients(value: string) {
+  return value
+    .split(/[;,]/)
+    .map((address) => address.trim())
+    .filter(Boolean);
+}
+
+function formatGmailLabelName(label: GmailLabel) {
+  if (label.type !== "system") return label.name;
+  return label.name
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function MessageListSkeleton() {
@@ -562,6 +819,48 @@ function MailIcon() {
     >
       <rect height="15" rx="2.5" width="19" x="2.5" y="4.5" />
       <path d="m3.5 6 8.5 7 8.5-7" />
+    </svg>
+  );
+}
+
+function ComposeIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      viewBox="0 0 24 24"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function SpamIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      viewBox="0 0 24 24"
+    >
+      <path d="M5 8a7 7 0 0 1 14 0v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3Z" />
+      <path d="M12 8v5m0 3h.01" />
+    </svg>
+  );
+}
+
+function LabelIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      viewBox="0 0 24 24"
+    >
+      <path d="M20 13 13 20l-9-9V4h7Z" />
+      <circle cx="8" cy="8" r="1" />
     </svg>
   );
 }

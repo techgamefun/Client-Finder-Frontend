@@ -596,6 +596,12 @@ export interface GmailMessageDetail extends GmailMessageSummary {
   body_text: string;
 }
 
+export interface GmailLabel {
+  id: string;
+  name: string;
+  type: string;
+}
+
 export interface UserGmailAssignment {
   id: string;
   org_id: string;
@@ -770,15 +776,25 @@ export function getAssignedGmailAccounts(): Promise<AssignedGmailAccount[]> {
   return request<AssignedGmailAccount[]>("/gmail/accounts/assigned");
 }
 
+export function getGmailLabels(
+  gmailAccountId: string,
+): Promise<GmailLabel[]> {
+  return request<GmailLabel[]>(
+    `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/labels`,
+  );
+}
+
 export function getGmailMessages(
   gmailAccountId: string,
   options: {
+    label_id?: string;
     q?: string;
     page_token?: string;
     max_results?: number;
   } = {},
 ): Promise<GmailMessagesResponse> {
   const query = new URLSearchParams();
+  if (options.label_id) query.set("label_id", options.label_id);
   if (options.q) query.set("q", options.q);
   if (options.page_token) query.set("page_token", options.page_token);
   if (options.max_results !== undefined) {
@@ -787,6 +803,25 @@ export function getGmailMessages(
   const search = query.size > 0 ? `?${query.toString()}` : "";
   return request<GmailMessagesResponse>(
     `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/messages${search}`,
+  );
+}
+
+export function composeGmailMessage(
+  gmailAccountId: string,
+  input: {
+    to: string[];
+    cc: string[];
+    bcc: string[];
+    subject: string;
+    body_text: string;
+  },
+): Promise<{ id: string; thread_id: string }> {
+  return request<{ id: string; thread_id: string }>(
+    `/gmail/accounts/${encodeURIComponent(gmailAccountId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }
 
