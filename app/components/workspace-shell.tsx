@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Suspense,
   useEffect,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -25,7 +26,7 @@ const pages = [
   { href: "/leads", icon: "▤", label: "Lead pipeline" },
   { href: "/discovery", icon: "⌕", label: "Discover leads" },
   { href: "/websites", icon: "↗", label: "Websites" },
-  { href: "/gmail", icon: "✉", label: "Gmail" },
+  { href: "/gmail", icon: "✉", label: "Mail Box" },
   { href: "/templates", icon: "▧", label: "Email templates" },
   { href: "/campaigns", icon: "↗", label: "Drip campaigns" },
   { href: "/crawler", icon: "◎", label: "Crawl a website" },
@@ -56,6 +57,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isPublicAuthPage = pathname === "/login" || pathname === "/signup";
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
@@ -84,11 +86,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const leadCount = companies.filter(
     (company) => company.contacts.length > 0,
   ).length;
-  const connectionLabel = companiesQuery.isError
-    ? "API unavailable"
-    : companiesQuery.isLoading
-      ? "Connecting"
-      : "API connected";
   const sessionIsUnauthorized =
     sessionQuery.error instanceof ApiError &&
     sessionQuery.error.status === 401;
@@ -151,33 +148,48 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <Link className="brand" href="/" aria-label="Lead Intelligence home">
-          <span className="brand-mark">BI</span>
-          <span>
-            <strong>Lead Intelligence</strong>
-            <small>BUSINESS WORKSPACE</small>
-          </span>
-        </Link>
+      <aside className={`sidebar${mobileMenuOpen ? " is-open" : ""}`}>
+        <div className="sidebar-header">
+          <Link className="brand" href="/" aria-label="Lead Intelligence home">
+            <span className="brand-mark">BI</span>
+            <span>
+              <strong>Lead Intelligence</strong>
+              <small>BUSINESS WORKSPACE</small>
+            </span>
+          </Link>
+
+          <button
+            aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+            aria-pressed={isDarkMode}
+            className="theme-toggle"
+            onClick={toggleTheme}
+            type="button"
+          >
+            <span aria-hidden="true">{isDarkMode ? "☀" : "☾"}</span>
+            {isDarkMode ? "Light mode" : "Dark mode"}
+          </button>
+
+          <button
+            aria-expanded={mobileMenuOpen}
+            className="mobile-menu-toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            type="button"
+          >
+            <span aria-hidden="true">{mobileMenuOpen ? "×" : "☰"}</span>
+            {mobileMenuOpen ? "Close" : "Menu"}
+          </button>
+        </div>
 
         <div className="sidebar-label">WORKSPACE</div>
-        <Suspense fallback={<div className="sidebar-nav-loading" />}>
-          <WorkspaceNavigation
-            companyCount={companies.length}
-            leadCount={leadCount}
-          />
-        </Suspense>
-
-        <button
-          aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
-          aria-pressed={isDarkMode}
-          className="theme-toggle"
-          onClick={toggleTheme}
-          type="button"
-        >
-          <span aria-hidden="true">{isDarkMode ? "☀" : "☾"}</span>
-          {isDarkMode ? "Light mode" : "Dark mode"}
-        </button>
+        <nav aria-label="Workspace navigation" className="sidebar-navigation">
+          <Suspense fallback={<div className="sidebar-nav-loading" />}>
+            <WorkspaceNavigation
+              companyCount={companies.length}
+              leadCount={leadCount}
+              onNavigate={() => setMobileMenuOpen(false)}
+            />
+          </Suspense>
+        </nav>
 
         <div className="sidebar-spacer" />
         <div className="sidebar-note">
@@ -197,13 +209,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             {logoutMutation.isPending ? "Signing out…" : "Sign out"}
           </button>
         </div>
-        <div className="sidebar-note">
-          <span className="note-dot" />
-          <span>
-            <strong>API workspace</strong>
-            <small>{connectionLabel}</small>
-          </span>
-        </div>
       </aside>
 
       <main className="main-content">
@@ -222,28 +227,88 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 function WorkspaceNavigation({
   companyCount,
   leadCount,
+  onNavigate,
 }: {
   companyCount: number;
   leadCount: number;
+  onNavigate: () => void;
 }) {
   const pathname = usePathname();
+  const [mailboxExpanded, setMailboxExpanded] = useState(() =>
+    ["/gmail", "/templates", "/campaigns"].includes(pathname),
+  );
 
-  return pages.map((page) => (
-    <Link
-      aria-current={pathname === page.href ? "page" : undefined}
-      className={`nav-link${pathname === page.href ? " active" : ""}`}
-      href={page.href}
-      key={page.href}
-    >
-      <span className="nav-icon">{page.icon}</span>
-      {page.label}
-      {(page.href === "/companies" || page.href === "/leads") && (
-        <span className="nav-count">
-          {page.href === "/companies" ? companyCount : leadCount}
-        </span>
-      )}
-    </Link>
-  ));
+  return pages.map((page) => {
+    if (page.href === "/gmail") {
+      const mailboxChildren = pages.filter(
+        (item) =>
+          item.href === "/gmail" ||
+          item.href === "/templates" ||
+          item.href === "/campaigns",
+      );
+      const isMailboxActive = mailboxChildren.some(
+        (item) => pathname === item.href,
+      );
+
+      return (
+        <div className="nav-group" key={page.href}>
+          <button
+            aria-controls="mailbox-navigation"
+            aria-expanded={mailboxExpanded}
+            className={`nav-link nav-group-toggle${isMailboxActive ? " active" : ""}`}
+            onClick={() => setMailboxExpanded((expanded) => !expanded)}
+            type="button"
+          >
+            <span className="nav-icon">{page.icon}</span>
+            {page.label}
+            <span aria-hidden="true" className="nav-group-chevron">
+              {mailboxExpanded ? "⌄" : "›"}
+            </span>
+          </button>
+          <div
+            className="nav-group-children"
+            hidden={!mailboxExpanded}
+            id="mailbox-navigation"
+          >
+            {mailboxChildren.map((child) => (
+              <Link
+                aria-current={pathname === child.href ? "page" : undefined}
+                className={`nav-link${pathname === child.href ? " active" : ""}`}
+                href={child.href}
+                key={child.href}
+                onClick={onNavigate}
+              >
+                <span className="nav-icon">{child.icon}</span>
+                {child.href === "/gmail" ? "Inbox" : child.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (page.href === "/templates" || page.href === "/campaigns") {
+      return null;
+    }
+
+    return (
+      <Link
+        aria-current={pathname === page.href ? "page" : undefined}
+        className={`nav-link${pathname === page.href ? " active" : ""}`}
+        href={page.href}
+        key={page.href}
+        onClick={onNavigate}
+      >
+        <span className="nav-icon">{page.icon}</span>
+        {page.label}
+        {(page.href === "/companies" || page.href === "/leads") && (
+          <span className="nav-count">
+            {page.href === "/companies" ? companyCount : leadCount}
+          </span>
+        )}
+      </Link>
+    );
+  });
 }
 
 function WorkspaceSessionLoading() {
@@ -256,15 +321,19 @@ function WorkspaceSessionLoading() {
     >
       <span className="sr-only">Loading workspace</span>
       <aside aria-hidden="true" className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">BI</span>
-          <span>
-            <strong>Lead Intelligence</strong>
-            <small>BUSINESS WORKSPACE</small>
-          </span>
+        <div className="sidebar-header">
+          <div className="brand">
+            <span className="brand-mark">BI</span>
+            <span>
+              <strong>Lead Intelligence</strong>
+              <small>BUSINESS WORKSPACE</small>
+            </span>
+          </div>
+          <span className="workspace-skeleton-mobile-action" />
+          <span className="workspace-skeleton-mobile-action" />
         </div>
         <div className="sidebar-label">WORKSPACE</div>
-        <div className="workspace-skeleton-nav">
+        <nav className="sidebar-navigation workspace-skeleton-nav">
           {pages.map((page, index) => (
             <div className="workspace-skeleton-nav-row" key={page.href}>
               <span className="workspace-skeleton-block workspace-skeleton-icon" />
@@ -273,7 +342,7 @@ function WorkspaceSessionLoading() {
               />
             </div>
           ))}
-        </div>
+        </nav>
         <div className="sidebar-spacer" />
         <div className="workspace-skeleton-account">
           <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />

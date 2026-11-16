@@ -49,6 +49,12 @@ company and contact, then send it using a Gmail account assigned to them.
 Available `company`, `contact`, and `sender` placeholders are listed in the
 editor and can be inserted directly into the subject or message body.
 
+On the **Lead pipeline**, admins can select leads individually, by page, or
+across the current filtered results and carry that audience into campaign
+setup. The pipeline also shows whether each company has received a successful
+campaign email and when it was sent; this does not change the company's sales
+pipeline status.
+
 ## Useful commands
 
 ```powershell

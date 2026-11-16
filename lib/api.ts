@@ -1,6 +1,9 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
+export const PENDING_CAMPAIGN_AUDIENCE_KEY =
+  "lead-intelligence-pending-campaign-audience";
+
 export function getQueueEventsWebSocketUrl(): string {
   const url = new URL(API_BASE_URL, window.location.origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -21,6 +24,7 @@ export interface Company {
   software_need: string | null;
   lead_score: number | null;
   lead_status: string;
+  last_email_sent_at: string | null;
   created_at: string;
   created_by_email: string | null;
   contacts: Contact[];

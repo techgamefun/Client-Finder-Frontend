@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
+  PENDING_CAMPAIGN_AUDIENCE_KEY,
   createEmailCampaign,
   deleteEmailCampaign,
   getAssignedGmailAccounts,
@@ -41,11 +43,14 @@ const initialCampaignInput = (): EmailCampaignInput => ({
 });
 
 export function EmailCampaignsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldCreateFromQuery = searchParams.get("create") === "1";
   const queryClient = useQueryClient();
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(
     null,
   );
-  const [createOpen, setCreateOpen] = useState(false);
+  const [manualCreateOpen, setManualCreateOpen] = useState(false);
   const [campaignInput, setCampaignInput] = useState<EmailCampaignInput>(
     initialCampaignInput,
   );
@@ -55,6 +60,7 @@ export function EmailCampaignsPage() {
     ids: string[];
   }>({ campaignId: null, ids: [] });
   const [companySelectionError, setCompanySelectionError] = useState("");
+  const [pendingAudienceError, setPendingAudienceError] = useState("");
   const [previewState, setPreviewState] =
     useState<CampaignPreviewState | null>(null);
   const [confirmDeleteCampaignId, setConfirmDeleteCampaignId] = useState<
@@ -116,6 +122,7 @@ export function EmailCampaignsPage() {
     retry: false,
   });
 
+  const createOpen = shouldCreateFromQuery || manualCreateOpen;
   const templates = useMemo(
     () => templatesQuery.data ?? [],
     [templatesQuery.data],
@@ -208,9 +215,18 @@ export function EmailCampaignsPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: (input: EmailCampaignInput) =>
-      createEmailCampaign(organizationId, input),
-    onSuccess: async (campaign) => {
+    mutationFn: ({
+      input,
+    }: {
+      input: EmailCampaignInput;
+      audienceIds: string[] | null;
+    }) => createEmailCampaign(organizationId, input),
+    onSuccess: async (campaign, variables) => {
+      try {
+        window.sessionStorage.removeItem(PENDING_CAMPAIGN_AUDIENCE_KEY);
+      } catch (error) {
+        console.error("Could not clear the selected campaign audience.", error);
+      }
       queryClient.setQueryData<EmailCampaign[]>(
         ["email-campaigns", organizationId],
         (current) => [
@@ -218,12 +234,17 @@ export function EmailCampaignsPage() {
           ...(current ?? []).filter((item) => item.id !== campaign.id),
         ],
       );
-      setCreateOpen(false);
+      setManualCreateOpen(false);
       setCampaignInput(initialCampaignInput());
       setSelectedCampaignId(campaign.id);
-      setCompanySelection({ campaignId: campaign.id, ids: [] });
+      setCompanySelection({
+        campaignId: campaign.id,
+        ids: variables.audienceIds ?? [],
+      });
       setPreviewState(null);
       setCompanySelectionError("");
+      setPendingAudienceError("");
+      router.replace("/campaigns", { scroll: false });
       await invalidateCampaignQueries(campaign.id);
     },
   });
@@ -376,9 +397,44 @@ export function EmailCampaignsPage() {
 
   function submitCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pendingAudienceError) return;
+    let audienceIds: string[] | null = null;
+    if (shouldCreateFromQuery) {
+      try {
+        const savedAudience = window.sessionStorage.getItem(
+          PENDING_CAMPAIGN_AUDIENCE_KEY,
+        );
+        if (savedAudience !== null) {
+          const parsedAudience: unknown = JSON.parse(savedAudience);
+          if (!Array.isArray(parsedAudience)) {
+            throw new Error("The selected campaign audience is invalid.");
+          }
+          const stringIds = parsedAudience.filter(
+            (id): id is string => typeof id === "string",
+          );
+          if (stringIds.length !== parsedAudience.length) {
+            throw new Error("The selected campaign audience is invalid.");
+          }
+          audienceIds = [...new Set(stringIds)];
+          if (audienceIds.length === 0 || audienceIds.length > 5_000) {
+            throw new Error("The selected campaign audience is empty or too large.");
+          }
+        }
+      } catch (error) {
+        console.error("Could not load the selected campaign audience.", error);
+        setPendingAudienceError(
+          "Could not load the selected leads. Return to Leads and select them again.",
+        );
+        return;
+      }
+    }
+
     createMutation.mutate({
-      ...campaignInput,
-      name: campaignInput.name.trim(),
+      input: {
+        ...campaignInput,
+        name: campaignInput.name.trim(),
+      },
+      audienceIds,
     });
   }
 
@@ -408,7 +464,23 @@ export function EmailCampaignsPage() {
   function startNewCampaign() {
     createMutation.reset();
     setCampaignInput(initialCampaignInput());
-    setCreateOpen(true);
+    setPendingAudienceError("");
+    setCompanySelectionError("");
+    setManualCreateOpen(true);
+  }
+
+  function closeCampaignSetup() {
+    setManualCreateOpen(false);
+    setPendingAudienceError("");
+    setCompanySelectionError("");
+    try {
+      window.sessionStorage.removeItem(PENDING_CAMPAIGN_AUDIENCE_KEY);
+    } catch (error) {
+      console.error("Could not clear the selected campaign audience.", error);
+    }
+    if (shouldCreateFromQuery) {
+      router.replace("/campaigns", { scroll: false });
+    }
   }
 
   const anyLifecyclePending =
@@ -467,18 +539,27 @@ export function EmailCampaignsPage() {
               <h2 id="campaign-create-title">Set up your sending plan</h2>
               <p className="panel-subtitle">
                 Choose an existing template and the Gmail accounts assigned to
-                you. You can pick companies and preview delivery after saving.
+                you.{" "}
+                {shouldCreateFromQuery
+                  ? "Leads selected from the Lead pipeline will be preselected after saving."
+                  : "You can pick companies and preview delivery after saving."}
               </p>
             </div>
             <button
               aria-label="Close campaign setup"
               className="campaign-close-button"
-              onClick={() => setCreateOpen(false)}
+              onClick={closeCampaignSetup}
               type="button"
             >
               ×
             </button>
           </div>
+
+          {pendingAudienceError && (
+            <div className="campaign-alert campaign-alert-error" role="alert">
+              {pendingAudienceError}
+            </div>
+          )}
 
           <form className="campaign-form" onSubmit={submitCampaign}>
             <label className="campaign-field campaign-field-wide">
@@ -697,7 +778,7 @@ export function EmailCampaignsPage() {
             <div className="campaign-form-actions campaign-field-wide">
               <button
                 className="button button-secondary"
-                onClick={() => setCreateOpen(false)}
+                onClick={closeCampaignSetup}
                 type="button"
               >
                 Cancel
@@ -706,6 +787,7 @@ export function EmailCampaignsPage() {
                 className="button button-primary"
                 disabled={
                   createMutation.isPending ||
+                  Boolean(pendingAudienceError) ||
                   campaignInput.gmail_account_ids.length === 0 ||
                   campaignInput.min_delay_seconds >
                     campaignInput.max_delay_seconds ||

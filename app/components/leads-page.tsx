@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Fragment,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -14,8 +16,11 @@ import {
 import {
   createCompany,
   deleteCompany,
+  getAuthSession,
   getCompanies,
   getPageSpeedScan,
+  getQueueEventsWebSocketUrl,
+  PENDING_CAMPAIGN_AUDIENCE_KEY,
   updateCompany,
   updateLeadStatus,
 } from "@/lib/api";
@@ -23,6 +28,7 @@ import type { Company, CompanyInput, CompanyUpdateInput } from "@/lib/api";
 import { CompanyName } from "./overview-page";
 
 const noCompanies: Company[] = [];
+const maxCampaignCompanies = 5_000;
 const leadStatuses = [
   "new",
   "needs_review",
@@ -80,6 +86,7 @@ export function LeadsPage({
 }) {
   const isCompanyDatabaseView = view === "companies";
   const queryClient = useQueryClient();
+  const router = useRouter();
   const pipelineSearch = useSyncExternalStore(
     subscribeToPipelineQuery,
     getPipelineSearchSnapshot,
@@ -91,6 +98,12 @@ export function LeadsPage({
   const statusFilter =
     requestedStatus && leadStatuses.includes(requestedStatus)
       ? requestedStatus
+      : "all";
+  const requestedEmailStatus = pipelineParams.get("email_status");
+  const emailStatusFilter =
+    requestedEmailStatus === "contacted" ||
+    requestedEmailStatus === "not_contacted"
+      ? requestedEmailStatus
       : "all";
   const requestedWebsite = pipelineParams.get("website");
   const websiteFilter =
@@ -116,9 +129,19 @@ export function LeadsPage({
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [selectedLeadCompanyIds, setSelectedLeadCompanyIds] = useState<
+    string[]
+  >([]);
+  const [campaignAudienceError, setCampaignAudienceError] = useState("");
   const companiesQuery = useQuery({
     queryKey: ["companies"],
     queryFn: getCompanies,
+  });
+  const sessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession,
+    enabled: !isCompanyDatabaseView,
+    retry: false,
   });
   const pageSpeedScanQuery = useQuery({
     queryKey: [
@@ -174,6 +197,48 @@ export function LeadsPage({
     },
   });
 
+  useEffect(() => {
+    if (isCompanyDatabaseView) return;
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | undefined;
+
+    function connect() {
+      if (disposed) return;
+      socket = new WebSocket(getQueueEventsWebSocketUrl());
+      socket.onmessage = (event) => {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(event.data);
+        } catch (error) {
+          console.error("Could not parse a queue event.", error);
+          return;
+        }
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "kind" in payload &&
+          payload.kind === "email_campaign_recipient" &&
+          "status" in payload &&
+          payload.status === "sent"
+        ) {
+          void queryClient.invalidateQueries({ queryKey: ["companies"] });
+        }
+      };
+      socket.onerror = () => socket?.close();
+      socket.onclose = () => {
+        if (!disposed) reconnectTimer = window.setTimeout(connect, 5_000);
+      };
+    }
+
+    connect();
+    return () => {
+      disposed = true;
+      if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [isCompanyDatabaseView, queryClient]);
+
   const allCompanies = companiesQuery.data ?? noCompanies;
   const companies = useMemo(
     () =>
@@ -190,8 +255,12 @@ export function LeadsPage({
         websiteFilter === "all" ||
         (websiteFilter === "with_website" && hasWebsite) ||
         (websiteFilter === "without_website" && !hasWebsite);
+      const hasBeenContacted = company.last_email_sent_at !== null;
       return (
         (statusFilter === "all" || company.lead_status === statusFilter) &&
+        (emailStatusFilter === "all" ||
+          (emailStatusFilter === "contacted" && hasBeenContacted) ||
+          (emailStatusFilter === "not_contacted" && !hasBeenContacted)) &&
         matchesWebsite &&
         (!term ||
           [
@@ -209,10 +278,14 @@ export function LeadsPage({
     companies,
     companyFilter,
     statusFilter,
+    emailStatusFilter,
     websiteFilter,
   ]);
   const websiteCount = companies.filter(
     (company) => company.website || company.domain,
+  ).length;
+  const contactedCompanyCount = companies.filter(
+    (company) => company.last_email_sent_at !== null,
   ).length;
   const pageCount = Math.max(1, Math.ceil(filteredCompanies.length / pageSize));
   const visiblePage = Math.min(currentPage, pageCount);
@@ -224,6 +297,16 @@ export function LeadsPage({
       ),
     [filteredCompanies, pageSize, visiblePage],
   );
+  const selectedLeadCompanyIdSet = useMemo(
+    () => new Set(selectedLeadCompanyIds),
+    [selectedLeadCompanyIds],
+  );
+  const allPageLeadsSelected =
+    paginatedCompanies.length > 0 &&
+    paginatedCompanies.every((company) =>
+      selectedLeadCompanyIdSet.has(company.id),
+    );
+  const isAdmin = sessionQuery.data?.user.role === "admin";
   const emptyStateTitle =
     companies.length > 0
       ? isCompanyDatabaseView
@@ -242,6 +325,88 @@ export function LeadsPage({
         : allCompanies.length > 0
           ? "Add a contact to a company in Companies. It will appear here automatically."
           : "Add or discover a company in Companies. Leads appear once a company has a contact.";
+
+  function toggleLeadSelection(companyId: string) {
+    setCampaignAudienceError("");
+    if (selectedLeadCompanyIdSet.has(companyId)) {
+      setSelectedLeadCompanyIds((current) =>
+        current.filter((id) => id !== companyId),
+      );
+      return;
+    }
+    if (selectedLeadCompanyIds.length >= maxCampaignCompanies) {
+      setCampaignAudienceError(
+        `A campaign can include at most ${maxCampaignCompanies.toLocaleString()} companies.`,
+      );
+      return;
+    }
+    setSelectedLeadCompanyIds((current) => [...current, companyId]);
+  }
+
+  function togglePageLeadSelection() {
+    setCampaignAudienceError("");
+    const pageIds = paginatedCompanies.map((company) => company.id);
+    if (allPageLeadsSelected) {
+      setSelectedLeadCompanyIds((current) =>
+        current.filter((id) => !pageIds.includes(id)),
+      );
+      return;
+    }
+
+    const next = new Set([...selectedLeadCompanyIds, ...pageIds]);
+    if (next.size > maxCampaignCompanies) {
+      setCampaignAudienceError(
+        `A campaign can include at most ${maxCampaignCompanies.toLocaleString()} companies.`,
+      );
+      return;
+    }
+    setSelectedLeadCompanyIds([...next]);
+  }
+
+  function toggleFilteredLeadSelection() {
+    setCampaignAudienceError("");
+    const filteredIds = filteredCompanies.map((company) => company.id);
+    const allFilteredSelected =
+      filteredIds.length > 0 &&
+      filteredIds.every((id) => selectedLeadCompanyIdSet.has(id));
+    if (allFilteredSelected) {
+      setSelectedLeadCompanyIds((current) =>
+        current.filter((id) => !filteredIds.includes(id)),
+      );
+      return;
+    }
+
+    const next = new Set([...selectedLeadCompanyIds, ...filteredIds]);
+    if (next.size > maxCampaignCompanies) {
+      setCampaignAudienceError(
+        `Select no more than ${maxCampaignCompanies.toLocaleString()} companies for one campaign.`,
+      );
+      return;
+    }
+    setSelectedLeadCompanyIds([...next]);
+  }
+
+  function clearLeadSelection() {
+    setSelectedLeadCompanyIds([]);
+    setCampaignAudienceError("");
+  }
+
+  function createCampaignFromLeads() {
+    if (!isAdmin || selectedLeadCompanyIds.length === 0) return;
+    try {
+      window.sessionStorage.setItem(
+        PENDING_CAMPAIGN_AUDIENCE_KEY,
+        JSON.stringify(selectedLeadCompanyIds),
+      );
+    } catch (error) {
+      console.error("Could not save the selected campaign audience.", error);
+      setCampaignAudienceError(
+        "Could not carry the selected leads into campaign setup. Please try again.",
+      );
+      return;
+    }
+    router.push("/campaigns?create=1");
+  }
 
   function handleCreateCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -408,6 +573,33 @@ export function LeadsPage({
                   </option>
                 </select>
               </label>
+              {!isCompanyDatabaseView && (
+                <label className="select-filter">
+                  <span className="sr-only">Filter by email status</span>
+                  <select
+                    onChange={(event) =>
+                      updatePipelineQuery({
+                        email_status:
+                          event.target.value === "all"
+                            ? null
+                            : event.target.value,
+                        page: null,
+                      })
+                    }
+                    value={emailStatusFilter}
+                  >
+                    <option value="all">
+                      All email status ({companies.length})
+                    </option>
+                    <option value="contacted">
+                      Contacted ({contactedCompanyCount})
+                    </option>
+                    <option value="not_contacted">
+                      Not contacted ({companies.length - contactedCompanyCount})
+                    </option>
+                  </select>
+                </label>
+              )}
               <button
                 aria-label={`Refresh ${isCompanyDatabaseView ? "companies" : "leads"}`}
                 className="icon-button refresh-button"
@@ -418,6 +610,66 @@ export function LeadsPage({
                 ↻
               </button>
             </div>
+            {!isCompanyDatabaseView && (
+              <div className="lead-campaign-toolbar">
+                <div className="lead-campaign-selection">
+                  <strong>
+                    {selectedLeadCompanyIds.length.toLocaleString()} selected
+                  </strong>
+                  <span>
+                    Select companies on this page or include every filtered
+                    result.
+                  </span>
+                </div>
+                <div className="lead-campaign-actions">
+                  <button
+                    className="button button-secondary"
+                    disabled={filteredCompanies.length === 0}
+                    onClick={toggleFilteredLeadSelection}
+                    type="button"
+                  >
+                    {filteredCompanies.length > 0 &&
+                    filteredCompanies.every((company) =>
+                      selectedLeadCompanyIdSet.has(company.id),
+                    )
+                      ? "Clear filtered"
+                      : `Select filtered (${filteredCompanies.length.toLocaleString()})`}
+                  </button>
+                  {selectedLeadCompanyIds.length > 0 && (
+                    <button
+                      className="text-button"
+                      onClick={clearLeadSelection}
+                      type="button"
+                    >
+                      Clear selection
+                    </button>
+                  )}
+                  {sessionQuery.isPending ? (
+                    <span className="lead-campaign-admin-hint">
+                      Checking campaign access...
+                    </span>
+                  ) : isAdmin ? (
+                    <button
+                      className="button button-primary"
+                      disabled={selectedLeadCompanyIds.length === 0}
+                      onClick={createCampaignFromLeads}
+                      type="button"
+                    >
+                      Create campaign
+                    </button>
+                  ) : (
+                    <span className="lead-campaign-admin-hint">
+                      Campaigns require an organization admin.
+                    </span>
+                  )}
+                </div>
+                {campaignAudienceError && (
+                  <p className="campaign-field-error" role="alert">
+                    {campaignAudienceError}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -464,11 +716,22 @@ export function LeadsPage({
               <table>
               <thead>
                 <tr>
+                  {!isCompanyDatabaseView && (
+                    <th className="selection-column">
+                      <input
+                        aria-label={`Select all ${paginatedCompanies.length} leads on this page`}
+                        checked={allPageLeadsSelected}
+                        onChange={togglePageLeadSelection}
+                        type="checkbox"
+                      />
+                    </th>
+                  )}
                   <th>COMPANY</th>
                   <th>CONTACTS</th>
                   <th>INDUSTRY</th>
                   <th>LOCATION</th>
                   <th>STATUS</th>
+                  <th>EMAIL OUTREACH</th>
                   <th>SCORE</th>
                   <th>ADDED</th>
                   <th>RECORD</th>
@@ -478,6 +741,16 @@ export function LeadsPage({
                 {paginatedCompanies.map((company) => (
                   <Fragment key={company.id}>
                     <tr>
+                      {!isCompanyDatabaseView && (
+                        <td className="selection-column">
+                          <input
+                            aria-label={`Select ${company.name}`}
+                            checked={selectedLeadCompanyIdSet.has(company.id)}
+                            onChange={() => toggleLeadSelection(company.id)}
+                            type="checkbox"
+                          />
+                        </td>
+                      )}
                       <td><CompanyName company={company} /></td>
                       <td>{company.contacts.length}</td>
                       <td>{company.industry ?? "—"}</td>
@@ -513,6 +786,32 @@ export function LeadsPage({
                           ))}
                         </select>
                       </td>
+                      <td>
+                        <span
+                          className={`email-outreach-status${company.last_email_sent_at ? " is-contacted" : ""}`}
+                        >
+                          {company.last_email_sent_at
+                            ? "Contacted"
+                            : "Not contacted"}
+                        </span>
+                        {company.last_email_sent_at && (
+                          <time
+                            className="email-outreach-date"
+                            dateTime={company.last_email_sent_at}
+                            title={new Date(
+                              company.last_email_sent_at,
+                            ).toLocaleString()}
+                          >
+                            {new Date(
+                              company.last_email_sent_at,
+                            ).toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </time>
+                        )}
+                      </td>
                       <td className="score-cell">{company.lead_score ?? "—"}</td>
                       <td>
                         {new Date(company.created_at).toLocaleDateString(
@@ -531,7 +830,7 @@ export function LeadsPage({
                     </tr>
                     {expandedCompanyId === company.id && (
                       <tr className="detail-row">
-                        <td colSpan={8}>
+                        <td colSpan={isCompanyDatabaseView ? 9 : 10}>
                           <section
                             aria-label={`${company.name} full record`}
                             className="company-record"
@@ -770,6 +1069,16 @@ export function LeadsPage({
                                 <Detail
                                   label="Lead status"
                                   value={company.lead_status.replaceAll("_", " ")}
+                                />
+                                <Detail
+                                  label="Email status"
+                                  value={
+                                    company.last_email_sent_at
+                                      ? `Contacted · ${new Date(
+                                          company.last_email_sent_at,
+                                        ).toLocaleString()}`
+                                      : "Not contacted"
+                                  }
                                 />
                                 <Detail
                                   label="Created"
