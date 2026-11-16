@@ -126,11 +126,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const isPublicAuthPage = pathname === "/login" || pathname === "/signup";
+  const isPublicPage =
+    pathname === "/" || pathname === "/login" || pathname === "/signup";
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
-    enabled: !isPublicAuthPage,
+    enabled: !isPublicPage,
     retry: false,
   });
   const themePreference = useSyncExternalStore(
@@ -263,20 +264,20 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (
-      !isPublicAuthPage &&
+      !isPublicPage &&
       !sessionQuery.isLoading &&
       sessionIsUnauthorized
     ) {
       router.replace("/login");
     }
   }, [
-    isPublicAuthPage,
+    isPublicPage,
     router,
     sessionIsUnauthorized,
     sessionQuery.isLoading,
   ]);
 
-  if (isPublicAuthPage) return children;
+  if (isPublicPage) return children;
   if (sessionQuery.isLoading || (!sessionQuery.data && !sessionQuery.isError)) {
     return <WorkspaceSessionLoading />;
   }
@@ -329,7 +330,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <Link
             aria-label="Lead Intelligence home"
             className="brand"
-            href="/"
+            href={
+              sessionQuery.data.user.role === "admin" ? "/admin" : "/overview"
+            }
             title="Lead Intelligence"
           >
             <span className="brand-mark">BI</span>

@@ -1,86 +1,91 @@
 import {
-  ArrowUpRight,
   Building2,
   Compass,
-  Globe,
-  Workflow,
-  type LucideIcon,
+  Mail,
 } from "lucide-react";
 import Link from "next/link";
 
-const homeActions: {
-  title: string;
-  description: string;
-  href: string;
-  icon: LucideIcon;
-}[] = [
-  {
-    title: "Discover businesses",
-    description: "Search for organizations and add promising websites.",
-    href: "/discovery",
-    icon: Compass,
-  },
-  {
-    title: "Review websites",
-    description: "Check discovered sites and their crawl status.",
-    href: "/websites",
-    icon: Globe,
-  },
-  {
-    title: "Manage companies",
-    description: "Organize company records and follow up on leads.",
-    href: "/companies",
-    icon: Building2,
-  },
-  {
-    title: "View jobs",
-    description: "Track crawler and PageSpeed work in progress.",
-    href: "/jobs",
-    icon: Workflow,
-  },
-];
-
 export default function Home() {
   return (
-    <main className="overview-redesign home-page">
-      <header className="home-page-header">
-        <div>
-          <p className="overview-eyebrow">LEAD INTELLIGENCE</p>
-          <h1>Home</h1>
-          <p>Find businesses, review leads, and keep your work moving.</p>
-        </div>
-        <Link className="button button-primary" href="/discovery">
-          <Compass aria-hidden="true" size={17} />
-          Start discovering
+    <div className="overview-redesign public-home">
+      <header className="public-home-header">
+        <Link aria-label="Lead Intelligence home" className="public-home-brand" href="/">
+          <span className="brand-mark">BI</span>
+          <span>Lead Intelligence</span>
         </Link>
+        <div className="public-home-auth">
+          <Link className="button button-secondary" href="/login">
+            Sign in
+          </Link>
+          <Link className="button button-primary" href="/signup">
+            Create account
+          </Link>
+        </div>
       </header>
 
-      <section aria-labelledby="home-actions-title">
-        <div className="overview-section-heading home-section-heading">
-          <div>
-            <p className="overview-eyebrow">QUICK LINKS</p>
-            <h2 id="home-actions-title">What would you like to do?</h2>
+      <main className="public-home-main">
+        <section aria-labelledby="public-home-title" className="public-home-hero">
+          <div className="public-home-hero-copy">
+            <p className="overview-eyebrow">BUSINESS INTELLIGENCE WORKSPACE</p>
+            <h1 id="public-home-title">
+              Find the right businesses. Turn discovery into leads.
+            </h1>
+            <p>
+              Discover company websites, review useful details, and organize
+              your outreach in one workspace.
+            </p>
+            <div className="public-home-hero-actions">
+              <Link className="button button-primary" href="/signup">
+                Get started
+              </Link>
+              <Link className="public-home-text-link" href="/login">
+                Already have an account? Sign in
+              </Link>
+            </div>
           </div>
-        </div>
-        <div className="home-action-grid">
-          {homeActions.map(({ title, description, href, icon: Icon }) => (
-            <Link className="home-action-card" href={href} key={href}>
-              <span className="home-action-icon">
-                <Icon aria-hidden="true" size={20} />
-              </span>
-              <span className="home-action-copy">
-                <strong>{title}</strong>
-                <span>{description}</span>
-              </span>
-              <ArrowUpRight
-                aria-hidden="true"
-                className="home-action-arrow"
-                size={17}
-              />
-            </Link>
-          ))}
-        </div>
-      </section>
-    </main>
+          <div aria-hidden="true" className="public-home-hero-art">
+            <span className="public-home-orbit public-home-orbit-outer" />
+            <span className="public-home-orbit public-home-orbit-inner" />
+            <span className="public-home-hero-icon">
+              <Compass size={39} strokeWidth={1.6} />
+            </span>
+            <span className="public-home-float-icon public-home-float-companies">
+              <Building2 size={20} />
+            </span>
+            <span className="public-home-float-icon public-home-float-mail">
+              <Mail size={20} />
+            </span>
+          </div>
+        </section>
+
+        <section aria-label="Workspace features" className="public-home-features">
+          <article>
+            <span className="public-home-feature-icon">
+              <Compass aria-hidden="true" size={19} />
+            </span>
+            <h2>Discover</h2>
+            <p>Find relevant businesses and explore their websites.</p>
+          </article>
+          <article>
+            <span className="public-home-feature-icon">
+              <Building2 aria-hidden="true" size={19} />
+            </span>
+            <h2>Organize</h2>
+            <p>Keep company and contact details together in your pipeline.</p>
+          </article>
+          <article>
+            <span className="public-home-feature-icon">
+              <Mail aria-hidden="true" size={19} />
+            </span>
+            <h2>Reach out</h2>
+            <p>Prepare and manage email outreach from the same workspace.</p>
+          </article>
+        </section>
+      </main>
+      <footer className="public-home-footer">
+        Lead Intelligence <span aria-hidden="true">·</span> Business intelligence
+        workspace
+      </footer>
+    </div>
   );
 }

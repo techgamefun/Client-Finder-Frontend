@@ -3,7 +3,6 @@ import {
   Compass,
   FileText,
   Globe,
-  House,
   Inbox,
   LayoutDashboard,
   Mail,
@@ -46,17 +45,6 @@ export const navigationSections: NavigationSection[] = [
         href: "/admin",
         icon: ShieldCheck,
         role: "admin",
-      },
-    ],
-  },
-  {
-    id: "home",
-    items: [
-      {
-        id: "home",
-        label: "Home",
-        href: "/",
-        icon: House,
       },
     ],
   },
