@@ -43,6 +43,7 @@ export const navigationSections: NavigationSection[] = [
         label: "Overview",
         href: "/",
         icon: LayoutDashboard,
+        role: "user",
       },
     ],
   },
