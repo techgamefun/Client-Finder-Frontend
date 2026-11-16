@@ -127,10 +127,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const sidebarRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const isPublicAuthPage = pathname === "/login" || pathname === "/signup";
-  const isPublicPage = pathname === "/" || isPublicAuthPage;
+  const isPublicNotFoundPage = !isKnownWorkspaceRoute(pathname);
+  const isPublicPage =
+    pathname === "/" || isPublicAuthPage || isPublicNotFoundPage;
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
+    enabled: !isPublicNotFoundPage,
     retry: false,
   });
   const themePreference = useSyncExternalStore(
@@ -296,6 +299,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   ]);
 
   if (pathname === "/") return children;
+  if (isPublicNotFoundPage) return children;
   if (isPublicAuthPage) {
     if (
       sessionQuery.isLoading ||
@@ -449,6 +453,34 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         role={sessionQuery.data.user.role}
       />
     </div>
+  );
+}
+
+const workspaceRoutes = new Set([
+  "/",
+  "/admin",
+  "/campaigns",
+  "/crawler",
+  "/crawler/queue",
+  "/discovery",
+  "/gmail",
+  "/companies",
+  "/jobs",
+  "/leads",
+  "/login",
+  "/overview",
+  "/pagespeed-queue",
+  "/settings",
+  "/signup",
+  "/templates",
+  "/websites",
+]);
+
+function isKnownWorkspaceRoute(pathname: string) {
+  return (
+    workspaceRoutes.has(pathname) ||
+    /^\/company\/[^/]+$/.test(pathname) ||
+    /^\/websites\/[^/]+$/.test(pathname)
   );
 }
 
