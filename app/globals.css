@@ -13341,6 +13341,82 @@ html[data-theme="dark"] .command-palette-result:focus-visible {
   font-size: 13px;
 }
 
+.overview-user-progress-panel {
+  overflow: hidden;
+  padding: 18px 0 0;
+}
+
+.overview-user-progress-panel > .overview-section-heading,
+.overview-user-progress-definition {
+  margin-right: 18px;
+  margin-left: 18px;
+}
+
+.overview-user-progress-definition {
+  margin-top: 8px;
+  margin-bottom: 14px;
+  color: var(--overview-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.overview-user-progress-table {
+  width: 100%;
+  min-width: 840px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.overview-user-progress-table th,
+.overview-user-progress-table td {
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  padding: 9px 14px;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.overview-user-progress-table thead th {
+  background: var(--surface-subtle);
+  color: var(--overview-muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.overview-user-progress-table th:first-child {
+  min-width: 220px;
+  text-align: left;
+}
+
+.overview-user-progress-table td {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.overview-team-user,
+.overview-team-user-status {
+  display: block;
+}
+
+.overview-team-user {
+  overflow: hidden;
+  max-width: 280px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-team-user-status {
+  margin-top: 3px;
+  color: var(--overview-green);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.overview-team-user-status.is-inactive {
+  color: var(--overview-muted);
+}
+
 .overview-lead-row {
   cursor: pointer;
 }

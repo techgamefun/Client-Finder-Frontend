@@ -19,13 +19,16 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
+  getAdminOverview,
   getApplicationSettings,
+  getAuthSession,
   getOverview,
   getTavilyUsage,
   type Company,
   type OverviewKpi,
   type OverviewRange,
   type OverviewResponse,
+  type OverviewUserProgress,
 } from "@/lib/api";
 import { metrics, type OverviewMetricKey } from "@/lib/overview-metrics";
 
@@ -54,9 +57,16 @@ const statusColors = [
   "var(--overview-slate)",
 ];
 
-type OverviewQuery = UseQueryResult<OverviewResponse, Error>;
+type OverviewDashboardData = OverviewResponse & {
+  user_progress?: OverviewUserProgress[];
+};
+type OverviewQuery = UseQueryResult<OverviewDashboardData, Error>;
 
-export function OverviewPage() {
+export function OverviewPage({
+  adminDashboard = false,
+}: {
+  adminDashboard?: boolean;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedRange = searchParams.get("range");
@@ -64,32 +74,63 @@ export function OverviewPage() {
   const [timezone] = useState(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata",
   );
+  const sessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession,
+    enabled: adminDashboard,
+    retry: false,
+  });
   const overviewQuery = useQuery({
-    queryKey: ["overview", range, timezone],
-    queryFn: () => getOverview(range, timezone),
+    queryKey: [
+      "overview",
+      adminDashboard ? "organization" : "user",
+      range,
+      timezone,
+    ],
+    queryFn: async (): Promise<OverviewDashboardData> =>
+      adminDashboard
+        ? getAdminOverview(range, timezone)
+        : getOverview(range, timezone),
+    enabled: !adminDashboard || sessionQuery.data?.user.role === "admin",
     staleTime: 60_000,
   });
   const settingsQuery = useQuery({
     queryKey: ["application-settings"],
     queryFn: getApplicationSettings,
+    enabled: !adminDashboard,
     staleTime: 60_000,
     retry: false,
   });
   const tavilyUsageQuery = useQuery({
     queryKey: ["tavily-usage"],
     queryFn: getTavilyUsage,
-    enabled: settingsQuery.data?.tavily_configured === true,
+    enabled:
+      !adminDashboard && settingsQuery.data?.tavily_configured === true,
     staleTime: 60_000,
     retry: false,
   });
 
   useEffect(() => {
-    if (!requestedRange) {
-      router.replace("/?range=30d", { scroll: false });
-    } else if (!isOverviewRange(requestedRange)) {
-      router.replace("/?range=30d", { scroll: false });
+    if (
+      adminDashboard &&
+      sessionQuery.data &&
+      sessionQuery.data.user.role !== "admin"
+    ) {
+      router.replace("/");
     }
-  }, [requestedRange, router]);
+  }, [adminDashboard, router, sessionQuery.data]);
+
+  useEffect(() => {
+    if (!requestedRange) {
+      router.replace(`${adminDashboard ? "/admin" : ""}?range=30d`, {
+        scroll: false,
+      });
+    } else if (!isOverviewRange(requestedRange)) {
+      router.replace(`${adminDashboard ? "/admin" : ""}?range=30d`, {
+        scroll: false,
+      });
+    }
+  }, [adminDashboard, requestedRange, router]);
 
   const attention = useMemo(() => {
     const items = [...(overviewQuery.data?.attention ?? [])];
@@ -120,16 +161,42 @@ export function OverviewPage() {
   function changeRange(nextRange: OverviewRange) {
     const query = new URLSearchParams(searchParams.toString());
     query.set("range", nextRange);
-    router.push(`/?${query.toString()}`, { scroll: false });
+    router.push(`${adminDashboard ? "/admin" : "/"}?${query.toString()}`, {
+      scroll: false,
+    });
+  }
+
+  if (adminDashboard && sessionQuery.isLoading) {
+    return <div aria-busy="true" className="overview-page-loading" />;
+  }
+  if (adminDashboard && sessionQuery.isError) {
+    return (
+      <main className="overview-redesign">
+        <WidgetError
+          error={sessionQuery.error}
+          onRetry={() => void sessionQuery.refetch()}
+          title="your organization role"
+        />
+      </main>
+    );
+  }
+  if (
+    adminDashboard &&
+    sessionQuery.data &&
+    sessionQuery.data.user.role !== "admin"
+  ) {
+    return null;
   }
 
   return (
     <div className="overview-redesign">
       <header className="overview-header">
         <div>
-          <h1>Overview</h1>
+          <h1>{adminDashboard ? "Organization dashboard" : "Overview"}</h1>
           <p>
-            Pipeline performance and next steps
+            {adminDashboard
+              ? "Organization-wide performance and team progress"
+              : "Your pipeline performance and next steps"}
             <span className="overview-updated">
               {overviewQuery.dataUpdatedAt > 0 ? (
                 <>
@@ -261,7 +328,107 @@ export function OverviewPage() {
       </section>
 
       <RecentLeadsWidget query={overviewQuery} />
+      {adminDashboard && (
+        <UserProgressWidget
+          query={overviewQuery}
+          range={range}
+        />
+      )}
     </div>
+  );
+}
+
+function UserProgressWidget({
+  query,
+  range,
+}: {
+  query: OverviewQuery;
+  range: OverviewRange;
+}) {
+  const users = query.data?.user_progress ?? [];
+  return (
+    <section
+      aria-labelledby="overview-user-progress-title"
+      className="overview-panel overview-user-progress-panel"
+    >
+      <div className="overview-section-heading">
+        <div>
+          <p className="overview-eyebrow">TEAM ACTIVITY · {range}</p>
+          <h2 id="overview-user-progress-title">Progress by user</h2>
+        </div>
+      </div>
+      <p className="overview-user-progress-definition">
+        Counts are for the selected period. Websites, companies, and jobs are
+        attributed to their creator; campaign emails to the campaign creator.
+        A lead requires a company and at least one contact created by that user.
+      </p>
+      {query.isLoading ? (
+        <div aria-busy="true" className="overview-table-skeleton">
+          <PanelSkeleton rows={5} />
+        </div>
+      ) : query.isError ? (
+        <WidgetError
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Progress by user"
+        />
+      ) : users.length === 0 ? (
+        <EmptyWidget
+          actionHref="/settings?section=organization"
+          actionLabel="Manage organization users"
+          message="There are no users in this organization yet."
+        />
+      ) : (
+        <div className="overview-table-scroll">
+          <table
+            aria-label="Organization user progress for selected period"
+            className="overview-user-progress-table"
+          >
+            <thead>
+              <tr>
+                <th scope="col">User</th>
+                <th scope="col">Role</th>
+                <th scope="col">
+                  Websites <OverviewMetricInfo metricKey="team_websites" />
+                </th>
+                <th scope="col">
+                  Companies <OverviewMetricInfo metricKey="team_companies" />
+                </th>
+                <th scope="col">
+                  Leads <OverviewMetricInfo metricKey="team_leads" />
+                </th>
+                <th scope="col">
+                  Crawls <OverviewMetricInfo metricKey="team_crawls" />
+                </th>
+                <th scope="col">
+                  Emails <OverviewMetricInfo metricKey="team_emails" />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.user_id}>
+                  <th scope="row">
+                    <span className="overview-team-user">{user.email}</span>
+                    <span
+                      className={`overview-team-user-status${user.is_active ? "" : " is-inactive"}`}
+                    >
+                      {user.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </th>
+                  <td>{user.role}</td>
+                  <td>{formatCount(user.websites_discovered)}</td>
+                  <td>{formatCount(user.companies_created)}</td>
+                  <td>{formatCount(user.leads_created)}</td>
+                  <td>{formatCount(user.crawls_completed)}</td>
+                  <td>{formatCount(user.emails_sent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

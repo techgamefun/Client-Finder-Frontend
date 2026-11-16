@@ -126,6 +126,22 @@ export interface OverviewResponse {
   }[];
 }
 
+export interface OverviewUserProgress {
+  user_id: string;
+  email: string;
+  role: "admin" | "user";
+  is_active: boolean;
+  websites_discovered: number;
+  companies_created: number;
+  leads_created: number;
+  crawls_completed: number;
+  emails_sent: number;
+}
+
+export interface AdminOverviewResponse extends OverviewResponse {
+  user_progress: OverviewUserProgress[];
+}
+
 export interface SearchKeyword {
   id: string;
   keyword: string;
@@ -1073,6 +1089,19 @@ export function getOverview(
     tz: timezone,
   });
   return request<OverviewResponse>(`/overview?${search.toString()}`);
+}
+
+export function getAdminOverview(
+  range: OverviewRange,
+  timezone: string,
+): Promise<AdminOverviewResponse> {
+  const search = new URLSearchParams({
+    range,
+    tz: timezone,
+  });
+  return request<AdminOverviewResponse>(
+    `/overview/admin?${search.toString()}`,
+  );
 }
 
 export function getEmailTemplates(

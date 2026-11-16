@@ -223,6 +223,49 @@ export const metrics = {
     timeField: "Company creation time, grouped in the selected timezone",
     orgScope: "Companies and contacts in the active organization",
   },
+  team_websites: {
+    label: "Websites discovered by user",
+    definition:
+      "Website registry records created by the user during the selected period.",
+    source: "websites.created_by_user_id; websites.created_at",
+    timeField: "Website creation time",
+    orgScope: "Users and websites in the active organization",
+  },
+  team_companies: {
+    label: "Companies created by user",
+    definition:
+      "Company records created by the user during the selected period.",
+    source: "companies.created_by_user_id; companies.created_at",
+    timeField: "Company creation time",
+    orgScope: "Users and companies in the active organization",
+  },
+  team_leads: {
+    label: "Leads created by user",
+    definition:
+      "Companies created by the user during the selected period that have at least one contact also created by that user.",
+    source:
+      "companies.created_by_user_id; companies.created_at; contacts.created_by_user_id",
+    timeField: "Company creation time",
+    orgScope: "Users, companies, and contacts in the active organization",
+  },
+  team_crawls: {
+    label: "Crawls completed by user",
+    definition:
+      "Successful website crawl jobs created by the user and completed during the selected period.",
+    source:
+      "website_crawl_jobs.created_by_user_id; website_crawl_jobs.status; completed_at",
+    timeField: "Job completion time",
+    orgScope: "Users and crawl jobs in the active organization",
+  },
+  team_emails: {
+    label: "Emails sent by user",
+    definition:
+      "Campaign-recipient records marked sent during the selected period for campaigns created by the user.",
+    source:
+      "email_campaigns.created_by; email_campaign_recipients.status; sent_at",
+    timeField: "Successful campaign send time",
+    orgScope: "Users, campaigns, and recipients in the active organization",
+  },
 } as const;
 
 export type OverviewMetricKey = keyof typeof metrics;

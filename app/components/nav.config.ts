@@ -8,6 +8,7 @@ import {
   Mail,
   Megaphone,
   Settings,
+  ShieldCheck,
   UsersRound,
   Workflow,
   type LucideIcon,
@@ -60,6 +61,19 @@ export const navigationSections: NavigationSection[] = [
         label: "Websites",
         href: "/websites",
         icon: Globe,
+      },
+    ],
+  },
+  {
+    id: "administration",
+    label: "Administration",
+    items: [
+      {
+        id: "admin-dashboard",
+        label: "Admin dashboard",
+        href: "/admin",
+        icon: ShieldCheck,
+        role: "admin",
       },
     ],
   },
