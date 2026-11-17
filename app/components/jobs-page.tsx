@@ -12,7 +12,7 @@ export function JobsPage({ kind }: { kind: JobQueueKind }) {
           className={kind === "crawler" ? "is-active" : ""}
           href="/jobs?tab=crawler"
         >
-          Crawler
+          Indexing
         </Link>
         <Link
           aria-current={kind === "pagespeed" ? "page" : undefined}

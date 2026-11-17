@@ -317,7 +317,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     if (sessionIsUnauthorized) return null;
     return (
       <main className="main-content">
-        <div className="content-wrap">
+        <div
+          className={
+            pathname === "/websites"
+              ? "content-wrap is-websites-page"
+              : "content-wrap"
+          }
+        >
           <div className="query-error" role="alert">
             <strong>Could not verify your session.</strong>
             <span>
@@ -339,21 +345,24 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+    <div
+      className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${/^\/websites\/[^/]+$/.test(pathname) ? " is-website-profile" : ""}`}
+    >
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      {mobileMenuOpen && (
-        <button
-          aria-label="Close navigation"
-          className="sidebar-backdrop"
-          onClick={() => {
-            setMobileMenuOpen(false);
-            mobileMenuButtonRef.current?.focus();
-          }}
-          type="button"
-        />
-      )}
+      <button
+        aria-hidden={!mobileMenuOpen}
+        aria-label="Close navigation"
+        className={`sidebar-backdrop${mobileMenuOpen ? " is-open" : ""}`}
+        disabled={!mobileMenuOpen}
+        onClick={() => {
+          setMobileMenuOpen(false);
+          mobileMenuButtonRef.current?.focus();
+        }}
+        tabIndex={-1}
+        type="button"
+      />
       <aside
         className={`sidebar${mobileMenuOpen ? " is-open" : ""}`}
         ref={sidebarRef}
@@ -430,13 +439,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       <main className="main-content" id="main-content" tabIndex={-1}>
         <WorkspaceTopBar
           companies={companies}
+          location={currentLocation}
           mobileMenuOpen={mobileMenuOpen}
+          mobileMenuButtonRef={mobileMenuButtonRef}
           onCommandPaletteOpen={() => setCommandPaletteOpen(true)}
           onMobileMenuOpen={() => setMobileMenuOpen(true)}
-          location={currentLocation}
           pathname={pathname}
           role={sessionQuery.data.user.role}
-          mobileMenuButtonRef={mobileMenuButtonRef}
         />
         <div className="content-wrap">
           {children}
@@ -453,34 +462,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         role={sessionQuery.data.user.role}
       />
     </div>
-  );
-}
-
-const workspaceRoutes = new Set([
-  "/",
-  "/admin",
-  "/campaigns",
-  "/crawler",
-  "/crawler/queue",
-  "/discovery",
-  "/gmail",
-  "/companies",
-  "/jobs",
-  "/leads",
-  "/login",
-  "/overview",
-  "/pagespeed-queue",
-  "/settings",
-  "/signup",
-  "/templates",
-  "/websites",
-]);
-
-function isKnownWorkspaceRoute(pathname: string) {
-  return (
-    workspaceRoutes.has(pathname) ||
-    /^\/company\/[^/]+$/.test(pathname) ||
-    /^\/websites\/[^/]+$/.test(pathname)
   );
 }
 
@@ -576,9 +557,7 @@ function WorkspaceTopBar({
           >
             <Search aria-hidden="true" size={17} strokeWidth={2} />
             <span>Search</span>
-            <kbd>
-              Ctrl K
-            </kbd>
+            <kbd>Ctrl K</kbd>
           </button>
         </div>
       </div>
@@ -641,7 +620,7 @@ function getWorkspaceAction(
   }
   if (pathname === "/websites" || pathname.startsWith("/websites/")) {
     return {
-      label: "Crawl website",
+      label: "Index website",
       href: "/websites?crawl=1",
       icon: Plus,
     };
@@ -667,7 +646,7 @@ function getWorkspaceAction(
         };
   }
   if (pathname === "/jobs") {
-    return { label: "Start crawl", href: "/websites?crawl=1", icon: Plus };
+    return { label: "Start indexing", href: "/websites?crawl=1", icon: Plus };
   }
   if (pathname === "/gmail") {
     return {
@@ -706,9 +685,37 @@ function getWorkspaceAction(
         };
   }
   if (pathname.startsWith("/company/")) {
-    return { label: "Start crawl", href: "/websites?crawl=1", icon: Plus };
+    return { label: "Start indexing", href: "/websites?crawl=1", icon: Plus };
   }
   return null;
+}
+
+const workspaceRoutes = new Set([
+  "/",
+  "/admin",
+  "/campaigns",
+  "/crawler",
+  "/crawler/queue",
+  "/discovery",
+  "/gmail",
+  "/companies",
+  "/jobs",
+  "/leads",
+  "/login",
+  "/overview",
+  "/pagespeed-queue",
+  "/settings",
+  "/signup",
+  "/templates",
+  "/websites",
+]);
+
+function isKnownWorkspaceRoute(pathname: string) {
+  return (
+    workspaceRoutes.has(pathname) ||
+    /^\/company\/[^/]+$/.test(pathname) ||
+    /^\/websites\/[^/]+$/.test(pathname)
+  );
 }
 
 interface CommandEntry {
@@ -772,12 +779,12 @@ function CommandPalette({
       keywords: "company create new add",
     },
     {
-      id: "start-crawl",
-      label: "Start crawl",
-      description: "Crawl a website and extract business details",
+      id: "start-index",
+      label: "Start indexing",
+      description: "Index a website and extract business details",
       href: "/websites?crawl=1",
       icon: Globe,
-      keywords: "crawl website research",
+      keywords: "index website research",
     },
     ...(role === "admin"
       ? [

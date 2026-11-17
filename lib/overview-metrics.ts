@@ -41,17 +41,17 @@ export const metrics = {
     orgScope: "Websites in the active organization",
   },
   funnel_crawled: {
-    label: "Crawled websites",
+    label: "Indexed websites",
     definition:
-      "Discovered websites with a linked successful WebsiteCrawl record.",
+      "Discovered websites with a linked successful indexing record.",
     source: "websites.crawl_id",
     timeField: "Website creation time defines the cohort",
-    orgScope: "Websites and crawls in the active organization",
+    orgScope: "Websites and indexing jobs in the active organization",
   },
   funnel_added: {
     label: "Websites added to leads",
     definition:
-      "Crawled websites whose registry status is Lead.",
+      "Indexed websites whose registry status is Lead.",
     source: "websites.status",
     timeField: "Website creation time defines the cohort",
     orgScope: "Websites in the active organization",
@@ -113,17 +113,17 @@ export const metrics = {
     orgScope: "Companies in the active organization",
   },
   crawl_success: {
-    label: "Crawl success rate",
+    label: "Indexing success rate",
     definition:
-      "Succeeded crawl jobs divided by succeeded plus failed crawl jobs completed during the selected interval. Queued and running jobs are excluded.",
+      "Succeeded indexing jobs divided by succeeded plus failed indexing jobs completed during the selected interval. Queued and running jobs are excluded.",
     source: "website_crawl_jobs.status; completed_at",
     timeField: "Job completion time",
-    orgScope: "Crawl jobs in the active organization",
+    orgScope: "Indexing jobs in the active organization",
   },
   jobs_queued: {
     label: "Queued jobs",
     definition:
-      "Crawler and PageSpeed jobs created in the last 24 hours whose current status is Queued.",
+      "Website indexing and PageSpeed jobs created in the last 24 hours whose current status is Queued.",
     source: "website_crawl_jobs.status; pagespeed_scan_jobs.status; created_at",
     timeField: "Job creation time, last 24 hours",
     orgScope: "Jobs in the active organization",
@@ -131,7 +131,7 @@ export const metrics = {
   jobs_running: {
     label: "Running jobs",
     definition:
-      "Crawler and PageSpeed jobs created in the last 24 hours whose current status is Running.",
+      "Website indexing and PageSpeed jobs created in the last 24 hours whose current status is Running.",
     source: "website_crawl_jobs.status; pagespeed_scan_jobs.status; created_at",
     timeField: "Job creation time, last 24 hours",
     orgScope: "Jobs in the active organization",
@@ -139,7 +139,7 @@ export const metrics = {
   jobs_failed: {
     label: "Failed jobs in the last 24 hours",
     definition:
-      "Crawler and PageSpeed jobs created in the last 24 hours whose current status is Failed.",
+      "Website indexing and PageSpeed jobs created in the last 24 hours whose current status is Failed.",
     source: "website_crawl_jobs.status; pagespeed_scan_jobs.status; created_at",
     timeField: "Job creation time, last 24 hours",
     orgScope: "Jobs in the active organization",
@@ -147,7 +147,7 @@ export const metrics = {
   failed_jobs_badge: {
     label: "Failed jobs needing attention",
     definition:
-      "Failed jobs among the newest 100 crawler jobs plus the newest 100 PageSpeed jobs. This intentionally matches the current Jobs sidebar badge.",
+      "Failed jobs among the newest 100 website indexing jobs plus the newest 100 PageSpeed jobs. This intentionally matches the current Jobs sidebar badge.",
     source: "website_crawl_jobs.status; pagespeed_scan_jobs.status; created_at",
     timeField: "Newest 100 jobs per queue",
     orgScope: "Jobs in the active organization",
@@ -168,9 +168,9 @@ export const metrics = {
     orgScope: "Campaigns in the active organization",
   },
   crawled_websites_not_added: {
-    label: "Crawled websites not added to leads",
+    label: "Indexed websites not added to leads",
     definition:
-      "Crawled non-listing websites whose current registry status is not Lead.",
+      "Indexed non-listing websites whose current registry status is not Lead.",
     source: "websites.crawl_id; websites.status; websites.page_type",
     timeField: "Current state; no time filter",
     orgScope: "Websites in the active organization",
@@ -249,13 +249,13 @@ export const metrics = {
     orgScope: "Users, companies, and contacts in the active organization",
   },
   team_crawls: {
-    label: "Crawls completed by user",
+    label: "Indexing jobs completed by user",
     definition:
-      "Successful website crawl jobs created by the user and completed during the selected period.",
+      "Successful website indexing jobs created by the user and completed during the selected period.",
     source:
       "website_crawl_jobs.created_by_user_id; website_crawl_jobs.status; completed_at",
     timeField: "Job completion time",
-    orgScope: "Users and crawl jobs in the active organization",
+    orgScope: "Users and indexing jobs in the active organization",
   },
   team_emails: {
     label: "Emails sent by user",

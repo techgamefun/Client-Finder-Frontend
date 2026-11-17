@@ -34,10 +34,10 @@ interface QueueJob {
 
 const queueConfig = {
   crawler: {
-    title: "Website crawler queue",
+    title: "Website indexing queue",
     description:
-      "Track crawl jobs from dispatch through completion, including run times and failures.",
-    label: "WEBSITE CRAWLER",
+      "Track indexing jobs from dispatch through completion, including run times and failures.",
+    label: "WEBSITE INDEXING",
   },
   pagespeed: {
     title: "PageSpeed queue",
@@ -55,7 +55,7 @@ function normalizeCrawlerJob(job: WebsiteCrawlJobResponse): QueueJob {
     id: job.id,
     websiteUrl: job.website_url,
     siteType: job.result?.site_type ?? null,
-    detail: "Website crawl",
+    detail: "Website indexing",
     status: job.status,
     error: job.error,
     createdAt: job.created_at,
@@ -182,7 +182,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       )}
       {retryAllMutation.isError && (
         <p className="alert alert-error" role="alert">
-          Could not retry failed crawl jobs: {retryAllMutation.error.message}
+          Could not retry failed indexing jobs: {retryAllMutation.error.message}
         </p>
       )}
       {retryAllMutation.data && (
@@ -195,7 +195,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           role="status"
         >
           Queued {retryAllMutation.data.retriedCount} of{" "}
-          {retryAllMutation.data.total} failed crawl jobs for retry.
+          {retryAllMutation.data.total} failed indexing jobs for retry.
           {retryAllMutation.data.failures.length > 0 && (
             <>
               {" "}
@@ -227,7 +227,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                     retryMutation.isPending
                   }
                   onClick={() => retryAllMutation.mutate(failedJobs)}
-                  title={`Retry all ${failedCount} failed crawl jobs in the recent jobs list`}
+                  title={`Retry all ${failedCount} failed indexing jobs in the recent jobs list`}
                   type="button"
                 >
                   {retryAllMutation.isPending
@@ -236,7 +236,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                 </button>
               )}
               <label className="select-filter queue-status-filter">
-                <span className="sr-only">Filter crawl jobs by status</span>
+                <span className="sr-only">Filter indexing jobs by status</span>
                 <select
                   onChange={(event) => {
                     const value = event.target.value;
@@ -265,11 +265,11 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <p className="empty-copy">Queue jobs could not be loaded.</p>
         ) : jobs.length === 0 ? (
           <p className="empty-copy">
-            No {kind === "crawler" ? "crawl" : "PageSpeed"} jobs found.
+            No {kind === "crawler" ? "indexing" : "PageSpeed"} jobs found.
           </p>
         ) : visibleJobs.length === 0 ? (
           <p className="empty-copy">
-            No crawl jobs match the selected status.
+            No indexing jobs match the selected status.
           </p>
         ) : (
           <div className="pagespeed-job-list">

@@ -343,13 +343,40 @@ export function SettingsPage() {
     <>
       <section className="page-heading settings-heading">
         <div>
-          <p className="eyebrow">WORKSPACE CONFIGURATION</p>
           <h1>Settings</h1>
           <p className="heading-copy">
-            Manage discovery providers and crawler settings for this
-            application. Organization admins can also connect shared Gmail
-            accounts.
+            Manage providers, website indexing, Gmail, and account settings.
           </p>
+        </div>
+        <div className="settings-section-picker">
+          <label className="settings-field">
+            Settings for
+            <select
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                if (isSettingsSection(value)) {
+                  setActiveSection(value);
+                  router.replace(`/settings?section=${value}`, {
+                    scroll: false,
+                  });
+                }
+              }}
+              value={activeSection}
+            >
+              <option value="tavily">Tavily</option>
+              <option value="octoparse">Octoparse</option>
+              <option value="hypestat">HypeStat</option>
+              <option value="pagespeed">PageSpeed</option>
+              {isOrganizationAdmin && (
+                <option value="gmail">Gmail accounts</option>
+              )}
+              {isOrganizationAdmin && <option value="crawler">Indexing</option>}
+              <option value="account">My account</option>
+              {authSessionQuery.data?.user.role === "admin" && (
+                <option value="organization">Organization users</option>
+              )}
+            </select>
+          </label>
         </div>
       </section>
 
@@ -363,37 +390,6 @@ export function SettingsPage() {
             : "Google did not complete the Gmail connection. You can try again."}
         </p>
       )}
-
-      <div className="settings-section-picker">
-        <label className="settings-field">
-          Show settings for
-          <select
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              if (isSettingsSection(value)) {
-                setActiveSection(value);
-                router.replace(`/settings?section=${value}`, {
-                  scroll: false,
-                });
-              }
-            }}
-            value={activeSection}
-          >
-            <option value="tavily">Tavily</option>
-            <option value="octoparse">Octoparse</option>
-            <option value="hypestat">HypeStat</option>
-            <option value="pagespeed">PageSpeed</option>
-            {isOrganizationAdmin && (
-              <option value="gmail">Gmail accounts</option>
-            )}
-            {isOrganizationAdmin && <option value="crawler">Crawler</option>}
-            <option value="account">My account</option>
-            {authSessionQuery.data?.user.role === "admin" && (
-              <option value="organization">Organization users</option>
-            )}
-          </select>
-        </label>
-      </div>
 
       {settingsQuery.isPending && (
         <p className="settings-feedback" role="status">
@@ -907,7 +903,7 @@ export function SettingsPage() {
                 <h2>API access and lookup behavior</h2>
                 <p className="panel-subtitle">
                   The API key is encrypted in the application database and sent
-                  only from the Agent to the crawler service. It is never
+                  only from the Agent to the indexing service. It is never
                   returned to this page.
                 </p>
               </div>
@@ -920,14 +916,14 @@ export function SettingsPage() {
               </span>
             </div>
             <p className="settings-feedback">
-              Agent-to-crawler authentication:{" "}
+              Agent-to-indexing-service authentication:{" "}
               <strong>
                 {settingsQuery.data.hypestat_service_auth_configured
                   ? "configured"
                   : "not configured"}
               </strong>
               . The shared token is kept in server environment settings and must
-              match the crawler-service value; it is not editable here.
+              match the indexing-service value; it is not editable here.
             </p>
             <form
               className="settings-form"
@@ -1014,7 +1010,7 @@ export function SettingsPage() {
             )}
             {!settingsQuery.data.hypestat_configured && (
               <p className="settings-feedback">
-                Add an API key to enable HypeStat lookups. The crawler-service
+                Add an API key to enable HypeStat lookups. The indexing-service
                 shared token remains a server-only deployment setting.
               </p>
             )}
@@ -1026,10 +1022,10 @@ export function SettingsPage() {
           >
             <div className="settings-section-heading">
               <div>
-                <p className="eyebrow">WEBSITE CRAWLER</p>
-                <h2>Per-crawl limits</h2>
+                <p className="eyebrow">WEBSITE INDEXING</p>
+                <h2>Indexing limits</h2>
                 <p className="panel-subtitle">
-                  Applied to new crawls immediately. The crawler deployment
+                  Applied to new indexing jobs immediately. The indexing deployment
                   still enforces its own maximum limits.
                 </p>
               </div>
@@ -1069,7 +1065,7 @@ export function SettingsPage() {
                   disabled={saveMutation.isPending}
                   type="submit"
                 >
-                  {saveMutation.isPending ? "Saving…" : "Save crawl limits"}
+                  {saveMutation.isPending ? "Saving…" : "Save indexing limits"}
                 </button>
               </div>
             </form>
@@ -1081,9 +1077,9 @@ export function SettingsPage() {
           >
             <div>
               <p className="eyebrow">DEPLOYMENT-MANAGED</p>
-              <h2>Other crawler settings</h2>
+              <h2>Other indexing settings</h2>
               <p className="panel-subtitle">
-                These values belong to the crawler service process and take
+                These values belong to the indexing service process and take
                 effect only when changed in its deployment environment and
                 restarted.
               </p>
@@ -1247,7 +1243,7 @@ function TavilyUsagePanel({ usage }: { usage: TavilyUsage }) {
         {[
           ["Search", usage.key.search_usage],
           ["Extract", usage.key.extract_usage],
-          ["Crawl", usage.key.crawl_usage],
+          ["Index", usage.key.crawl_usage],
           ["Map", usage.key.map_usage],
           ["Research", usage.key.research_usage],
         ].map(([label, count]) => (

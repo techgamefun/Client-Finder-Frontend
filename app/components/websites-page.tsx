@@ -3,8 +3,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ChevronDown,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import {
   addWebsitesToLeads,
   getWebsiteCorpusWords,
@@ -173,12 +179,54 @@ function SortableHeader({
   );
 }
 
+function snapWebsiteTableToColumn(element: HTMLDivElement) {
+  const containerLeft = element.getBoundingClientRect().left;
+  const frozenColumn = element.querySelector<HTMLTableCellElement>(
+    "thead th:nth-child(2)",
+  );
+  if (!frozenColumn) return;
+
+  const frozenWidth = frozenColumn.getBoundingClientRect().right - containerLeft;
+  const currentScroll = element.scrollLeft;
+  const maxScroll = element.scrollWidth - element.clientWidth;
+  const targets = Array.from(
+    element.querySelectorAll<HTMLTableCellElement>(
+      "thead th:nth-child(n + 3)",
+    ),
+  ).map((cell) => {
+    const columnLeft =
+      cell.getBoundingClientRect().left - containerLeft + currentScroll;
+    return Math.max(0, Math.min(maxScroll, columnLeft - frozenWidth));
+  });
+  const nearestTarget = targets.reduce(
+    (nearest, target) =>
+      Math.abs(target - currentScroll) < Math.abs(nearest - currentScroll)
+        ? target
+        : nearest,
+    0,
+  );
+
+  if (Math.abs(nearestTarget - currentScroll) > 1) {
+    element.scrollTo({ left: nearestTarget, behavior: "smooth" });
+  }
+}
+
 export function WebsitesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const shouldOpenCrawlDialog = searchParams.get("crawl") === "1";
   const queryClient = useQueryClient();
+  const websiteScrollTimerRef = useRef<number | null>(null);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
+
+  useEffect(
+    () => () => {
+      if (websiteScrollTimerRef.current !== null) {
+        window.clearTimeout(websiteScrollTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!shouldOpenCrawlDialog) return;
@@ -427,9 +475,11 @@ export function WebsitesPage() {
   const filteredWebsites = websites.filter((website) =>
     matchesWebsiteFilters(website),
   );
-  const addableWebsiteCount = filteredWebsites.filter(
-    (website) => website.page_type !== "business_listing",
-  ).length;
+  const addableWebsites = filteredWebsites.filter(
+    (website) =>
+      website.status === "new" && website.page_type !== "business_listing",
+  );
+  const addableWebsiteCount = addableWebsites.length;
   const sortedWebsites = sort
     ? [...filteredWebsites].sort((left, right) =>
         compareWebsites(left, right, sort.key, sort.direction),
@@ -441,6 +491,20 @@ export function WebsitesPage() {
     (visiblePage - 1) * pageSize,
     visiblePage * pageSize,
   );
+  const activeAdvancedFilterCount = [
+    minimumMonthlyVisits,
+    minimumReferringDomains,
+    maximumGlobalRank,
+  ].filter(Boolean).length +
+    [hypestatCountry, backlinkCountry, audienceCountry].filter(
+      (value) => value !== "all",
+    ).length;
+  const activeFilterCount =
+    activeAdvancedFilterCount +
+    [pageType, statusFilter, category, discoverySource].filter(
+      (value) => value !== "all",
+    ).length +
+    (search.trim() ? 1 : 0);
 
   function updateWebsiteField(websiteId: string, input: WebsiteUpdateInput) {
     updateMutation.mutate({ websiteId, input });
@@ -463,24 +527,15 @@ export function WebsitesPage() {
 
   return (
     <>
-      <section className="page-heading">
-        <div>
-          <p className="eyebrow">WEBSITE REGISTRY</p>
-          <h1>Websites</h1>
-          <p className="heading-copy">
-            Browse successfully crawled domains, inspect crawl signals, and
-            classify each site.
-          </p>
-        </div>
-      </section>
+      <h1 className="sr-only">Websites</h1>
       {crawlDialogOpen && (
         <CrawlWebsiteDialog onClose={() => setCrawlDialogOpen(false)} />
       )}
 
-      <section className="panel website-registry-panel">
+      <section className="website-registry-panel">
         <div className="website-registry-toolbar">
           <label className="filter-input">
-            <span aria-hidden="true">⌕</span>
+            <Search aria-hidden="true" size={16} strokeWidth={1.8} />
             <span className="sr-only">
               Search domains, categories, and sources
             </span>
@@ -489,274 +544,344 @@ export function WebsitesPage() {
                 resetPage();
                 setSearch(event.target.value);
               }}
-              placeholder="Search domains, categories, or sources"
+              placeholder="Search websites"
               value={search}
             />
           </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by website type</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                setPageType(event.target.value);
-              }}
-              value={pageType}
-            >
-              <option value="all">
-                All website types ({countWebsiteFacet("page_type")})
-              </option>
-              {pageTypes.map((value) => (
-                <option key={value} value={value}>
-                  {formatSiteType(value)} (
-                  {countWebsiteFacet(
-                    "page_type",
-                    (website) => website.page_type === value,
-                  )}
-                  )
+          <details className="website-filter-drawer">
+            <summary>
+              <SlidersHorizontal aria-hidden="true" size={15} strokeWidth={1.8} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="website-active-filter-count">
+                  {activeFilterCount}
+                </span>
+              )}
+              <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
+            </summary>
+            <div className="website-filter-content">
+              {activeFilterCount > 0 && (
+                <div className="website-filter-popover-heading">
+                  <button
+                    className="website-clear-filters"
+                    onClick={() => {
+                      setSearch("");
+                      setPageType("all");
+                      setStatusFilter("all");
+                      setCategory("all");
+                      setDiscoverySource("all");
+                      setMinimumMonthlyVisits("");
+                      setMinimumReferringDomains("");
+                      setMaximumGlobalRank("");
+                      setHypestatCountry("all");
+                      setBacklinkCountry("all");
+                      setAudienceCountry("all");
+                      resetPage();
+                    }}
+                    type="button"
+                  >
+                    <RotateCcw aria-hidden="true" size={13} />
+                    Clear all
+                  </button>
+                </div>
+              )}
+              <div className="website-filter-group">
+                <h2>Site</h2>
+                <div className="website-registry-primary-filters">
+            <label className="website-filter-field select-filter">
+              <span className="website-filter-field-label">Type</span>
+              <select
+                onChange={(event) => {
+                  resetPage();
+                  setPageType(event.target.value);
+                }}
+                value={pageType}
+              >
+                <option value="all">
+                  All ({countWebsiteFacet("page_type")})
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by status</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                const nextStatus = websiteStatuses.find(
-                  (value) => value === event.target.value,
-                );
-                setStatusFilter(nextStatus ?? "all");
-              }}
-              value={statusFilter}
-            >
-              <option value="all">
-                All statuses ({countWebsiteFacet("status")})
-              </option>
-              {websiteStatuses.map((value) => (
-                <option key={value} value={value}>
-                  {formatWebsiteStatus(value)} (
-                  {countWebsiteFacet(
-                    "status",
-                    (website) => website.status === value,
-                  )}
-                  )
+                {pageTypes.map((value) => (
+                  <option key={value} value={value}>
+                    {formatSiteType(value)} (
+                    {countWebsiteFacet(
+                      "page_type",
+                      (website) => website.page_type === value,
+                    )}
+                    )
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="website-filter-field select-filter">
+              <span className="website-filter-field-label">Status</span>
+              <select
+                onChange={(event) => {
+                  resetPage();
+                  const nextStatus = websiteStatuses.find(
+                    (value) => value === event.target.value,
+                  );
+                  setStatusFilter(nextStatus ?? "all");
+                }}
+                value={statusFilter}
+              >
+                <option value="all">
+                  All ({countWebsiteFacet("status")})
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by topic category</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                setCategory(event.target.value);
-              }}
-              value={category}
-            >
-              <option value="all">
-                All topic categories ({countWebsiteFacet("category")})
-              </option>
-              {categories.map((value) => (
-                <option key={value} value={value}>
-                  {value === "unclassified"
-                    ? "Unclassified"
-                    : formatSiteType(value)}{" "}
-                  (
-                  {countWebsiteFacet("category", (website) =>
-                    website.site_topic.length
-                      ? website.site_topic.includes(value)
-                      : value === "unclassified",
-                  )}
-                  )
+                {websiteStatuses.map((value) => (
+                  <option key={value} value={value}>
+                    {formatWebsiteStatus(value)} (
+                    {countWebsiteFacet(
+                      "status",
+                      (website) => website.status === value,
+                    )}
+                    )
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="website-filter-field select-filter">
+              <span className="website-filter-field-label">Topic</span>
+              <select
+                onChange={(event) => {
+                  resetPage();
+                  setCategory(event.target.value);
+                }}
+                value={category}
+              >
+                <option value="all">
+                  All ({countWebsiteFacet("category")})
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by discovery source</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                setDiscoverySource(event.target.value);
-              }}
-              value={discoverySource}
-            >
-              <option value="all">
-                All discovery sources ({countWebsiteFacet("discovery_source")})
-              </option>
-              {discoverySources.map((value) => (
-                <option key={value} value={value}>
-                  {formatDiscoverySource(value)} (
-                  {countWebsiteFacet(
-                    "discovery_source",
-                    (website) =>
-                      website.discovery_source === value ||
-                      website.discovery_provider === value,
-                  )}
-                  )
+                {categories.map((value) => (
+                  <option key={value} value={value}>
+                    {value === "unclassified"
+                      ? "Unclassified"
+                      : formatSiteType(value)}{" "}
+                    (
+                    {countWebsiteFacet("category", (website) =>
+                      website.site_topic.length
+                        ? website.site_topic.includes(value)
+                        : value === "unclassified",
+                    )}
+                    )
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="website-filter-field select-filter">
+              <span className="website-filter-field-label">Source</span>
+              <select
+                onChange={(event) => {
+                  resetPage();
+                  setDiscoverySource(event.target.value);
+                }}
+                value={discoverySource}
+              >
+                <option value="all">
+                  All ({countWebsiteFacet("discovery_source")})
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="hypestat-table-filter">
-            <span className="sr-only">Minimum estimated monthly visits</span>
-            <input
-              min="0"
-              onChange={(event) => {
-                resetPage();
-                setMinimumMonthlyVisits(event.target.value);
-              }}
-              placeholder="Min monthly visits"
-              type="number"
-              value={minimumMonthlyVisits}
-            />
-          </label>
-          <label className="hypestat-table-filter">
-            <span className="sr-only">Minimum referring domains</span>
-            <input
-              min="0"
-              onChange={(event) => {
-                resetPage();
-                setMinimumReferringDomains(event.target.value);
-              }}
-              placeholder="Min referring domains"
-              type="number"
-              value={minimumReferringDomains}
-            />
-          </label>
-          <label className="hypestat-table-filter">
-            <span className="sr-only">Maximum HypeStat global rank</span>
-            <input
-              min="1"
-              onChange={(event) => {
-                resetPage();
-                setMaximumGlobalRank(event.target.value);
-              }}
-              placeholder="Max global rank"
-              type="number"
-              value={maximumGlobalRank}
-            />
-          </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by HypeStat country</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                setHypestatCountry(event.target.value);
-              }}
-              value={hypestatCountry}
+                {discoverySources.map((value) => (
+                  <option key={value} value={value}>
+                    {formatDiscoverySource(value)} (
+                    {countWebsiteFacet(
+                      "discovery_source",
+                      (website) =>
+                        website.discovery_source === value ||
+                        website.discovery_provider === value,
+                    )}
+                    )
+                  </option>
+                ))}
+              </select>
+            </label>
+                </div>
+              </div>
+              <div className="website-filter-group">
+                <h2>Traffic &amp; audience</h2>
+            <div className="website-advanced-filter-grid">
+              <label className="website-filter-field hypestat-table-filter">
+                <span className="website-filter-field-label">
+                  Min. monthly visits
+                </span>
+                <input
+                  min="0"
+                  onChange={(event) => {
+                    resetPage();
+                    setMinimumMonthlyVisits(event.target.value);
+                  }}
+                  placeholder="e.g. 10,000"
+                  type="number"
+                  value={minimumMonthlyVisits}
+                />
+              </label>
+              <label className="website-filter-field hypestat-table-filter">
+                <span className="website-filter-field-label">
+                  Min. referring domains
+                </span>
+                <input
+                  min="0"
+                  onChange={(event) => {
+                    resetPage();
+                    setMinimumReferringDomains(event.target.value);
+                  }}
+                  placeholder="e.g. 100"
+                  type="number"
+                  value={minimumReferringDomains}
+                />
+              </label>
+              <label className="website-filter-field hypestat-table-filter">
+                <span className="website-filter-field-label">
+                  Max. global rank
+                </span>
+                <input
+                  min="1"
+                  onChange={(event) => {
+                    resetPage();
+                    setMaximumGlobalRank(event.target.value);
+                  }}
+                  placeholder="e.g. 50,000"
+                  type="number"
+                  value={maximumGlobalRank}
+                />
+              </label>
+              <label className="website-filter-field select-filter">
+                <span className="website-filter-field-label">
+                  HypeStat country
+                </span>
+                <select
+                  onChange={(event) => {
+                    resetPage();
+                    setHypestatCountry(event.target.value);
+                  }}
+                  value={hypestatCountry}
+                >
+                  <option value="all">
+                    All ({countWebsiteFacet("hypestat_country")})
+                  </option>
+                  {hypestatCountries.map((value) => (
+                    <option key={value} value={value}>
+                      {value} (
+                      {countWebsiteFacet(
+                        "hypestat_country",
+                        (website) => website.hypestat_country === value,
+                      )}
+                      )
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="website-filter-field select-filter">
+                <span className="website-filter-field-label">
+                  Backlink country
+                </span>
+                <select
+                  onChange={(event) => {
+                    resetPage();
+                    setBacklinkCountry(event.target.value);
+                  }}
+                  value={backlinkCountry}
+                >
+                  <option value="all">
+                    All ({countWebsiteFacet("backlink_country")})
+                  </option>
+                  {backlinkCountries.map((value) => (
+                    <option key={value} value={value}>
+                      {value} (
+                      {countWebsiteFacet("backlink_country", (website) =>
+                        website.hypestat_referring_domains_by_country.some(
+                          (item) => item.country === value,
+                        ),
+                      )}
+                      )
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="website-filter-field select-filter">
+                <span className="website-filter-field-label">
+                  Audience country
+                </span>
+                <select
+                  onChange={(event) => {
+                    resetPage();
+                    setAudienceCountry(event.target.value);
+                  }}
+                  value={audienceCountry}
+                >
+                  <option value="all">
+                    All ({countWebsiteFacet("audience_country")})
+                  </option>
+                  {audienceCountries.map((value) => (
+                    <option key={value} value={value}>
+                      {value} (
+                      {countWebsiteFacet("audience_country", (website) =>
+                        website.hypestat_audience_countries.includes(value),
+                      )}
+                      )
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+              </div>
+            </div>
+          </details>
+          <div className="website-registry-actions">
+            <button
+              className="button button-primary"
+              disabled={
+                websitesQuery.isLoading ||
+                updateMutation.isPending ||
+                addToLeadMutation.isPending ||
+                reclassifyMutation.isPending ||
+                reclassifyAllMutation.isPending ||
+                addableWebsiteCount === 0
+              }
+              onClick={() =>
+                addToLeadMutation.mutate(
+                  addableWebsites.map((website) => website.id),
+                )
+              }
+              title="Create companies for matching new websites and mark them Lead. Listing and non-new websites are excluded."
+              type="button"
             >
-              <option value="all">
-                All countries ({countWebsiteFacet("hypestat_country")})
-              </option>
-              {hypestatCountries.map((value) => (
-                <option key={value} value={value}>
-                  {value} (
-                  {countWebsiteFacet(
-                    "hypestat_country",
-                    (website) => website.hypestat_country === value,
-                  )}
-                  )
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by backlink country</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                setBacklinkCountry(event.target.value);
-              }}
-              value={backlinkCountry}
+              {addToLeadMutation.isPending
+                ? "Adding to Lead…"
+                : `Add to Lead (${addableWebsiteCount})`}
+            </button>
+            <button
+              className="button button-secondary"
+              disabled={
+                websitesQuery.isLoading ||
+                updateMutation.isPending ||
+                addToLeadMutation.isPending ||
+                reclassifyMutation.isPending ||
+                reclassifyAllMutation.isPending
+              }
+              onClick={() => reclassifyAllMutation.mutate()}
+              title="Recomputes both fields for all indexed websites with an unclassified Website Type or empty Site Topic. Uses saved indexed data."
+              type="button"
             >
-              <option value="all">
-                All backlink countries ({countWebsiteFacet("backlink_country")})
-              </option>
-              {backlinkCountries.map((value) => (
-                <option key={value} value={value}>
-                  {value} (
-                  {countWebsiteFacet("backlink_country", (website) =>
-                    website.hypestat_referring_domains_by_country.some(
-                      (item) => item.country === value,
-                    ),
-                  )}
-                  )
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="select-filter">
-            <span className="sr-only">Filter by audience country</span>
-            <select
-              onChange={(event) => {
-                resetPage();
-                setAudienceCountry(event.target.value);
-              }}
-              value={audienceCountry}
+              {reclassifyAllMutation.isPending ? (
+                "Recomputing all…"
+              ) : (
+                <>
+                  <span className="website-recompute-label">
+                    Recompute all missing
+                  </span>
+                  <span className="website-recompute-short">Recompute</span>
+                </>
+              )}
+            </button>
+            <button
+              aria-label="Refresh websites"
+              className="icon-button refresh-button"
+              disabled={websitesQuery.isFetching}
+              onClick={() => void websitesQuery.refetch()}
+              type="button"
             >
-              <option value="all">
-                All audience countries ({countWebsiteFacet("audience_country")})
-              </option>
-              {audienceCountries.map((value) => (
-                <option key={value} value={value}>
-                  {value} (
-                  {countWebsiteFacet("audience_country", (website) =>
-                    website.hypestat_audience_countries.includes(value),
-                  )}
-                  )
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="button button-primary"
-            disabled={
-              websitesQuery.isLoading ||
-              updateMutation.isPending ||
-              addToLeadMutation.isPending ||
-              reclassifyMutation.isPending ||
-              reclassifyAllMutation.isPending ||
-              addableWebsiteCount === 0
-            }
-            onClick={() =>
-              addToLeadMutation.mutate(
-                filteredWebsites.map((website) => website.id),
-              )
-            }
-            title="Create companies for all matching crawled websites and mark them Lead. Listing websites are excluded."
-            type="button"
-          >
-            {addToLeadMutation.isPending
-              ? "Adding to Lead…"
-              : `Add to Lead (${addableWebsiteCount})`}
-          </button>
-          <button
-            className="button button-secondary"
-            disabled={
-              websitesQuery.isLoading ||
-              updateMutation.isPending ||
-              addToLeadMutation.isPending ||
-              reclassifyMutation.isPending ||
-              reclassifyAllMutation.isPending
-            }
-            onClick={() => reclassifyAllMutation.mutate()}
-            title="Recomputes both fields for all crawled websites with an unclassified Website Type or empty Site Topic. Uses saved crawl data."
-            type="button"
-          >
-            {reclassifyAllMutation.isPending
-              ? "Recomputing all…"
-              : "Recompute all missing"}
-          </button>
-          <button
-            aria-label="Refresh websites"
-            className="icon-button refresh-button"
-            disabled={websitesQuery.isFetching}
-            onClick={() => void websitesQuery.refetch()}
-            type="button"
-          >
-            ↻
-          </button>
+              <RotateCcw aria-hidden="true" size={15} strokeWidth={1.8} />
+            </button>
+          </div>
         </div>
 
         {updateMutation.isError && (
@@ -778,7 +903,7 @@ export function WebsitesPage() {
             {addToLeadMutation.data.skipped_listing_count > 0 &&
               ` ${addToLeadMutation.data.skipped_listing_count} listing websites were skipped.`}
             {addToLeadMutation.data.skipped_uncrawled_count > 0 &&
-              ` ${addToLeadMutation.data.skipped_uncrawled_count} uncrawled websites were skipped.`}
+              ` ${addToLeadMutation.data.skipped_uncrawled_count} unindexed websites were skipped.`}
             {addToLeadMutation.data.not_found_count > 0 &&
               ` ${addToLeadMutation.data.not_found_count} websites were no longer available.`}
           </div>
@@ -847,14 +972,14 @@ export function WebsitesPage() {
               {allWebsites.length === 0
                 ? "No websites registered yet"
                 : websiteCount === 0
-                  ? "No successfully crawled websites yet"
+                  ? "No successfully indexed websites yet"
                   : "No websites match your filters"}
             </strong>
             <span>
               {allWebsites.length === 0
-                ? "Websites are added through discovery or crawl jobs."
+                ? "Websites are added through discovery or indexing jobs."
                 : websiteCount === 0
-                  ? "Websites appear here after their crawl succeeds."
+                  ? "Websites appear here after indexing succeeds."
                   : "Try another search or site type."}
             </span>
           </div>
@@ -863,73 +988,87 @@ export function WebsitesPage() {
             <div
               aria-label="Website registry"
               className="table-scroll website-table-scroll"
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                if (websiteScrollTimerRef.current !== null) {
+                  window.clearTimeout(websiteScrollTimerRef.current);
+                }
+                websiteScrollTimerRef.current = window.setTimeout(() => {
+                  websiteScrollTimerRef.current = null;
+                  snapWebsiteTableToColumn(element);
+                }, 120);
+              }}
               tabIndex={0}
             >
               <table>
                 <thead>
                   <tr>
+                    <th aria-label="Row number" className="website-row-number">
+                      #
+                    </th>
                     <SortableHeader
-                      label="WEBSITE"
+                      label="Website"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="website"
                     />
+                    <th scope="col">Keywords</th>
                     <SortableHeader
-                      label="EST. MONTHLY VISITS"
-                      onSort={toggleSort}
-                      sort={sort}
-                      sortKey="hypestat_monthly_visits"
-                    />
-                    <SortableHeader
-                      label="REFERRING DOMAINS"
-                      onSort={toggleSort}
-                      sort={sort}
-                      sortKey="hypestat_referring_domains"
-                    />
-                    <SortableHeader
-                      label="HYPESTAT GLOBAL RANK"
-                      onSort={toggleSort}
-                      sort={sort}
-                      sortKey="hypestat_global_rank"
-                    />
-                    <SortableHeader
-                      label="COUNTRY"
-                      onSort={toggleSort}
-                      sort={sort}
-                      sortKey="hypestat_country"
-                    />
-                    <SortableHeader
-                      label="REFERRING DOMAINS BY COUNTRY"
-                      onSort={toggleSort}
-                      sort={sort}
-                      sortKey="hypestat_backlink_countries"
-                    />
-                    <SortableHeader
-                      label="AUDIENCE COUNTRIES"
-                      onSort={toggleSort}
-                      sort={sort}
-                      sortKey="hypestat_audience_countries"
-                    />
-                    <SortableHeader
-                      label="WEBSITE TYPE"
+                      label="Website type"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="website_type"
                     />
                     <SortableHeader
-                      label="SITE TOPIC"
+                      label="Site topic"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="site_topic"
                     />
                     <SortableHeader
-                      label="LANGUAGE"
+                      label="Est. monthly visits"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="hypestat_monthly_visits"
+                    />
+                    <SortableHeader
+                      label="Referring domains"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="hypestat_referring_domains"
+                    />
+                    <SortableHeader
+                      label="HypeStat global rank"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="hypestat_global_rank"
+                    />
+                    <SortableHeader
+                      label="Country"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="hypestat_country"
+                    />
+                    <SortableHeader
+                      label="Referring domains by country"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="hypestat_backlink_countries"
+                    />
+                    <SortableHeader
+                      label="Audience countries"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="hypestat_audience_countries"
+                    />
+                    <SortableHeader
+                      label="Language"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="language"
                     />
                     <SortableHeader
-                      label="CRAWLED AT"
+                      label="Crawled at"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="crawled_at"
@@ -937,8 +1076,11 @@ export function WebsitesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedWebsites.map((website) => (
+                  {paginatedWebsites.map((website, index) => (
                     <tr key={website.id}>
+                      <td className="website-row-number">
+                        {(visiblePage - 1) * pageSize + index + 1}
+                      </td>
                       <td className="website-url-cell">
                         <span className="website-domain-links">
                           <span
@@ -1005,13 +1147,12 @@ export function WebsitesPage() {
                             <span aria-hidden="true">↗</span>
                           </a>
                         </span>
+                      </td>
+                      <td className="website-keywords-cell">
                         <div
                           aria-label={`Corpus keywords for ${website.domain}`}
                           className="website-row-keywords"
                         >
-                          <span className="website-row-keywords-label">
-                            Keywords
-                          </span>
                           {corpusWordsQuery.isLoading ? (
                             <span className="website-row-keywords-empty">
                               Analyzing…
@@ -1040,30 +1181,6 @@ export function WebsitesPage() {
                             </span>
                           )}
                         </div>
-                      </td>
-                      <td>{formatTableNumber(website.hypestat_monthly_visits)}</td>
-                      <td>
-                        {formatTableNumber(website.hypestat_referring_domains)}
-                      </td>
-                      <td>{formatTableNumber(website.hypestat_global_rank)}</td>
-                      <td>{website.hypestat_country ?? "—"}</td>
-                      <td className="website-hypestat-country-cell">
-                        {website.hypestat_referring_domains_by_country.length ? (
-                          website.hypestat_referring_domains_by_country.map(
-                            ({ country, domains }) => (
-                              <span key={country}>
-                                {country}: {formatTableNumber(domains)}
-                              </span>
-                            ),
-                          )
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="website-hypestat-country-cell">
-                        {website.hypestat_audience_countries.length
-                          ? website.hypestat_audience_countries.join(", ")
-                          : "—"}
                       </td>
                       <td>
                         <div className="website-type-recompute-control">
@@ -1107,7 +1224,7 @@ export function WebsitesPage() {
                               reclassifyAllMutation.isPending
                             }
                             onClick={() => reclassifyMutation.mutate(website.id)}
-                            title="Recompute Website Type and Site Topic from saved crawl data without recrawling."
+                            title="Recompute Website Type and Site Topic from saved indexed data without re-indexing."
                             type="button"
                           >
                             ↻
@@ -1153,6 +1270,31 @@ export function WebsitesPage() {
                             website.site_topic.join(", ")
                           }
                         />
+                      </td>
+                      <td>{formatTableNumber(website.hypestat_monthly_visits)}</td>
+                      <td>
+                        {formatTableNumber(website.hypestat_referring_domains)}
+                      </td>
+                      <td>{formatTableNumber(website.hypestat_global_rank)}</td>
+                      <td>{website.hypestat_country ?? "—"}</td>
+                      <td className="website-hypestat-country-cell">
+                        {website.hypestat_referring_domains_by_country.length ? (
+                          [...website.hypestat_referring_domains_by_country]
+                            .sort((left, right) => right.domains - left.domains)
+                            .slice(0, 3)
+                            .map(({ country, domains }) => (
+                              <span key={country}>
+                                {country}: {formatTableNumber(domains)}
+                              </span>
+                            ))
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="website-hypestat-country-cell">
+                        {website.hypestat_audience_countries.length
+                          ? website.hypestat_audience_countries.join(", ")
+                          : "—"}
                       </td>
                       <td>
                         <input

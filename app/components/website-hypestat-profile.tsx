@@ -481,15 +481,15 @@ export function WebsiteHypeStatProfileView({
         )}
       </ProfileSection>
 
-      <ProfileSection title="Advertising and AI crawlers">
+      <ProfileSection title="Advertising and AI indexing bots">
         <InfoGrid
           items={[
             {
-              label: "AI crawlers checked",
+              label: "AI bots checked",
               value: formatNumber(aiCrawlers.crawlers_checked),
             },
             {
-              label: "Blocks all AI crawlers",
+              label: "Blocks all AI bots",
               value: formatBoolean(aiCrawlers.blocks_all),
             },
             {
@@ -518,11 +518,11 @@ export function WebsiteHypeStatProfileView({
         />
         <div className="hypestat-columns">
           <StringList
-            title="AI crawlers blocked"
+            title="AI bots blocked"
             values={Object.keys(asRecord(aiCrawlers.blocked) ?? {})}
           />
           <StringList
-            title="AI crawlers partially blocked"
+            title="AI bots partially blocked"
             values={Object.keys(asRecord(aiCrawlers.partially_blocked) ?? {})}
           />
         </div>

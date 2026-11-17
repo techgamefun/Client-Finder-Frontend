@@ -111,7 +111,7 @@ export function CompanyDetailPage({
     queryKey: ["company-website-crawl", companyId],
     queryFn: () => {
       if (companyId === null) {
-        throw new Error("A valid company ID is required to load crawl status.");
+        throw new Error("A valid company ID is required to load indexing status.");
       }
       return getCompanyWebsiteCrawl(companyId);
     },
@@ -121,7 +121,7 @@ export function CompanyDetailPage({
     queryKey: ["website-crawl-job", websiteCrawlJobId],
     queryFn: () => {
       if (websiteCrawlJobId === null) {
-        throw new Error("A crawl job must be queued before checking status.");
+        throw new Error("An indexing job must be queued before checking status.");
       }
       return getWebsiteCrawlJob(websiteCrawlJobId);
     },
@@ -130,7 +130,7 @@ export function CompanyDetailPage({
   const websiteCrawlMutation = useMutation({
     mutationFn: () => {
       if (companyId === null) {
-        throw new Error("A company must be loaded before it can be crawled.");
+        throw new Error("A company must be loaded before it can be indexed.");
       }
       return crawlCompanyWebsite(companyId);
     },
@@ -524,17 +524,17 @@ export function CompanyDetailPage({
     websiteCrawlJobQuery.data?.status === "queued" ||
     websiteCrawlJobQuery.data?.status === "running";
   const crawlStatusLabel = isCrawlPending
-    ? "Crawling…"
+    ? "Indexing…"
     : websiteCrawlQuery.isLoading
       ? "Checking…"
       : websiteCrawlQuery.isError
         ? "Status unavailable"
         : crawl
-          ? "Crawled"
+          ? "Indexed"
           : websiteCrawlMutation.isError ||
               websiteCrawlJobQuery.data?.status === "failed"
-            ? "Crawl failed"
-            : "Not crawled";
+            ? "Indexing failed"
+            : "Not indexed";
 
   return (
     <div className="company-detail-page">
@@ -624,7 +624,7 @@ export function CompanyDetailPage({
                     role="group"
                   >
                     <span className="company-crawl-timestamp-label">
-                      Last successful crawl
+                      Last successful indexing
                     </span>
                     <time
                       className="company-crawl-timestamp"
@@ -641,7 +641,7 @@ export function CompanyDetailPage({
                       }}
                       type="button"
                     >
-                      Re-crawl website
+                      Re-index website
                     </button>
                   </div>
                 )}
@@ -1064,7 +1064,7 @@ export function CompanyDetailPage({
 
       {websiteCrawlQuery.isError && (
         <div className="alert alert-error" role="alert">
-          Could not load website crawl status: {websiteCrawlQuery.error.message}
+          Could not load website indexing status: {websiteCrawlQuery.error.message}
           <button
             className="text-button"
             onClick={() => void websiteCrawlQuery.refetch()}
@@ -1092,19 +1092,19 @@ export function CompanyDetailPage({
       )}
       {websiteCrawlMutation.isError && (
         <div className="alert alert-error" role="alert">
-          Could not crawl {company.name}&apos;s website:{" "}
+          Could not index {company.name}&apos;s website:{" "}
           {websiteCrawlMutation.error.message}
         </div>
       )}
       {websiteCrawlJobQuery.isError && (
         <div className="alert alert-error" role="alert">
-          Could not check crawl status: {websiteCrawlJobQuery.error.message}
+          Could not check indexing status: {websiteCrawlJobQuery.error.message}
         </div>
       )}
       {websiteCrawlJobQuery.data?.status === "failed" && (
         <div className="alert alert-error" role="alert">
-          Could not crawl {company.name}&apos;s website:{" "}
-          {websiteCrawlJobQuery.data.error || "The crawl job failed."}
+          Could not index {company.name}&apos;s website:{" "}
+          {websiteCrawlJobQuery.data.error || "The indexing job failed."}
         </div>
       )}
       <div className="company-detail-layout">

@@ -826,8 +826,8 @@ export function DiscoveryPage() {
               to the registry
             </strong>
             <p>
-              {saveResult.crawl_jobs_enqueued} crawl jobs queued ·{" "}
-              {saveResult.crawl_jobs_already_present} already queued or crawled
+              {saveResult.crawl_jobs_enqueued} indexing jobs queued ·{" "}
+              {saveResult.crawl_jobs_already_present} already queued or indexed
               {saveResult.domains_skipped > 0 &&
                 ` · ${saveResult.domains_skipped} duplicates skipped`}
             </p>

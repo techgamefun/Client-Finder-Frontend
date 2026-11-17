@@ -33,7 +33,7 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
     queryKey: ["website-crawl-job", jobId],
     queryFn: () => {
       if (jobId === null) {
-        throw new Error("A crawl job must be queued before checking status.");
+        throw new Error("An indexing job must be queued before checking status.");
       }
       return getWebsiteCrawlJob(jobId);
     },
@@ -45,7 +45,7 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
     crawlMutation.isPending ||
     crawlJob?.status === "queued" ||
     crawlJob?.status === "running";
-  const crawledPages = crawlResult
+  const indexedPages = crawlResult
     ? [
         {
           label: "Home",
@@ -103,14 +103,14 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
       <header className="crawl-dialog-header">
         <div>
           <p className="eyebrow">WEBSITE RESEARCH</p>
-          <h2 id="crawl-dialog-title">Crawl a website</h2>
+          <h2 id="crawl-dialog-title">Index a website</h2>
           <p className="heading-copy">
             Collect public company information from its homepage and relevant
             About, Blog, Services, Contact, and Mission pages.
           </p>
         </div>
         <button
-          aria-label="Close crawl dialog"
+          aria-label="Close indexing dialog"
           className="icon-button crawl-dialog-close"
           onClick={onClose}
           type="button"
@@ -122,11 +122,11 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
       <article className="panel crawler-panel crawler-page-panel">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">PUBLIC WEBSITE CRAWLER</p>
+            <p className="eyebrow">PUBLIC WEBSITE INDEXING</p>
             <h2>Enter a company website</h2>
             <p className="panel-subtitle">
-              The crawler visits a small number of pages on the same public
-              website and extracts page text, email addresses, and social links.
+              Indexing scans a small number of pages on the same public website
+              and extracts page text, email addresses, and social links.
             </p>
           </div>
           <ScanSearch aria-hidden="true" className="sparkle" size={22} />
@@ -150,14 +150,14 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
             disabled={isCrawlPending}
             type="submit"
           >
-            {isCrawlPending ? "Crawling..." : "Crawl website"}
+            {isCrawlPending ? "Indexing..." : "Index website"}
             {!isCrawlPending && <span aria-hidden="true">→</span>}
           </button>
         </form>
 
         {isCrawlPending && (
           <div className="alert" role="status">
-            Crawl job {crawlJob?.status ?? "queued"}. This page will update
+            Indexing job {crawlJob?.status ?? "queued"}. This page will update
             when it finishes.
           </div>
         )}
@@ -170,13 +170,13 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
 
         {jobQuery.isError && (
           <div className="alert alert-error" role="alert">
-            Could not check crawl status: {jobQuery.error.message}
+            Could not check indexing status: {jobQuery.error.message}
           </div>
         )}
 
         {crawlJob?.status === "failed" && (
           <div className="alert alert-error" role="alert">
-            Crawl failed: {crawlJob.error || "The crawl job failed."}
+            Indexing failed: {crawlJob.error || "The indexing job failed."}
           </div>
         )}
 
@@ -184,7 +184,7 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
           <div className="crawl-result" role="status">
             <div className="crawl-result-heading">
               <div>
-                <strong>Crawl saved</strong>
+                <strong>Indexing complete</strong>
                 <a
                   href={crawlResult.website_url}
                   rel="noreferrer"
@@ -200,9 +200,9 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
               Site type: <strong>{formatSiteType(crawlResult.site_type)}</strong>
             </p>
 
-            {crawledPages.length > 0 ? (
+            {indexedPages.length > 0 ? (
               <div className="crawl-pages">
-                {crawledPages.map((page) => (
+                {indexedPages.map((page) => (
                   <article className="crawl-page" key={page.label}>
                     <div>
                       <strong>{page.label}</strong>

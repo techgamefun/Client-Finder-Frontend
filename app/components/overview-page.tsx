@@ -189,7 +189,9 @@ export function OverviewPage({
   }
 
   return (
-    <div className="overview-redesign">
+    <div
+      className={`overview-redesign${adminDashboard ? " is-admin-dashboard" : ""}`}
+    >
       <header className="overview-header">
         <div>
           <h1>{adminDashboard ? "Organization dashboard" : "Overview"}</h1>
@@ -398,7 +400,7 @@ function UserProgressWidget({
                   Leads <OverviewMetricInfo metricKey="team_leads" />
                 </th>
                 <th scope="col">
-                  Crawls <OverviewMetricInfo metricKey="team_crawls" />
+                  Index jobs <OverviewMetricInfo metricKey="team_crawls" />
                 </th>
                 <th scope="col">
                   Emails <OverviewMetricInfo metricKey="team_emails" />
@@ -885,7 +887,7 @@ function CoverageWidget({ query }: { query: OverviewQuery }) {
     { key: "with_phone", label: "Phone", metric: data?.with_phone },
     { key: "with_website", label: "Website", metric: data?.with_website },
     { key: "with_industry", label: "Industry", metric: data?.with_industry },
-    { key: "crawl_success", label: "Crawl success", metric: data?.crawl_success },
+    { key: "crawl_success", label: "Indexing success", metric: data?.crawl_success },
   ];
   return (
     <article className="overview-panel overview-insight-panel">
@@ -918,7 +920,7 @@ function CoverageWidget({ query }: { query: OverviewQuery }) {
               <span className="overview-coverage-denominator">
                 {row.metric?.total
                   ? `${formatCount(row.metric.count)} of ${formatCount(row.metric.total)}`
-                  : "No completed crawls"}
+                  : "No completed indexing jobs"}
               </span>
               <strong>{formatPercentage(row.metric?.percentage ?? null)}</strong>
               <OverviewMetricInfo metricKey={row.key} />
@@ -977,7 +979,7 @@ function JobsWidget({ query }: { query: OverviewQuery }) {
             </div>
             {(
               [
-                ["Crawler", data?.crawler],
+                ["Indexing", data?.crawler],
                 ["PageSpeed", data?.pagespeed],
               ] as const
             ).map(([name, queue]) => (
