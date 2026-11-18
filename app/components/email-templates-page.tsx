@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Plus } from "lucide-react";
 import {
   createEmailTemplate,
   deleteEmailTemplate,
@@ -29,6 +30,7 @@ export function EmailTemplatesPage() {
   const searchParams = useSearchParams();
   const shouldCreateFromQuery = searchParams.get("create") === "1";
   const queryClient = useQueryClient();
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -47,6 +49,7 @@ export function EmailTemplatesPage() {
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [sendResult, setSendResult] = useState<string | null>(null);
+  const [createPermissionNotice, setCreatePermissionNotice] = useState(false);
 
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
@@ -83,9 +86,11 @@ export function EmailTemplatesPage() {
 
   const templates = templatesQuery.data ?? [];
   const activeTemplate =
-    templates.find((template) => template.id === selectedTemplateId) ??
-    templates[0] ??
-    null;
+    editorOpen && !editingTemplateId
+      ? null
+      : templates.find((template) => template.id === selectedTemplateId) ??
+        templates[0] ??
+        null;
   const companies = companiesQuery.data ?? [];
   const activeCompanyId = companyId;
   const activeCompany = companies.find(
@@ -185,6 +190,7 @@ export function EmailTemplatesPage() {
 
   function selectTemplate(template: EmailTemplate) {
     setSelectedTemplateId(template.id);
+    setCreatePermissionNotice(false);
     setPreview(null);
     setSendResult(null);
     setDeleteConfirmationOpen(false);
@@ -193,22 +199,32 @@ export function EmailTemplatesPage() {
   }
 
   const startNewTemplate = useCallback(() => {
+    setSelectedTemplateId("");
     setEditingTemplateId(null);
+    setCreatePermissionNotice(false);
     setDraft({ ...emptyDraft });
     setEditorOpen(true);
     setPreview(null);
     setSendResult(null);
     resetSaveMutation();
+    window.requestAnimationFrame(() => nameInputRef.current?.focus());
   }, [resetSaveMutation]);
 
   useEffect(() => {
     if (!shouldCreateFromQuery || sessionQuery.isPending) return;
+    if (editorOpen) {
+      router.replace("/templates", { scroll: false });
+      return;
+    }
     if (isAdmin) {
       window.requestAnimationFrame(startNewTemplate);
+    } else {
+      window.requestAnimationFrame(() => setCreatePermissionNotice(true));
     }
     router.replace("/templates", { scroll: false });
   }, [
     isAdmin,
+    editorOpen,
     router,
     sessionQuery.isPending,
     shouldCreateFromQuery,
@@ -216,6 +232,7 @@ export function EmailTemplatesPage() {
   ]);
 
   function startEditingTemplate(template: EmailTemplate) {
+    setCreatePermissionNotice(false);
     setEditingTemplateId(template.id);
     setDraft({
       name: template.name,
@@ -226,6 +243,7 @@ export function EmailTemplatesPage() {
     setPreview(null);
     setSendResult(null);
     saveMutation.reset();
+    window.requestAnimationFrame(() => nameInputRef.current?.focus());
   }
 
   function cancelEditing() {
@@ -328,94 +346,122 @@ export function EmailTemplatesPage() {
       <header className="email-templates-heading">
         <div>
           <p className="eyebrow">YOUR WORKSPACE / OUTREACH</p>
-          <h1>Email templates</h1>
+          <h1>
+            {editorOpen
+              ? editingTemplateId
+                ? "Edit email template"
+                : "Create email template"
+              : "Email templates"}
+          </h1>
           <p className="heading-copy">
-            Build reusable messages from your company, contact, and sender
-            records, then preview and send through a shared Gmail account.
+            {editorOpen
+              ? "Write a reusable message, add personalization fields, then save it for your organization."
+              : "Create and manage reusable outreach. Choose a template to preview it with company data."}
           </p>
         </div>
+        {editorOpen ? null : isAdmin ? (
+          <button
+            className="button button-primary template-create-action"
+            onClick={startNewTemplate}
+            type="button"
+          >
+            <Plus aria-hidden="true" size={17} />
+            New template
+          </button>
+        ) : sessionQuery.isSuccess ? (
+          <p className="template-admin-note">
+            Templates are shared with your organization. Ask an admin to add or
+            edit them.
+          </p>
+        ) : null}
       </header>
 
-      {sessionQuery.isError && (
-        <div className="email-template-alert email-template-alert-error" role="alert">
-          Could not load your workspace: {errorMessage(sessionQuery.error)}
+      {createPermissionNotice && (
+        <div className="email-template-alert template-permission-alert" role="status">
+          Only organization admins can create or edit shared templates.
         </div>
       )}
 
-      <div className="email-template-layout">
-        <aside aria-label="Email template library" className="panel template-library">
-          <div className="template-library-heading">
-            <div>
-              <p className="eyebrow">LIBRARY</p>
-              <h2>Templates</h2>
-            </div>
-            <span className="template-count">{templates.length}</span>
-          </div>
-
-          {templatesQuery.isPending && (
-            <p className="template-state" role="status">Loading templates…</p>
-          )}
-          {templatesQuery.isError && (
-            <div className="template-state template-state-error" role="alert">
-              <p>Could not load templates.</p>
-              <span>{errorMessage(templatesQuery.error)}</span>
-              <button
-                className="button button-secondary"
-                onClick={() => void templatesQuery.refetch()}
-                type="button"
-              >
-                Try again
-              </button>
-            </div>
-          )}
-          {templatesQuery.isSuccess && templates.length === 0 && (
-            <div className="template-state">
-              <span className="template-empty-icon" aria-hidden="true">✉</span>
-              <strong>No templates yet</strong>
-              <span>
-                {isAdmin
-                  ? "Create a template to start building reusable outreach."
-                  : "An organization admin can create shared templates."}
+      <div className={`email-template-layout${editorOpen || sessionQuery.isError ? " is-editor-open" : ""}`}>
+        {!editorOpen && !sessionQuery.isError && (
+          <aside aria-label="Email template library" className="panel template-library">
+            <div className="template-library-heading">
+              <div>
+                <p className="eyebrow">LIBRARY</p>
+                <h2>Templates</h2>
+              </div>
+              <span className="template-count">
+                {templatesQuery.isPending ? "…" : templates.length}
               </span>
             </div>
-          )}
-          {templates.length > 0 && (
-            <ul className="template-list">
-              {templates.map((template) => (
-                <li key={template.id}>
-                  <button
-                    aria-current={activeTemplate?.id === template.id ? "true" : undefined}
-                    className={`template-list-item${activeTemplate?.id === template.id ? " is-active" : ""}`}
-                    onClick={() => selectTemplate(template)}
-                    type="button"
-                  >
-                    <span className="template-list-icon" aria-hidden="true">✉</span>
-                    <span className="template-list-copy">
-                      <strong>{template.name}</strong>
-                      <small>{template.subject}</small>
-                    </span>
-                    <span className="template-list-arrow" aria-hidden="true">›</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="template-library-footnote">
-            <span className="template-status-dot" />
-            Shared with your organization
-          </div>
-        </aside>
 
-        <section aria-label="Selected email template" className="panel template-workspace">
+            {(sessionQuery.isPending || (organizationId && templatesQuery.isLoading)) && (
+              <p className="template-state" role="status">Loading templates…</p>
+            )}
+            {templatesQuery.isError && (
+              <div className="template-state template-state-error" role="alert">
+                <p>Could not load templates.</p>
+                <span>{errorMessage(templatesQuery.error)}</span>
+                <button
+                  className="button button-secondary"
+                  onClick={() => void templatesQuery.refetch()}
+                  type="button"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+            {templatesQuery.isSuccess && templates.length === 0 && (
+              <div className="template-state">
+                <span className="template-empty-icon" aria-hidden="true">✉</span>
+                <strong>No templates yet</strong>
+                <span>
+                  {isAdmin
+                    ? "Create a template to start building reusable outreach."
+                    : "An organization admin can create shared templates."}
+                </span>
+              </div>
+            )}
+            {templates.length > 0 && (
+              <ul className="template-list">
+                {templates.map((template) => (
+                  <li key={template.id}>
+                    <button
+                      aria-current={activeTemplate?.id === template.id ? "true" : undefined}
+                      className={`template-list-item${activeTemplate?.id === template.id ? " is-active" : ""}`}
+                      onClick={() => selectTemplate(template)}
+                      type="button"
+                    >
+                      <span className="template-list-icon" aria-hidden="true">✉</span>
+                      <span className="template-list-copy">
+                        <strong>{template.name}</strong>
+                        <small>{template.subject}</small>
+                      </span>
+                      <span className="template-list-arrow" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="template-library-footnote">
+              <span className="template-status-dot" />
+              Shared with your organization
+            </div>
+          </aside>
+        )}
+
+        <section
+          aria-label={editorOpen ? "Email template editor" : "Selected email template"}
+          className={`panel template-workspace${editorOpen ? " is-editing" : ""}`}
+        >
           {editorOpen ? (
             <div className="template-editor">
               <div className="template-section-heading">
                 <div>
-                  <p className="eyebrow">{editingTemplateId ? "EDIT TEMPLATE" : "NEW TEMPLATE"}</p>
-                  <h2>{editingTemplateId ? "Update your message" : "Create a template"}</h2>
+                  <p className="eyebrow">MESSAGE CONTENT</p>
+                  <h2>{editingTemplateId ? "Update your message" : "Write your message"}</h2>
                   <p className="panel-subtitle">
-                    Add HTML content and insert database fields where they
-                    should appear in each email.
+                    Set a clear name and subject, then write the email body.
                   </p>
                 </div>
               </div>
@@ -427,50 +473,58 @@ export function EmailTemplatesPage() {
               )}
 
               <form className="template-form" onSubmit={saveTemplate}>
-                <label className="template-field">
-                  Template name
-                  <input
-                    autoComplete="off"
-                    maxLength={200}
-                    onChange={(event) => updateDraft("name", event.target.value)}
-                    placeholder="e.g. First-touch introduction"
-                    required
-                    value={draft.name}
-                  />
-                </label>
-                <label className="template-field">
-                  Subject
-                  <input
-                    maxLength={998}
-                    onChange={(event) => updateDraft("subject", event.target.value)}
-                    placeholder="A short, relevant subject"
-                    ref={subjectInputRef}
-                    required
-                    value={draft.subject}
-                  />
-                </label>
-                <label className="template-field">
-                  HTML email body
-                  <textarea
-                    className="template-body-input"
-                    maxLength={200_000}
-                    onChange={(event) => updateDraft("body_content", event.target.value)}
-                    placeholder={"<p>Hi {{ contact.first_name | default(\"there\") }},</p>\n<p>I noticed {{ company.name }}...</p>"}
-                    ref={bodyInputRef}
-                    required
-                    rows={12}
-                    value={draft.body_content}
-                  />
-                  <span className="template-field-hint">
-                    HTML is supported. Dynamic values are escaped when rendered.
-                  </span>
-                </label>
+                <div className="template-form-fields">
+                  <div className="template-form-meta">
+                    <label className="template-field">
+                      Template name
+                      <input
+                        autoComplete="off"
+                        maxLength={200}
+                        onChange={(event) => updateDraft("name", event.target.value)}
+                        placeholder="e.g. First-touch introduction"
+                        ref={nameInputRef}
+                        required
+                        value={draft.name}
+                      />
+                    </label>
+                    <label className="template-field">
+                      Subject
+                      <input
+                        maxLength={998}
+                        onChange={(event) => updateDraft("subject", event.target.value)}
+                        placeholder="A short, relevant subject"
+                        ref={subjectInputRef}
+                        required
+                        value={draft.subject}
+                      />
+                    </label>
+                  </div>
+                  <label className="template-field">
+                    Email body (HTML)
+                    <textarea
+                      className="template-body-input"
+                      maxLength={200_000}
+                      onChange={(event) => updateDraft("body_content", event.target.value)}
+                      placeholder={"<p>Hi {{ contact.first_name | default(\"there\") }},</p>\n<p>I noticed {{ company.name }}...</p>"}
+                      ref={bodyInputRef}
+                      required
+                      rows={16}
+                      value={draft.body_content}
+                    />
+                    <span className="template-field-hint">
+                      HTML is supported. Dynamic values are escaped when rendered.
+                    </span>
+                  </label>
+                </div>
 
-                <div className="template-variable-inserter">
+                <aside
+                  aria-labelledby="template-variable-title"
+                  className="template-variable-inserter"
+                >
                   <div className="template-variable-heading">
                     <div>
-                      <strong>Insert a variable</strong>
-                      <span>Choose a field to add it at the cursor.</span>
+                      <strong id="template-variable-title">Personalize your message</strong>
+                      <span>Insert a field at the cursor in the subject or body.</span>
                     </div>
                     {variablesQuery.isError && (
                       <span className="template-variable-error" role="alert">
@@ -480,11 +534,14 @@ export function EmailTemplatesPage() {
                   </div>
                   {variablesQuery.isPending ? (
                     <p className="template-state">Loading available fields…</p>
-                  ) : (
+                  ) : variablesQuery.isError ? null : (
                     <div className="template-variable-groups">
                       {variableGroups.map(({ group, items }) => (
-                        <div className="template-variable-group" key={group}>
-                          <span>{group}</span>
+                        <details className="template-variable-group" key={group}>
+                          <summary>
+                            <span>{group}</span>
+                            <small>{items.length}</small>
+                          </summary>
                           <div className="template-variable-rows">
                             {items.map((variable) => (
                               <div className="template-variable-row" key={variable.path}>
@@ -497,7 +554,7 @@ export function EmailTemplatesPage() {
                                     aria-label={`Insert ${variable.path} into the subject`}
                                     className="template-variable-action"
                                     onClick={() => insertVariable("subject", variable.placeholder)}
-                                    title={`${variable.description} (subject)`}
+                                    title={`${variable.description} — insert in subject`}
                                     type="button"
                                   >
                                     Subject
@@ -506,7 +563,7 @@ export function EmailTemplatesPage() {
                                     aria-label={`Insert ${variable.path} into the email body`}
                                     className="template-variable-action"
                                     onClick={() => insertVariable("body_content", variable.placeholder)}
-                                    title={`${variable.description} (body)`}
+                                    title={`${variable.description} — insert in body`}
                                     type="button"
                                   >
                                     Body
@@ -515,14 +572,14 @@ export function EmailTemplatesPage() {
                               </div>
                             ))}
                           </div>
-                        </div>
+                        </details>
                       ))}
                     </div>
                   )}
                   <p className="template-variable-key">
-                    Choose where each placeholder should be inserted.
+                    Choose a field, then choose where it belongs.
                   </p>
-                </div>
+                </aside>
 
                 <div className="template-form-actions">
                   <button
@@ -540,7 +597,7 @@ export function EmailTemplatesPage() {
                       ? "Saving…"
                       : editingTemplateId
                         ? "Save changes"
-                        : "Create template"}
+                        : "Save template"}
                   </button>
                   <button
                     className="button button-secondary"
@@ -551,7 +608,7 @@ export function EmailTemplatesPage() {
                   </button>
                 </div>
                 {saveMutation.isError && (
-                  <div className="email-template-alert email-template-alert-error" role="alert">
+                  <div className="email-template-alert email-template-alert-error template-save-error" role="alert">
                     Could not save this template: {errorMessage(saveMutation.error)}
                   </div>
                 )}
@@ -570,6 +627,27 @@ export function EmailTemplatesPage() {
               >
                 Try again
               </button>
+            </div>
+          ) : sessionQuery.isError ? (
+            <div className="template-empty-workspace" role="alert">
+              <span className="template-empty-icon" aria-hidden="true">!</span>
+              <p className="eyebrow">WORKSPACE UNAVAILABLE</p>
+              <h2>Could not load your templates</h2>
+              <p>{errorMessage(sessionQuery.error)}</p>
+              <button
+                className="button button-secondary"
+                onClick={() => void sessionQuery.refetch()}
+                type="button"
+              >
+                Try again
+              </button>
+            </div>
+          ) : sessionQuery.isPending || templatesQuery.isLoading ? (
+            <div className="template-loading-state" role="status" aria-label="Loading templates">
+              <span className="template-loading-line is-short" />
+              <span className="template-loading-line" />
+              <span className="template-loading-block" />
+              <span className="template-loading-line is-medium" />
             </div>
           ) : activeTemplate ? (
             <div className="template-detail-view">
@@ -633,20 +711,17 @@ export function EmailTemplatesPage() {
                 </div>
               )}
 
-              <div className="template-subject-card">
-                <span>SUBJECT</span>
+              <div className="template-subject-row">
+                <span>Subject</span>
                 <strong>{activeTemplate.subject}</strong>
               </div>
 
-              <div className="template-use-grid">
+              <div className="template-preview-layout">
                 <section aria-labelledby="template-preview-heading" className="template-use-card">
                   <div className="template-use-heading">
                     <div>
-                      <span className="template-step-number">01</span>
-                      <div>
-                        <h3 id="template-preview-heading">Choose who to write to</h3>
-                        <p>Preview the message with real organization data.</p>
-                      </div>
+                      <h3 id="template-preview-heading">Preview and test</h3>
+                      <p>Choose sample company data to see how this email will look.</p>
                     </div>
                   </div>
 
@@ -673,13 +748,24 @@ export function EmailTemplatesPage() {
                         }}
                         value={activeCompanyId}
                       >
-                        <option value="">Select a company</option>
+                        <option value="">
+                          {companiesQuery.isPending
+                            ? "Loading companies…"
+                            : companies.length
+                              ? "Select a company"
+                              : "No companies available"}
+                        </option>
                         {companies.map((company) => (
                           <option key={company.id} value={company.id}>
                             {company.name}
                           </option>
                         ))}
                       </select>
+                      {companiesQuery.isSuccess && companies.length === 0 && (
+                        <span className="template-field-hint">
+                          Add a company before rendering a personalized preview.
+                        </span>
+                      )}
                     </label>
                     <label className="template-field">
                       Contact
@@ -692,7 +778,7 @@ export function EmailTemplatesPage() {
                         }}
                         value={contactId}
                       >
-                        <option value="">No contact (preview only)</option>
+                        <option value="">Select a contact (optional)</option>
                         {contacts.map((contact) => (
                           <option key={contact.id} value={contact.id}>
                             {contact.name || contact.business_email || "Unnamed contact"}
@@ -700,6 +786,11 @@ export function EmailTemplatesPage() {
                           </option>
                         ))}
                       </select>
+                      {activeCompany && contacts.length === 0 && (
+                        <span className="template-field-hint">
+                          No contacts are listed for this company. You can still preview the message.
+                        </span>
+                      )}
                     </label>
                     <label className="template-field template-account-field">
                       Send from
@@ -712,7 +803,13 @@ export function EmailTemplatesPage() {
                         }}
                         value={activeGmailAccountId}
                       >
-                        <option value="">No assigned Gmail account</option>
+                        <option value="">
+                          {accountsQuery.isPending
+                            ? "Loading Gmail accounts…"
+                            : accounts.length
+                              ? "Select a Gmail account"
+                              : "No assigned Gmail account"}
+                        </option>
                         {accounts.map((account) => (
                           <option key={account.id} value={account.id}>
                             {account.email_address}
@@ -771,55 +868,67 @@ export function EmailTemplatesPage() {
                   )}
                 </section>
 
-                <section aria-labelledby="template-fields-heading" className="template-use-card template-available-fields">
-                  <div className="template-use-heading">
-                    <div>
-                      <span className="template-step-number">02</span>
-                      <div>
-                        <h3 id="template-fields-heading">Available fields</h3>
-                        <p>Values are resolved from company, contact, and sender records.</p>
-                      </div>
-                    </div>
-                  </div>
-                  {variablesQuery.isPending && (
-                    <p className="template-state" role="status">Loading fields…</p>
-                  )}
-                  {variablesQuery.isError && (
-                    <div className="template-inline-error" role="alert">
-                      Could not load available fields: {errorMessage(variablesQuery.error)}
-                    </div>
-                  )}
-                  {!variablesQuery.isPending && !variablesQuery.isError && (
-                    <div className="template-available-variable-list">
-                      {variables.map((variable) => (
-                        <div className="template-available-variable" key={variable.path}>
-                          <code>{variable.placeholder}</code>
-                          <span>{variable.description}</span>
+                <section aria-label="Rendered email preview" className="template-preview-pane">
+                  {preview ? (
+                    <>
+                      <div className="template-rendered-preview-heading">
+                        <div>
+                          <p className="eyebrow">MESSAGE PREVIEW</p>
+                          <h3>{preview.subject}</h3>
                         </div>
-                      ))}
+                        <span className="template-preview-badge">Personalized</span>
+                      </div>
+                      <iframe
+                        className="template-preview-frame"
+                        referrerPolicy="no-referrer"
+                        sandbox=""
+                        srcDoc={previewDocument}
+                        title="Rendered email body preview"
+                      />
+                    </>
+                  ) : (
+                    <div className="template-preview-empty">
+                      <span aria-hidden="true">✉</span>
+                      <h3>Your preview will appear here</h3>
+                      <p>
+                        Select a company, then choose <strong>Render preview</strong> to see
+                        personalized content.
+                      </p>
                     </div>
                   )}
                 </section>
               </div>
 
-              {preview && (
-                <section aria-label="Rendered email preview" className="template-rendered-preview">
-                  <div className="template-rendered-preview-heading">
-                    <div>
-                      <p className="eyebrow">RENDERED MESSAGE</p>
-                      <h3>{preview.subject}</h3>
-                    </div>
-                    <span className="template-preview-badge">Preview</span>
+              <details className="template-fields-disclosure">
+                <summary>
+                  <strong>Personalization fields</strong>
+                  <span>{variablesQuery.isSuccess ? `${variables.length} available` : "View fields"}</span>
+                </summary>
+                <p>Values are filled from company, contact, and sender records.</p>
+                {variablesQuery.isPending && (
+                  <p className="template-state" role="status">Loading fields…</p>
+                )}
+                {variablesQuery.isError && (
+                  <div className="template-inline-error" role="alert">
+                    Could not load available fields: {errorMessage(variablesQuery.error)}
                   </div>
-                  <iframe
-                    className="template-preview-frame"
-                    referrerPolicy="no-referrer"
-                    sandbox=""
-                    srcDoc={previewDocument}
-                    title="Rendered email body preview"
-                  />
-                </section>
-              )}
+                )}
+                {!variablesQuery.isPending && !variablesQuery.isError && (
+                  <div className="template-available-variable-list">
+                    {variables.map((variable) => (
+                      <div className="template-available-variable" key={variable.path}>
+                        <code>{variable.placeholder}</code>
+                        <span>{variable.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </details>
+            </div>
+          ) : templatesQuery.isPending ? (
+            <div className="template-empty-workspace" role="status">
+              <span className="template-empty-icon" aria-hidden="true">✉</span>
+              <h2>Loading your templates…</h2>
             </div>
           ) : (
             <div className="template-empty-workspace">

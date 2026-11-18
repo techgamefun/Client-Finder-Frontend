@@ -717,6 +717,22 @@ export interface AssignedGmailAccount {
   email_address: string;
 }
 
+export interface GmailAccountHealth {
+  id: string;
+  email_address: string;
+  sent_30d: number;
+  replies_30d: number;
+  bounces_30d: number;
+  failures_30d: number;
+  unverified_30d: number;
+  last_monitor_at: string | null;
+  last_monitor_error: string | null;
+}
+
+export function getGmailAccountHealth(): Promise<GmailAccountHealth[]> {
+  return request<GmailAccountHealth[]>("/gmail/accounts/health");
+}
+
 export interface GmailMessageSummary {
   id: string;
   thread_id: string;
@@ -799,6 +815,15 @@ export interface EmailCampaignRecipientCounts {
   sent: number;
   failed: number;
   cancelled: number;
+  replied: number;
+  bounced: number;
+  sent_messages: number;
+  unverified: number;
+}
+
+export interface EmailCampaignFollowUpStep {
+  template_id: string;
+  delay_days: number;
 }
 
 export interface EmailCampaign {
@@ -807,6 +832,8 @@ export interface EmailCampaign {
   created_by: string;
   name: string;
   template_id: string;
+  follow_up_steps: EmailCampaignFollowUpStep[];
+  verify_mx: boolean;
   gmail_account_ids: string[];
   daily_limit_per_account: number;
   min_delay_seconds: number;
@@ -823,6 +850,8 @@ export interface EmailCampaign {
 export interface EmailCampaignInput {
   name: string;
   template_id: string;
+  follow_up_steps: EmailCampaignFollowUpStep[];
+  verify_mx: boolean;
   gmail_account_ids: string[];
   daily_limit_per_account: number;
   min_delay_seconds: number;
@@ -835,9 +864,83 @@ export interface EmailCampaignInput {
 export interface EmailCampaignPreview {
   eligible_contact_count: number;
   skipped_companies_without_email: number;
+  skipped_suppressed_contacts: number;
   skipped_company_ids: string[];
   daily_capacity_per_day: number;
   estimated_completion_at: string | null;
+}
+
+export interface EmailSuppression {
+  id: string;
+  target_type: "email" | "domain";
+  normalized_value: string;
+  reason: "unsubscribe" | "hard_bounce" | "complaint" | "manual_dnc";
+  global_dnc: boolean;
+  created_at: string;
+}
+
+export async function getEmailSuppressions(): Promise<EmailSuppression[]> {
+  const response = await request<{ items: EmailSuppression[] }>(
+    "/email-suppressions",
+  );
+  return response.items;
+}
+
+export function createEmailSuppression(payload: {
+  target_type: EmailSuppression["target_type"];
+  value: string;
+  reason: EmailSuppression["reason"];
+}): Promise<EmailSuppression> {
+  return request<EmailSuppression>("/email-suppressions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function verifyEmailUnsubscribe(
+  token: string,
+): Promise<{ requires_email: boolean }> {
+  const url = new URL(`${API_BASE_URL}/unsubscribe`);
+  url.searchParams.set("token", token);
+  const response = await fetch(url, {
+    method: "GET",
+    credentials: "omit",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw await createPublicApiError(response);
+  }
+  return (await response.json()) as { requires_email: boolean };
+}
+
+export async function confirmEmailUnsubscribe(
+  token: string,
+  email?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/unsubscribe`, {
+    method: "POST",
+    credentials: "omit",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, ...(email ? { email } : {}) }),
+  });
+  if (!response.ok) {
+    throw await createPublicApiError(response);
+  }
+}
+
+async function createPublicApiError(response: Response): Promise<Error> {
+  const body: unknown = await response.json().catch(() => null);
+  const detail =
+    typeof body === "object" && body !== null && "detail" in body
+      ? body.detail
+      : undefined;
+  return new Error(
+    typeof detail === "string"
+      ? detail
+      : `Could not complete the request (${response.status}).`,
+  );
 }
 
 export function getBootstrapStatus(): Promise<{ required: boolean }> {

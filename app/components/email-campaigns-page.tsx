@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Plus } from "lucide-react";
 import {
   PENDING_CAMPAIGN_AUDIENCE_KEY,
   createEmailCampaign,
@@ -14,12 +15,14 @@ import {
   getEmailCampaign,
   getEmailCampaigns,
   getEmailTemplates,
+  getGmailAccountHealth,
   getQueueEventsWebSocketUrl,
   pauseEmailCampaign,
   previewEmailCampaign,
   resumeEmailCampaign,
   startEmailCampaign,
   type EmailCampaign,
+  type EmailCampaignFollowUpStep,
   type EmailCampaignInput,
   type EmailCampaignPreview,
 } from "@/lib/api";
@@ -40,6 +43,8 @@ const initialCampaignInput = (): EmailCampaignInput => ({
   send_window_start_hour: 9,
   send_window_end_hour: 17,
   timezone: "UTC",
+  follow_up_steps: [],
+  verify_mx: true,
 });
 
 export function EmailCampaignsPage() {
@@ -113,6 +118,13 @@ export function EmailCampaignsPage() {
     queryKey: ["gmail-assigned-accounts"],
     queryFn: getAssignedGmailAccounts,
     enabled: Boolean(organizationId),
+    retry: false,
+  });
+  const accountHealthQuery = useQuery({
+    queryKey: ["gmail-account-health", organizationId],
+    queryFn: getGmailAccountHealth,
+    enabled: Boolean(organizationId),
+    refetchInterval: 60_000,
     retry: false,
   });
   const companiesQuery = useQuery({
@@ -324,6 +336,41 @@ export function EmailCampaignsPage() {
     setCampaignInput((current) => ({ ...current, [field]: value }));
   }
 
+  function updateFollowUpStep(
+    index: number,
+    update: Partial<EmailCampaignFollowUpStep>,
+  ) {
+    setCampaignInput((current) => ({
+      ...current,
+      follow_up_steps: current.follow_up_steps.map((step, stepIndex) =>
+        stepIndex === index ? { ...step, ...update } : step,
+      ),
+    }));
+  }
+
+  function addFollowUpStep() {
+    setCampaignInput((current) =>
+      current.follow_up_steps.length >= 10
+        ? current
+        : {
+            ...current,
+            follow_up_steps: [
+              ...current.follow_up_steps,
+              { template_id: "", delay_days: 3 },
+            ],
+          },
+    );
+  }
+
+  function removeFollowUpStep(index: number) {
+    setCampaignInput((current) => ({
+      ...current,
+      follow_up_steps: current.follow_up_steps.filter(
+        (_, stepIndex) => stepIndex !== index,
+      ),
+    }));
+  }
+
   function updateSelectedCompanyIds(
     update: (current: string[]) => string[],
   ) {
@@ -500,12 +547,23 @@ export function EmailCampaignsPage() {
       <header className="campaigns-heading">
         <div>
           <p className="eyebrow">YOUR WORKSPACE / OUTREACH</p>
-          <h1>Drip campaigns</h1>
+          <h1>{createOpen && isAdmin ? "Create campaign" : "Drip campaigns"}</h1>
           <p className="heading-copy">
-            Schedule personalized email sequences across assigned Gmail
-            accounts, with controlled pacing and live delivery progress.
+            {createOpen && isAdmin
+              ? "Build a reusable sending plan. Choose the audience and review the schedule after saving."
+              : "Manage your email sequences, delivery progress, and sender health in one place."}
           </p>
         </div>
+        {isAdmin && !createOpen && (
+          <button
+            className="button button-primary campaign-create-action"
+            onClick={startNewCampaign}
+            type="button"
+          >
+            <Plus aria-hidden="true" size={17} />
+            New campaign
+          </button>
+        )}
       </header>
 
       {sessionQuery.isError && (
@@ -527,7 +585,7 @@ export function EmailCampaignsPage() {
           <div className="campaign-section-heading">
             <div>
               <p className="eyebrow">NEW CAMPAIGN</p>
-              <h2 id="campaign-create-title">Set up your sending plan</h2>
+              <h2 id="campaign-create-title">Campaign setup</h2>
               <p className="panel-subtitle">
                 Choose an existing template and the Gmail accounts assigned to
                 you.{" "}
@@ -553,6 +611,10 @@ export function EmailCampaignsPage() {
           )}
 
           <form className="campaign-form" onSubmit={submitCampaign}>
+            <div className="campaign-form-section-title campaign-field-wide">
+              <h3>Campaign details</h3>
+              <p>Choose a name and the email template for the first message.</p>
+            </div>
             <label className="campaign-field campaign-field-wide">
               Campaign name
               <input
@@ -598,6 +660,98 @@ export function EmailCampaignsPage() {
                   setting up a campaign.
                 </span>
               )}
+            </label>
+
+            <fieldset className="campaign-sequence-field campaign-field-wide">
+              <legend>Follow-up sequence</legend>
+              <p className="campaign-field-hint">
+                Each step uses its selected template after the configured wait.
+                Replies and hard bounces stop the remaining steps.
+              </p>
+              {campaignInput.follow_up_steps.length === 0 && (
+                <div className="campaign-follow-up-empty">
+                  <strong>No follow-ups added</strong>
+                  <span>
+                    This campaign will send one email. Add a step to schedule
+                    another message if there is no reply.
+                  </span>
+                </div>
+              )}
+              {campaignInput.follow_up_steps.map((step, index) => (
+                <div className="campaign-follow-up-row" key={index}>
+                  <label className="campaign-field">
+                    Step {index + 2} template
+                    <select
+                      onChange={(event) =>
+                        updateFollowUpStep(index, {
+                          template_id: event.target.value,
+                        })
+                      }
+                      required
+                      value={step.template_id}
+                    >
+                      <option value="">Choose a template</option>
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="campaign-field">
+                    Wait after previous step (days)
+                    <input
+                      max={365}
+                      min={1}
+                      onChange={(event) =>
+                        updateFollowUpStep(index, {
+                          delay_days: Number(event.target.value),
+                        })
+                      }
+                      required
+                      type="number"
+                      value={step.delay_days}
+                    />
+                  </label>
+                  <button
+                    aria-label={`Remove follow-up step ${index + 2}`}
+                    className="button button-secondary campaign-remove-step"
+                    onClick={() => removeFollowUpStep(index)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                className="text-button campaign-add-step"
+                disabled={campaignInput.follow_up_steps.length >= 10}
+                onClick={addFollowUpStep}
+                type="button"
+              >
+                Add follow-up step
+              </button>
+            </fieldset>
+
+            <div className="campaign-form-section-title campaign-field-wide">
+              <h3>Sender setup</h3>
+              <p>Verify recipient mail routing and choose the sending accounts.</p>
+            </div>
+            <label className="campaign-verification-choice campaign-field-wide">
+              <input
+                checked={campaignInput.verify_mx}
+                onChange={(event) =>
+                  updateCampaignInput("verify_mx", event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>
+                <strong>Verify recipient mail routing before sending</strong>
+                <small>
+                  Checks DNS MX records (with the standard A/AAAA fallback).
+                  Unverifiable addresses are not sent.
+                </small>
+              </span>
             </label>
 
             <fieldset className="campaign-account-field campaign-field-wide">
@@ -649,6 +803,10 @@ export function EmailCampaignsPage() {
               )}
             </fieldset>
 
+            <div className="campaign-form-section-title campaign-field-wide">
+              <h3>Delivery settings</h3>
+              <p>Set account limits, message pacing, and the sending window.</p>
+            </div>
             <label className="campaign-field">
               Daily limit per account
               <input
@@ -794,11 +952,12 @@ export function EmailCampaignsPage() {
         </section>
       )}
 
-      <div className="campaign-dashboard">
-        <section
-          aria-label="Campaign library"
-          className="panel campaign-library"
-        >
+      {!createOpen && (
+        <div className="campaign-dashboard">
+          <section
+            aria-label="Campaign library"
+            className="panel campaign-library"
+          >
           <div className="campaign-library-heading">
             <div>
               <p className="eyebrow">OUTREACH</p>
@@ -906,22 +1065,62 @@ export function EmailCampaignsPage() {
                 <div>
                   <p className="eyebrow">CAMPAIGN DETAILS</p>
                   <h2>{selectedCampaign.name}</h2>
-                  <p className="campaign-template-name">
-                    {selectedTemplateName}
-                  </p>
+                  {selectedTemplateName !== selectedCampaign.name && (
+                    <p className="campaign-template-name">
+                      {selectedTemplateName}
+                    </p>
+                  )}
                 </div>
-                <span
-                  className={`campaign-status campaign-status-${selectedCampaign.status}`}
-                >
-                  {formatStatus(selectedCampaign.status)}
-                </span>
+                <div className="campaign-heading-actions">
+                  <span
+                    className={`campaign-status campaign-status-${selectedCampaign.status}`}
+                  >
+                    {formatStatus(selectedCampaign.status)}
+                  </span>
+                  {selectedCampaign.status === "running" && isAdmin && (
+                    <button
+                      className="button button-secondary"
+                      disabled={anyLifecyclePending}
+                      onClick={() => pauseMutation.mutate(selectedCampaign.id)}
+                      type="button"
+                    >
+                      {pauseMutation.isPending ? "Pausing…" : "Pause"}
+                    </button>
+                  )}
+                  {selectedCampaign.status === "paused" && isAdmin && (
+                    <button
+                      className="button button-primary"
+                      disabled={anyLifecyclePending}
+                      onClick={() => resumeMutation.mutate(selectedCampaign.id)}
+                      type="button"
+                    >
+                      {resumeMutation.isPending ? "Resuming…" : "Resume"}
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="campaign-meta-grid">
+              <div aria-label="Campaign sending summary" className="campaign-summary-strip">
                 <CampaignMeta
-                  label="Gmail accounts"
-                  value={String(selectedCampaign.gmail_account_ids.length)}
+                  label="Sequence"
+                  value={`${selectedCampaign.follow_up_steps.length + 1}-step sequence`}
                 />
+                <CampaignMeta
+                  label="Sender accounts"
+                  value={`${selectedCampaign.gmail_account_ids.length} Gmail ${selectedCampaign.gmail_account_ids.length === 1 ? "account" : "accounts"}`}
+                />
+                <CampaignMeta
+                  label="Recipient check"
+                  value={selectedCampaign.verify_mx ? "DNS verification on" : "DNS verification off"}
+                />
+              </div>
+
+              <details className="campaign-settings-disclosure">
+                <summary>
+                  <strong>Delivery settings</strong>
+                  <span>Daily limit, send window, and timezone</span>
+                </summary>
+                <div className="campaign-meta-grid">
                 <CampaignMeta
                   label="Daily limit"
                   value={`${selectedCampaign.daily_limit_per_account} / account`}
@@ -934,32 +1133,125 @@ export function EmailCampaignsPage() {
                   label="Timezone"
                   value={selectedCampaign.timezone}
                 />
-              </div>
+                </div>
+              </details>
 
               <div aria-label="Recipient delivery counts" className="campaign-counts">
+                <CampaignCount
+                  label="Messages sent"
+                  value={selectedCampaign.recipient_counts.sent_messages}
+                  tone="success"
+                />
                 <CampaignCount
                   label="Pending"
                   value={selectedCampaign.recipient_counts.pending}
                 />
                 <CampaignCount
-                  label="Processing"
-                  value={selectedCampaign.recipient_counts.processing}
-                />
-                <CampaignCount
-                  label="Sent"
-                  value={selectedCampaign.recipient_counts.sent}
+                  label="Replied"
+                  value={selectedCampaign.recipient_counts.replied}
                   tone="success"
                 />
                 <CampaignCount
-                  label="Failed"
-                  value={selectedCampaign.recipient_counts.failed}
+                  label="Bounced"
+                  value={selectedCampaign.recipient_counts.bounced}
                   tone="error"
                 />
-                <CampaignCount
-                  label="Cancelled"
-                  value={selectedCampaign.recipient_counts.cancelled}
-                />
               </div>
+              <details className="campaign-outcomes-disclosure">
+                <summary>
+                  <strong>More recipient outcomes</strong>
+                  <span>Processing, sent, failed, unverified, cancelled</span>
+                </summary>
+                <div className="campaign-counts">
+                  <CampaignCount
+                    label="Processing"
+                    value={selectedCampaign.recipient_counts.processing}
+                  />
+                  <CampaignCount
+                    label="Recipients sent"
+                    value={selectedCampaign.recipient_counts.sent}
+                    tone="success"
+                  />
+                  <CampaignCount
+                    label="Failed"
+                    value={selectedCampaign.recipient_counts.failed}
+                    tone="error"
+                  />
+                  <CampaignCount
+                    label="Unverified"
+                    value={selectedCampaign.recipient_counts.unverified}
+                    tone="error"
+                  />
+                  <CampaignCount
+                    label="Cancelled"
+                    value={selectedCampaign.recipient_counts.cancelled}
+                  />
+                </div>
+              </details>
+
+              <details aria-label="Sending account health" className="campaign-health">
+                <summary className="campaign-health-summary">
+                  <span>
+                    <strong>Sending account health</strong>
+                    <small>Recent activity for {selectedCampaign.gmail_account_ids.length} selected Gmail accounts</small>
+                  </span>
+                  <span aria-hidden="true" className="campaign-disclosure-icon" />
+                </summary>
+                <div className="campaign-health-content">
+                  {accountHealthQuery.isPending && (
+                    <p className="campaign-field-hint" role="status">
+                      Loading account health…
+                    </p>
+                  )}
+                  {accountHealthQuery.isError && (
+                    <p className="campaign-field-error" role="alert">
+                      Could not load account health:{" "}
+                      {getErrorMessage(accountHealthQuery.error)}
+                    </p>
+                  )}
+                  {accountHealthQuery.data
+                    ?.filter((account) =>
+                      selectedCampaign.gmail_account_ids.includes(account.id),
+                    )
+                    .map((account) => (
+                      <div className="campaign-health-row" key={account.id}>
+                        <div className="campaign-health-heading">
+                          <strong>{account.email_address}</strong>
+                          <span
+                            className={
+                              account.last_monitor_error
+                                ? "campaign-health-state is-error"
+                                : "campaign-health-state"
+                            }
+                          >
+                            {account.last_monitor_error
+                              ? "Needs attention"
+                              : account.last_monitor_at
+                                ? "Monitoring active"
+                                : "Waiting for first check"}
+                          </span>
+                        </div>
+                        <span className="campaign-health-last-check">
+                          {account.last_monitor_at
+                            ? `Last checked ${formatDateTime(account.last_monitor_at)}`
+                            : "No Gmail activity check has completed yet."}
+                        </span>
+                        <div className="campaign-health-metrics">
+                          <span>{account.sent_30d} sent</span>
+                          <span>{account.replies_30d} replies</span>
+                          <span>{account.bounces_30d} bounces</span>
+                          <span>{account.unverified_30d} unverified</span>
+                          <span>{account.failures_30d} failed</span>
+                        </div>
+                        {account.last_monitor_error && (
+                          <p className="campaign-field-error" role="status">
+                            {account.last_monitor_error}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </details>
 
               {selectedCampaign.status === "draft" && isAdmin && (
                 <section className="campaign-audience">
@@ -1137,6 +1429,12 @@ export function EmailCampaignsPage() {
                             previewState.result.skipped_companies_without_email
                           }
                         />
+                        <CampaignCount
+                          label="Suppressed contacts"
+                          value={
+                            previewState.result.skipped_suppressed_contacts
+                          }
+                        />
                       </div>
                       {previewSkippedCompanies.length > 0 && (
                         <div className="campaign-skipped-list">
@@ -1150,8 +1448,9 @@ export function EmailCampaignsPage() {
                       )}
                       {previewState.result.eligible_contact_count === 0 && (
                         <p className="campaign-field-error" role="alert">
-                          No eligible contacts were found. Add business emails
-                          before starting this campaign.
+                          {previewState.result.skipped_suppressed_contacts > 0
+                            ? "No eligible contacts were found. Suppressed addresses are excluded to honor opt-outs and do-not-contact requests."
+                            : "No eligible contacts were found. Add business emails before starting this campaign."}
                         </p>
                       )}
                     </div>
@@ -1177,30 +1476,6 @@ export function EmailCampaignsPage() {
                   Created {formatDateTime(selectedCampaign.created_at)}
                 </span>
                 <div className="campaign-actions">
-                  {selectedCampaign.status === "running" && isAdmin && (
-                    <button
-                      className="button button-secondary"
-                      disabled={anyLifecyclePending}
-                      onClick={() =>
-                        pauseMutation.mutate(selectedCampaign.id)
-                      }
-                      type="button"
-                    >
-                      {pauseMutation.isPending ? "Pausing…" : "Pause"}
-                    </button>
-                  )}
-                  {selectedCampaign.status === "paused" && isAdmin && (
-                    <button
-                      className="button button-primary"
-                      disabled={anyLifecyclePending}
-                      onClick={() =>
-                        resumeMutation.mutate(selectedCampaign.id)
-                      }
-                      type="button"
-                    >
-                      {resumeMutation.isPending ? "Resuming…" : "Resume"}
-                    </button>
-                  )}
                   {(selectedCampaign.status === "draft" ||
                     selectedCampaign.status === "paused") &&
                     isAdmin && (
@@ -1245,8 +1520,9 @@ export function EmailCampaignsPage() {
               )}
             </>
           )}
-        </section>
-      </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -1278,11 +1554,13 @@ function CampaignListItem({
         </span>
       </span>
       <strong className="campaign-list-name">{campaign.name}</strong>
-      <span className="campaign-list-template">{templateName}</span>
+      {templateName !== campaign.name && (
+        <span className="campaign-list-template">{templateName}</span>
+      )}
       <span className="campaign-list-counts">
-        <span>{campaign.recipient_counts.pending} pending</span>
-        <span>{campaign.recipient_counts.sent} sent</span>
-        <span>{campaign.recipient_counts.failed} failed</span>
+        <span>{campaign.recipient_counts.sent_messages} messages sent</span>
+        <span>{campaign.recipient_counts.replied} replies</span>
+        <span>{campaign.recipient_counts.bounced} bounces</span>
       </span>
     </button>
   );

@@ -657,19 +657,12 @@ function getWorkspaceAction(
   }
   if (pathname === "/campaigns") {
     return role === "admin"
-      ? {
-          label: "New campaign",
-          href: "/campaigns?create=1",
-          icon: Megaphone,
-        }
+      ? null
       : {
           label: "View lead pipeline",
           href: "/leads",
           icon: Building2,
         };
-  }
-  if (pathname === "/templates") {
-    return { label: "New template", href: "/templates?create=1", icon: Plus };
   }
   if (pathname === "/settings") {
     return role === "admin"

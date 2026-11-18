@@ -32,6 +32,7 @@ import {
 } from "@/lib/api";
 import { TAVILY_COUNTRIES } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
+import { EmailSuppressionSettings } from "./email-suppression-settings";
 
 const deploymentManagedSettings = [
   "HTTP_ADDR",
@@ -67,6 +68,7 @@ type SettingsSection =
   | "gmail"
   | "crawler"
   | "organization"
+  | "suppression"
   | "account";
 
 export function SettingsPage() {
@@ -128,7 +130,9 @@ export function SettingsPage() {
     if (!requestedSection) return;
     if (
       isSettingsSection(requestedSection) &&
-      (requestedSection !== "organization" || isOrganizationAdmin)
+      ((requestedSection !== "organization" &&
+        requestedSection !== "suppression") ||
+        isOrganizationAdmin)
     ) {
       window.requestAnimationFrame(() =>
         setActiveSection(requestedSection),
@@ -374,6 +378,9 @@ export function SettingsPage() {
               <option value="account">My account</option>
               {authSessionQuery.data?.user.role === "admin" && (
                 <option value="organization">Organization users</option>
+              )}
+              {isOrganizationAdmin && (
+                <option value="suppression">Email suppression</option>
               )}
             </select>
           </label>
@@ -1181,6 +1188,15 @@ export function SettingsPage() {
             </section>
           )}
 
+          {isOrganizationAdmin && (
+            <section
+              className="panel settings-panel"
+              hidden={activeSection !== "suppression"}
+            >
+              <EmailSuppressionSettings />
+            </section>
+          )}
+
           {isOrganizationAdmin && authSessionQuery.data && (
             <section
               className="panel settings-panel"
@@ -1315,6 +1331,7 @@ function isSettingsSection(value: string): value is SettingsSection {
     value === "gmail" ||
     value === "crawler" ||
     value === "organization" ||
+    value === "suppression" ||
     value === "account"
   );
 }
