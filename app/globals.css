@@ -1590,6 +1590,18 @@ h1 {
   color: #a74c49;
 }
 
+.alert-warning {
+  border: 1px solid #f0dfb8;
+  background: #fffaf0;
+  color: #805c1f;
+}
+
+.alert-warning a {
+  color: inherit;
+  font-weight: 650;
+  text-underline-offset: 2px;
+}
+
 .alert-success {
   border: 1px solid #cfeadd;
   background: #f1fbf6;
@@ -11539,6 +11551,12 @@ html[data-theme="dark"] .alert-error {
   border-color: #59393b;
   background: #302124;
   color: #f0a3a0;
+}
+
+html[data-theme="dark"] .alert-warning {
+  border-color: #5b4b30;
+  background: #30291d;
+  color: #edcc8c;
 }
 
 html[data-theme="dark"] .alert-success {

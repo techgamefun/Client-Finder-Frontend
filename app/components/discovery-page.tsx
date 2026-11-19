@@ -180,8 +180,8 @@ export function DiscoveryPage() {
       setSaveResult(null);
       setSaveProgress({ completed: 0, total: input.results.length });
 
-      for (let index = 0; index < input.results.length; index += 20) {
-        const results = input.results.slice(index, index + 20);
+      for (let index = 0; index < input.results.length; index += 100) {
+        const results = input.results.slice(index, index + 100);
         const response = await saveDiscoveryWebsites({
           ...input,
           max_results: results.length,
@@ -898,7 +898,7 @@ export function DiscoveryPage() {
                 onClick={() =>
                   handleSave({
                     query: searchData.query,
-                    max_results: Math.min(unsavedResults.length, 20),
+                    max_results: Math.min(unsavedResults.length, 100),
                     results: unsavedResults.map(({ url, provider }) => ({
                       url,
                       provider,

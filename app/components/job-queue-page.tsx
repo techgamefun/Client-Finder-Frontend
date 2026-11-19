@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
+  getApplicationSettings,
   getPageSpeedScanJobs,
   getWebsiteCrawlJobs,
   retryPageSpeedScanJob,
@@ -101,7 +102,16 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     select: (jobs) => jobs.map(normalizePageSpeedJob),
     enabled: kind === "pagespeed",
   });
+  const pageSpeedSettingsQuery = useQuery({
+    queryKey: ["application-settings"],
+    queryFn: getApplicationSettings,
+    enabled: kind === "pagespeed",
+    retry: false,
+  });
   const jobsQuery = kind === "crawler" ? crawlerJobsQuery : pageSpeedJobsQuery;
+  const canRetryJobs =
+    kind !== "pagespeed" ||
+    pageSpeedSettingsQuery.data?.pagespeed_configured === true;
   const retryMutation = useMutation({
     mutationFn: async (jobId: string) => {
       if (kind === "crawler") {
@@ -222,6 +232,25 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           Could not refresh the queue: {jobsQuery.error.message}
         </p>
       )}
+      {kind === "pagespeed" &&
+        pageSpeedSettingsQuery.isError && (
+          <p className="alert alert-warning" role="alert">
+            Could not verify your Google PageSpeed API key. PageSpeed retries
+            are disabled until settings can be checked.{" "}
+            <Link href="/settings?section=pagespeed">Check PageSpeed settings</Link>
+          </p>
+        )}
+      {kind === "pagespeed" &&
+        !pageSpeedSettingsQuery.isLoading &&
+        !pageSpeedSettingsQuery.isError &&
+        pageSpeedSettingsQuery.data?.pagespeed_configured === false && (
+          <p className="alert alert-warning" role="alert">
+            A Google PageSpeed API key is required to run PageSpeed jobs. Jobs
+            will remain queued until the user who created them adds a key.
+            Google validates the key when a scan runs.{" "}
+            <Link href="/settings?section=pagespeed">Add a PageSpeed key</Link>
+          </p>
+        )}
       {retryAllMutation.data &&
         retryAllMutation.data.failures.length > 0 && (
           <p className="alert alert-error" role="alert">
@@ -250,7 +279,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                 className="button button-secondary queue-retry-button"
                 disabled={
                   retryAllMutation.isPending ||
-                  retryMutation.isPending
+                  retryMutation.isPending ||
+                  !canRetryJobs
                 }
                 onClick={() => retryAllMutation.mutate(failedJobs)}
                 title={`Retry all ${failedCount} failed ${
@@ -327,7 +357,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                         className="button button-secondary queue-retry-button"
                         disabled={
                           retryMutation.isPending ||
-                          retryAllMutation.isPending
+                          retryAllMutation.isPending ||
+                          !canRetryJobs
                         }
                         onClick={() => retryMutation.mutate(job.id)}
                         type="button"
