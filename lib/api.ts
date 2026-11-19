@@ -543,6 +543,12 @@ export interface WebsiteAddToLeadsResult {
   not_found_count: number;
 }
 
+export interface WebsiteBatchStatusUpdateResult {
+  requested_count: number;
+  updated_count: number;
+  not_found_count: number;
+}
+
 export type WebsiteStatus = "new" | "lead" | "checked";
 
 export type WebsitePageType =
@@ -1614,6 +1620,16 @@ export function addWebsitesToLeads(
   return request<WebsiteAddToLeadsResult>("/websites/add-to-leads", {
     method: "POST",
     body: JSON.stringify({ website_ids: websiteIds }),
+  });
+}
+
+export function updateWebsitesStatus(
+  website_ids: string[],
+  status: WebsiteStatus,
+): Promise<WebsiteBatchStatusUpdateResult> {
+  return request<WebsiteBatchStatusUpdateResult>("/websites/batch-status", {
+    method: "PATCH",
+    body: JSON.stringify({ website_ids, status }),
   });
 }
 

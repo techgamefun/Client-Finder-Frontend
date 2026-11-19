@@ -18,6 +18,7 @@ import {
   reclassifyWebsite,
   reclassifyUnclassifiedWebsites,
   updateWebsite,
+  updateWebsitesStatus,
 } from "@/lib/api";
 import type {
   WebsiteRecord,
@@ -46,6 +47,7 @@ const pageTypes: WebsitePageType[] = [
 ];
 const pageSizes = [10, 25, 50];
 const websiteStatuses: WebsiteStatus[] = ["new", "lead", "checked"];
+const websiteSelectionLimit = 500;
 
 type WebsiteSortKey =
   | "website"
@@ -219,7 +221,12 @@ export function WebsitesPage() {
   const queryClient = useQueryClient();
   const showToast = useToast();
   const websiteScrollTimerRef = useRef<number | null>(null);
+  const selectPageRef = useRef<HTMLInputElement>(null);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
+  const [selectedWebsiteIds, setSelectedWebsiteIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [bulkStatus, setBulkStatus] = useState<WebsiteStatus | "">("");
 
   useEffect(
     () => () => {
@@ -294,10 +301,38 @@ export function WebsitesPage() {
   const addToLeadMutation = useMutation({
     mutationFn: addWebsitesToLeads,
     onSuccess: async () => {
+      setSelectedWebsiteIds(new Set());
+      setBulkStatus("");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["websites"] }),
         queryClient.invalidateQueries({ queryKey: ["companies"] }),
       ]);
+    },
+  });
+  const batchStatusMutation = useMutation({
+    mutationFn: ({
+      websiteIds,
+      status,
+    }: {
+      websiteIds: string[];
+      status: WebsiteStatus;
+    }) => updateWebsitesStatus(websiteIds, status),
+    onSuccess: async (result, variables) => {
+      setSelectedWebsiteIds(new Set());
+      setBulkStatus("");
+      await queryClient.invalidateQueries({ queryKey: ["websites"] });
+      showToast({
+        type: "success",
+        title: "Website statuses updated",
+        message: `Changed ${result.updated_count} website${result.updated_count === 1 ? "" : "s"} to ${formatWebsiteStatus(variables.status)}.${result.not_found_count ? ` ${result.not_found_count} selected website${result.not_found_count === 1 ? " was" : "s were"} no longer available.` : ""}`,
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not update website statuses",
+        message: error.message,
+      });
     },
   });
   const reclassifyMutation = useMutation({
@@ -484,11 +519,6 @@ export function WebsitesPage() {
   const filteredWebsites = websites.filter((website) =>
     matchesWebsiteFilters(website),
   );
-  const addableWebsites = filteredWebsites.filter(
-    (website) =>
-      website.status === "new" && website.page_type !== "business_listing",
-  );
-  const addableWebsiteCount = addableWebsites.length;
   const sortedWebsites = sort
     ? [...filteredWebsites].sort((left, right) =>
         compareWebsites(left, right, sort.key, sort.direction),
@@ -500,6 +530,21 @@ export function WebsitesPage() {
     (visiblePage - 1) * pageSize,
     visiblePage * pageSize,
   );
+  const selectedVisibleCount = paginatedWebsites.filter((website) =>
+    selectedWebsiteIds.has(website.id),
+  ).length;
+  const allVisibleSelected =
+    paginatedWebsites.length > 0 &&
+    selectedVisibleCount === paginatedWebsites.length;
+  const hasPartiallySelectedPage =
+    selectedVisibleCount > 0 && !allVisibleSelected;
+  const selectedCount = selectedWebsiteIds.size;
+
+  useEffect(() => {
+    if (selectPageRef.current) {
+      selectPageRef.current.indeterminate = hasPartiallySelectedPage;
+    }
+  }, [hasPartiallySelectedPage]);
   const activeAdvancedFilterCount = [
     minimumMonthlyVisits,
     minimumReferringDomains,
@@ -517,6 +562,69 @@ export function WebsitesPage() {
 
   function updateWebsiteField(websiteId: string, input: WebsiteUpdateInput) {
     updateMutation.mutate({ websiteId, input });
+  }
+
+  function toggleWebsiteSelection(websiteId: string) {
+    if (
+      !selectedWebsiteIds.has(websiteId) &&
+      selectedWebsiteIds.size >= websiteSelectionLimit
+    ) {
+      showToast({
+        type: "warning",
+        title: "Selection limit reached",
+        message: `Select up to ${websiteSelectionLimit} websites at a time.`,
+      });
+      return;
+    }
+    setSelectedWebsiteIds((current) => {
+      const next = new Set(current);
+      if (next.has(websiteId)) {
+        next.delete(websiteId);
+      } else {
+        next.add(websiteId);
+      }
+      return next;
+    });
+  }
+
+  function togglePageSelection() {
+    if (allVisibleSelected) {
+      setSelectedWebsiteIds((current) => {
+        const next = new Set(current);
+        for (const website of paginatedWebsites) {
+          next.delete(website.id);
+        }
+        return next;
+      });
+      return;
+    }
+
+    const websitesToAdd = paginatedWebsites.filter(
+      (website) => !selectedWebsiteIds.has(website.id),
+    );
+    const availableSlots = websiteSelectionLimit - selectedCount;
+    if (websitesToAdd.length > availableSlots) {
+      showToast({
+        type: "warning",
+        title: "Selection limit reached",
+        message: `Select up to ${websiteSelectionLimit} websites at a time.`,
+      });
+    }
+    setSelectedWebsiteIds((current) => {
+      const next = new Set(current);
+      for (const website of websitesToAdd.slice(0, availableSlots)) {
+        next.add(website.id);
+      }
+      return next;
+    });
+  }
+
+  function changeSelectedWebsiteStatus() {
+    if (!bulkStatus || selectedCount === 0) return;
+    batchStatusMutation.mutate({
+      websiteIds: Array.from(selectedWebsiteIds),
+      status: bulkStatus,
+    });
   }
 
   function resetPage() {
@@ -600,6 +708,9 @@ export function WebsitesPage() {
             <label className="website-filter-field select-filter">
               <span className="website-filter-field-label">Type</span>
               <select
+                disabled={
+                  batchStatusMutation.isPending || addToLeadMutation.isPending
+                }
                 onChange={(event) => {
                   resetPage();
                   setPageType(event.target.value);
@@ -836,33 +947,12 @@ export function WebsitesPage() {
           </details>
           <div className="website-registry-actions">
             <button
-              className="button button-primary"
-              disabled={
-                websitesQuery.isLoading ||
-                updateMutation.isPending ||
-                addToLeadMutation.isPending ||
-                reclassifyMutation.isPending ||
-                reclassifyAllMutation.isPending ||
-                addableWebsiteCount === 0
-              }
-              onClick={() =>
-                addToLeadMutation.mutate(
-                  addableWebsites.map((website) => website.id),
-                )
-              }
-              title="Create companies for matching new websites and mark them Lead. Listing and non-new websites are excluded."
-              type="button"
-            >
-              {addToLeadMutation.isPending
-                ? "Adding to Lead…"
-                : `Add to Lead (${addableWebsiteCount})`}
-            </button>
-            <button
               className="button button-secondary"
               disabled={
                 websitesQuery.isLoading ||
                 updateMutation.isPending ||
                 addToLeadMutation.isPending ||
+                batchStatusMutation.isPending ||
                 reclassifyMutation.isPending ||
                 reclassifyAllMutation.isPending
               }
@@ -893,6 +983,79 @@ export function WebsitesPage() {
           </div>
         </div>
 
+        {selectedCount > 0 && (
+          <div
+            aria-label="Selected website actions"
+            className="website-bulk-toolbar"
+            role="region"
+          >
+            <span className="website-bulk-selection-count">
+              {selectedCount} selected
+            </span>
+            <label className="website-bulk-status">
+              <span>Change status</span>
+              <select
+                onChange={(event) => {
+                  const nextStatus = websiteStatuses.find(
+                    (value) => value === event.target.value,
+                  );
+                  setBulkStatus(nextStatus ?? "");
+                }}
+                value={bulkStatus}
+              >
+                <option value="">Choose status…</option>
+                {websiteStatuses.map((value) => (
+                  <option key={value} value={value}>
+                    {formatWebsiteStatus(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="button button-secondary"
+              disabled={
+                !bulkStatus ||
+                batchStatusMutation.isPending ||
+                addToLeadMutation.isPending
+              }
+              onClick={changeSelectedWebsiteStatus}
+              type="button"
+            >
+              {batchStatusMutation.isPending ? "Updating…" : "Apply status"}
+            </button>
+            <button
+              className="button button-primary"
+              disabled={
+                batchStatusMutation.isPending || addToLeadMutation.isPending
+              }
+              onClick={() =>
+                addToLeadMutation.mutate(Array.from(selectedWebsiteIds))
+              }
+              type="button"
+            >
+              {addToLeadMutation.isPending
+                ? "Adding to Lead…"
+                : "Add selected to Lead"}
+            </button>
+            <button
+              className="website-clear-selection"
+              disabled={
+                batchStatusMutation.isPending || addToLeadMutation.isPending
+              }
+              onClick={() => setSelectedWebsiteIds(new Set())}
+              type="button"
+            >
+              Clear selection
+            </button>
+          </div>
+        )}
+
+        {batchStatusMutation.isError && (
+          <div className="alert alert-error" role="alert">
+            Could not update website statuses:{" "}
+            {batchStatusMutation.error.message}
+          </div>
+        )}
         {updateMutation.isError && (
           <div className="alert alert-error" role="alert">
             Could not update website: {updateMutation.error.message}
@@ -1012,8 +1175,25 @@ export function WebsitesPage() {
               <table>
                 <thead>
                   <tr>
-                    <th aria-label="Row number" className="website-row-number">
-                      #
+                    <th className="website-row-number" scope="col">
+                      <span className="website-selection-heading">
+                        <input
+                          aria-label={
+                            allVisibleSelected
+                              ? "Deselect all websites on this page"
+                              : "Select all websites on this page"
+                          }
+                          checked={allVisibleSelected}
+                          disabled={
+                            batchStatusMutation.isPending ||
+                            addToLeadMutation.isPending
+                          }
+                          onChange={togglePageSelection}
+                          ref={selectPageRef}
+                          type="checkbox"
+                        />
+                        <span aria-hidden="true">#</span>
+                      </span>
                     </th>
                     <SortableHeader
                       label="Website"
@@ -1088,7 +1268,23 @@ export function WebsitesPage() {
                   {paginatedWebsites.map((website, index) => (
                     <tr key={website.id}>
                       <td className="website-row-number">
-                        {(visiblePage - 1) * pageSize + index + 1}
+                        <span className="website-selection-row">
+                          <input
+                            aria-label={`Select ${website.domain}`}
+                            checked={selectedWebsiteIds.has(website.id)}
+                            disabled={
+                              batchStatusMutation.isPending ||
+                              addToLeadMutation.isPending
+                            }
+                            onChange={() =>
+                              toggleWebsiteSelection(website.id)
+                            }
+                            type="checkbox"
+                          />
+                          <span>
+                            {(visiblePage - 1) * pageSize + index + 1}
+                          </span>
+                        </span>
                       </td>
                       <td className="website-url-cell">
                         <span className="website-domain-links">
@@ -1124,6 +1320,7 @@ export function WebsitesPage() {
                             disabled={
                               updateMutation.isPending ||
                               addToLeadMutation.isPending ||
+                              batchStatusMutation.isPending ||
                               reclassifyMutation.isPending ||
                               reclassifyAllMutation.isPending
                             }
