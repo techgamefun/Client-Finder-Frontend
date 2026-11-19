@@ -4,6 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Building2, Compass, Globe, Mail } from "lucide-react";
 import Link from "next/link";
 import { ApiError, getAuthSession } from "@/lib/api";
+import { PUBLIC_PAGE_LINKS } from "@/lib/site";
+import { BrandMark } from "./components/brand-mark";
+import { PublicThemeToggle } from "./components/public-theme-toggle";
 
 export default function Home() {
   const sessionQuery = useQuery({
@@ -26,12 +29,12 @@ export default function Home() {
       <header className="public-home-header">
         <div className="public-home-header-inner">
           <Link
-            aria-label="Lead Intelligence home"
+            aria-label="ProspectLoop home"
             className="public-home-brand"
             href="/"
           >
-            <span className="brand-mark">BI</span>
-            <span>Lead Intelligence</span>
+            <BrandMark />
+            <span>ProspectLoop</span>
           </Link>
 
           <nav aria-label="Page sections" className="public-home-nav">
@@ -39,22 +42,28 @@ export default function Home() {
             <Link href="#features">Features</Link>
           </nav>
 
-          {hasSession ? (
-            <Link className="button button-primary" href={workspaceHref}>
-              Open workspace <ArrowRight aria-hidden="true" size={16} />
-            </Link>
-          ) : showPublicActions ? (
-            <div className="public-home-auth">
-              <Link className="public-home-login" href="/login">
-                Sign in
+          <div className="public-home-header-actions">
+            <PublicThemeToggle />
+            {hasSession ? (
+              <Link className="button button-primary" href={workspaceHref}>
+                Open workspace <ArrowRight aria-hidden="true" size={16} />
               </Link>
-              <Link className="button button-primary" href="/signup">
-                Get started <ArrowRight aria-hidden="true" size={16} />
-              </Link>
-            </div>
-          ) : (
-            <span aria-hidden="true" className="public-home-auth-placeholder" />
-          )}
+            ) : showPublicActions ? (
+              <div className="public-home-auth">
+                <Link className="public-home-login" href="/login">
+                  Sign in
+                </Link>
+                <Link className="button button-primary" href="/signup">
+                  Get started <ArrowRight aria-hidden="true" size={16} />
+                </Link>
+              </div>
+            ) : (
+              <span
+                aria-hidden="true"
+                className="public-home-auth-placeholder"
+              />
+            )}
+          </div>
         </div>
       </header>
 
@@ -65,9 +74,7 @@ export default function Home() {
           className="public-home-hero"
         >
           <div className="public-home-hero-copy">
-            <p className="overview-eyebrow">
-              RESEARCH-DRIVEN LEAD GENERATION
-            </p>
+            <p className="overview-eyebrow">RESEARCH-DRIVEN LEAD GENERATION</p>
             <h1 id="public-home-title">
               Find better-fit companies. Build stronger outreach.
             </h1>
@@ -150,33 +157,42 @@ export default function Home() {
             </h2>
           </div>
           <div className="public-home-features">
-          <article>
-            <span className="public-home-feature-icon">
-              <Compass aria-hidden="true" size={18} />
-            </span>
-            <h2>Discover</h2>
-            <p>Find relevant businesses and explore their websites.</p>
-          </article>
-          <article>
-            <span className="public-home-feature-icon">
-              <Building2 aria-hidden="true" size={19} />
-            </span>
-            <h2>Organize</h2>
-            <p>Keep company and contact details together in your pipeline.</p>
-          </article>
-          <article>
-            <span className="public-home-feature-icon">
-              <Globe aria-hidden="true" size={18} />
-            </span>
-            <h2>Work with context</h2>
-            <p>Use website research to make better-informed decisions.</p>
-          </article>
+            <article>
+              <span className="public-home-feature-icon">
+                <Compass aria-hidden="true" size={18} />
+              </span>
+              <h2>Discover</h2>
+              <p>Find relevant businesses and explore their websites.</p>
+            </article>
+            <article>
+              <span className="public-home-feature-icon">
+                <Building2 aria-hidden="true" size={19} />
+              </span>
+              <h2>Organize</h2>
+              <p>Keep company and contact details together in your pipeline.</p>
+            </article>
+            <article>
+              <span className="public-home-feature-icon">
+                <Globe aria-hidden="true" size={18} />
+              </span>
+              <h2>Work with context</h2>
+              <p>Use website research to make better-informed decisions.</p>
+            </article>
           </div>
         </section>
       </main>
       <footer className="public-home-footer">
-        Lead Intelligence <span aria-hidden="true">·</span> Business intelligence
-        workspace
+        <span>
+          ProspectLoop <span aria-hidden="true">·</span> Business intelligence
+          workspace
+        </span>
+        <nav aria-label="Public pages">
+          {PUBLIC_PAGE_LINKS.map((item) => (
+            <Link href={item.href} key={item.href}>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
       </footer>
     </div>
   );

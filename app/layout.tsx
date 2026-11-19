@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import { Providers } from "./providers";
 import { WorkspaceShell } from "./components/workspace-shell";
+import { SITE_NAME, SITE_ORIGIN } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,8 +17,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lead Intelligence | Business Intelligence Agent",
+  metadataBase: new URL(SITE_ORIGIN),
+  title: `${SITE_NAME} | Business Intelligence Agent`,
   description: "Discover, manage, and review business leads.",
+  openGraph: {
+    title: SITE_NAME,
+    description: "Discover, research, and organize business opportunities.",
+    url: SITE_ORIGIN,
+    siteName: SITE_NAME,
+    type: "website",
+  },
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

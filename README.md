@@ -1,4 +1,4 @@
-# Lead Intelligence Frontend
+# ProspectLoop Frontend
 
 The Next.js dashboard uses TanStack Query to load the company pipeline and
 call the FastAPI company and discovery endpoints.

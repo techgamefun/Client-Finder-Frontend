@@ -11,6 +11,7 @@ import {
   registerOrganization,
   type AuthSession,
 } from "@/lib/api";
+import { BrandMark } from "./brand-mark";
 
 export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
   const router = useRouter();
@@ -68,9 +69,9 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
       <div className="auth-background-grid" aria-hidden="true" />
       <div className="auth-layout">
         <section className="auth-intro">
-          <Link className="auth-brand" href="/" aria-label="Lead Intelligence home">
-            <span className="auth-brand-mark">BI</span>
-            <span>Lead Intelligence</span>
+          <Link className="auth-brand" href="/" aria-label="ProspectLoop home">
+            <BrandMark className="auth-brand-mark" />
+            <span>ProspectLoop</span>
           </Link>
           <div className="auth-intro-copy">
             <span className="auth-kicker">
@@ -118,7 +119,13 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
         <section className="auth-card" aria-labelledby="auth-heading">
           <div className="auth-card-top">
             <span className="auth-card-icon">{isSignup ? "✦" : "↗"}</span>
-            <span>{isBootstrap ? "FIRST-TIME SETUP" : isSignup ? "GET STARTED" : "YOUR WORKSPACE"}</span>
+            <span>
+              {isBootstrap
+                ? "FIRST-TIME SETUP"
+                : isSignup
+                  ? "GET STARTED"
+                  : "YOUR WORKSPACE"}
+            </span>
           </div>
           <h2 id="auth-heading">{formTitle}</h2>
           <p className="auth-card-copy">
@@ -194,14 +201,18 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
                       authMutation.reset();
                     }}
                     placeholder={
-                      isSignup ? "At least 12 characters" : "Enter your password"
+                      isSignup
+                        ? "At least 12 characters"
+                        : "Enter your password"
                     }
                     required
                     type={showPassword ? "text" : "password"}
                     value={password}
                   />
                   <button
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                     aria-pressed={showPassword}
                     className="auth-password-toggle"
                     disabled={authMutation.isPending}
@@ -235,7 +246,11 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
                       : "Signing in…"}
                   </>
                 ) : isSignup ? (
-                  isBootstrap ? "Create workspace" : "Create account"
+                  isBootstrap ? (
+                    "Create workspace"
+                  ) : (
+                    "Create account"
+                  )
                 ) : (
                   "Sign in"
                 )}
@@ -246,7 +261,7 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
 
           {!isBootstrap && (
             <p className="auth-switch">
-              {isSignup ? "Already have an account?" : "New to Lead Intelligence?"}{" "}
+              {isSignup ? "Already have an account?" : "New to ProspectLoop?"}{" "}
               <Link href={isSignup ? "/login" : "/signup"}>
                 {isSignup ? "Sign in" : "Create an account"}
               </Link>

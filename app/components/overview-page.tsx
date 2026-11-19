@@ -222,7 +222,6 @@ export function OverviewPage({
         </div>
         <div className="overview-header-actions">
           <label className="overview-range-control">
-            <span>Time range</span>
             <select
               aria-label="Overview time range"
               onChange={(event) =>

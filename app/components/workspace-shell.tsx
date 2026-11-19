@@ -44,51 +44,23 @@ import {
   type Company,
 } from "@/lib/api";
 import {
+  getThemePreferenceSnapshot,
+  getThemeSnapshot,
+  persistThemePreference,
+  subscribeToTheme,
+  type ThemePreference,
+} from "@/lib/theme";
+import {
   navigationSections,
   type NavigationItem,
   type NavigationRole,
 } from "./nav.config";
+import { BrandMark } from "./brand-mark";
 import { useToast } from "./toast-provider";
 
 const noCompanies: Company[] = [];
-type ThemePreference = "light" | "dark" | "system";
 const sidebarPreferenceKey = "lead-intelligence-sidebar-collapsed";
 const sidebarPreferenceChangedEvent = "lead-intelligence-sidebar-changed";
-
-function subscribeToTheme(onChange: () => void) {
-  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  window.addEventListener("storage", onChange);
-  window.addEventListener("lead-intelligence-theme-change", onChange);
-  mediaQuery.addEventListener("change", onChange);
-  return () => {
-    window.removeEventListener("storage", onChange);
-    window.removeEventListener("lead-intelligence-theme-change", onChange);
-    mediaQuery.removeEventListener("change", onChange);
-  };
-}
-
-function getThemePreferenceSnapshot(): ThemePreference {
-  const savedTheme = window.localStorage.getItem("lead-intelligence-theme");
-  return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "system";
-}
-
-function getThemeSnapshot() {
-  const preference = getThemePreferenceSnapshot();
-  return (
-    preference === "dark" ||
-    (preference === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches)
-  );
-}
-
-function persistThemePreference(preference: ThemePreference) {
-  if (preference === "system") {
-    window.localStorage.removeItem("lead-intelligence-theme");
-  } else {
-    window.localStorage.setItem("lead-intelligence-theme", preference);
-  }
-  window.dispatchEvent(new Event("lead-intelligence-theme-change"));
-}
 
 function subscribeToSidebarPreference(onChange: () => void) {
   window.addEventListener("storage", onChange);
@@ -189,8 +161,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const runningJobs = jobs.filter((job) => job.status === "running").length;
   const failedJobs = jobs.filter((job) => job.status === "failed").length;
   const sessionIsUnauthorized =
-    sessionQuery.error instanceof ApiError &&
-    sessionQuery.error.status === 401;
+    sessionQuery.error instanceof ApiError && sessionQuery.error.status === 401;
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -293,19 +264,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   ]);
 
   useEffect(() => {
-    if (
-      !isPublicPage &&
-      !sessionQuery.isLoading &&
-      sessionIsUnauthorized
-    ) {
+    if (!isPublicPage && !sessionQuery.isLoading && sessionIsUnauthorized) {
       router.replace("/login");
     }
-  }, [
-    isPublicPage,
-    router,
-    sessionIsUnauthorized,
-    sessionQuery.isLoading,
-  ]);
+  }, [isPublicPage, router, sessionIsUnauthorized, sessionQuery.isLoading]);
 
   if (pathname === "/") return children;
   if (isPublicNotFoundPage) return children;
@@ -374,21 +336,23 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       >
         <div className="sidebar-header">
           <Link
-            aria-label="Lead Intelligence home"
+            aria-label="ProspectLoop home"
             className="brand"
             href={
               sessionQuery.data.user.role === "admin" ? "/admin" : "/overview"
             }
-            title="Lead Intelligence"
+            title="ProspectLoop"
           >
-            <span className="brand-mark">BI</span>
+            <BrandMark />
             <span>
-              <strong>Lead Intelligence</strong>
-              <small>BUSINESS WORKSPACE</small>
+              <strong>ProspectLoop</strong>
+              <small>BUSINESS INTELLIGENCE</small>
             </span>
           </Link>
           <button
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={
+              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
             className="sidebar-collapse-toggle"
             onClick={() => persistSidebarPreference(!sidebarCollapsed)}
             title={`${sidebarCollapsed ? "Expand" : "Collapse"} sidebar (Ctrl/Cmd+B)`}
@@ -457,7 +421,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         >
           {children}
           <footer className="page-footer">
-            Lead Intelligence <span>·</span> Your company data stays in your
+            ProspectLoop <span>·</span> Your company data stays in your
             connected backend.
           </footer>
         </div>
@@ -892,7 +856,9 @@ function CommandPalette({
                 <Building2 aria-hidden="true" size={18} strokeWidth={2} />
                 <span>
                   <strong>{company.name}</strong>
-                  <small>{company.domain || company.website || "Company record"}</small>
+                  <small>
+                    {company.domain || company.website || "Company record"}
+                  </small>
                 </span>
                 <ArrowUpRight
                   aria-hidden="true"
@@ -1066,7 +1032,12 @@ function NavigationEntry({
         onClick={onNavigate}
         title={item.label}
       >
-        <Icon aria-hidden="true" className="nav-icon" size={18} strokeWidth={2} />
+        <Icon
+          aria-hidden="true"
+          className="nav-icon"
+          size={18}
+          strokeWidth={2}
+        />
         <span className="nav-link-label">{item.label}</span>
         {item.badgeKey === "jobs" ? (
           <JobNavigationStatus
@@ -1094,9 +1065,9 @@ function MailNavigationGroup({
   onNavigate: () => void;
   pathname: string;
 }) {
-  const isActive = item.children?.some((child) =>
-    isActiveRoute(pathname, child.href),
-  ) ?? false;
+  const isActive =
+    item.children?.some((child) => isActiveRoute(pathname, child.href)) ??
+    false;
   const [expanded, setExpanded] = useState(isActive);
   const Icon = item.icon;
   const childrenId = `${item.id}-navigation`;
@@ -1113,7 +1084,12 @@ function MailNavigationGroup({
         title={item.label}
         type="button"
       >
-        <Icon aria-hidden="true" className="nav-icon" size={18} strokeWidth={2} />
+        <Icon
+          aria-hidden="true"
+          className="nav-icon"
+          size={18}
+          strokeWidth={2}
+        />
         <span className="nav-link-label">{item.label}</span>
         {badgeCount !== undefined && (
           <NavigationBadge count={badgeCount} itemLabel={item.label} />
@@ -1125,11 +1101,7 @@ function MailNavigationGroup({
           strokeWidth={2}
         />
       </button>
-      <ul
-        className="nav-group-children"
-        hidden={!expanded}
-        id={childrenId}
-      >
+      <ul className="nav-group-children" hidden={!expanded} id={childrenId}>
         {item.children?.map((child) => {
           const ChildIcon = child.icon;
           const childIsActive = isActiveRoute(pathname, child.href);
@@ -1354,7 +1326,9 @@ function AccountMenu({
         </span>
         <span className="account-trigger-copy">
           <span className="account-trigger-email">{email}</span>
-          <span className="account-trigger-organization">{organizationName}</span>
+          <span className="account-trigger-organization">
+            {organizationName}
+          </span>
         </span>
         <ChevronDown
           aria-hidden="true"
@@ -1398,7 +1372,11 @@ function AccountMenu({
               />
             </div>
           </fieldset>
-          <Link className="account-menu-link" href="/settings" onClick={closeMenu}>
+          <Link
+            className="account-menu-link"
+            href="/settings"
+            onClick={closeMenu}
+          >
             <Settings aria-hidden="true" size={18} strokeWidth={2} />
             Settings
           </Link>
@@ -1480,10 +1458,10 @@ function WorkspaceSessionLoading() {
       <aside aria-hidden="true" className="sidebar">
         <div className="sidebar-header">
           <div className="brand">
-            <span className="brand-mark">BI</span>
+            <BrandMark />
             <span>
-              <strong>Lead Intelligence</strong>
-              <small>BUSINESS WORKSPACE</small>
+              <strong>ProspectLoop</strong>
+              <small>BUSINESS INTELLIGENCE</small>
             </span>
           </div>
           <span className="workspace-skeleton-mobile-action" />
