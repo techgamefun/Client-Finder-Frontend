@@ -579,6 +579,7 @@ export interface ApplicationSettings {
   hypestat_service_auth_configured: boolean;
   pagespeed_configured: boolean;
   pagespeed_key_source: "database" | "unset";
+  gemini_configured: boolean;
   selected_discovery_tools: DiscoveryProviderId[];
   tavily_default_search_depth: TavilySearchDepth;
   tavily_default_country: string | null;
@@ -807,6 +808,10 @@ export interface EmailTemplateInput {
   name: string;
   subject: string;
   body_content: string;
+}
+
+export interface EmailTemplateDraftInput {
+  prompt: string;
 }
 
 export interface EmailTemplatePreview {
@@ -1155,6 +1160,7 @@ export function updateApplicationSettings(
     octoparse_api_key?: string | null;
     hypestat_api_key?: string | null;
     pagespeed_api_key?: string | null;
+    gemini_api_key?: string | null;
     hypestat_auto_fetch_enabled?: boolean;
     selected_discovery_tools?: DiscoveryProviderId[];
     tavily_default_search_depth?: TavilySearchDepth;
@@ -1247,6 +1253,19 @@ export function createEmailTemplate(
 ): Promise<EmailTemplate> {
   return request<EmailTemplate>(
     `/orgs/${encodeURIComponent(orgId)}/templates`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function generateEmailTemplateDraft(
+  orgId: string,
+  input: EmailTemplateDraftInput,
+): Promise<EmailTemplateInput> {
+  return request<EmailTemplateInput>(
+    `/orgs/${encodeURIComponent(orgId)}/templates/generate-draft`,
     {
       method: "POST",
       body: JSON.stringify(input),

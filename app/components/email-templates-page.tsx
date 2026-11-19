@@ -1,17 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search, Sparkles, X } from "lucide-react";
 import {
   createEmailTemplate,
   deleteEmailTemplate,
   getAssignedGmailAccounts,
+  getApplicationSettings,
   getAuthSession,
   getCompanies,
   getEmailTemplateVariables,
   getEmailTemplates,
+  generateEmailTemplateDraft,
   previewEmailTemplate,
   sendEmailTemplate,
   updateEmailTemplate,
@@ -26,6 +29,8 @@ const emptyDraft: EmailTemplateInput = {
   body_content: "",
 };
 
+type TemplateInsertTarget = "subject" | "body_content";
+
 export function EmailTemplatesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,12 +40,19 @@ export function EmailTemplatesPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
+  const geminiDialogRef = useRef<HTMLDialogElement>(null);
+  const generationPromptRef = useRef<HTMLTextAreaElement>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(
     null,
   );
   const [draft, setDraft] = useState<EmailTemplateInput>(emptyDraft);
+  const [generationPrompt, setGenerationPrompt] = useState("");
+  const [geminiPanelOpen, setGeminiPanelOpen] = useState(false);
+  const [variableTarget, setVariableTarget] =
+    useState<TemplateInsertTarget>("body_content");
+  const [variableSearch, setVariableSearch] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [contactId, setContactId] = useState("");
   const [gmailAccountId, setGmailAccountId] = useState("");
@@ -73,6 +85,12 @@ export function EmailTemplatesPage() {
     enabled: Boolean(organizationId),
     retry: false,
   });
+  const geminiSettingsQuery = useQuery({
+    queryKey: ["application-settings"],
+    queryFn: getApplicationSettings,
+    enabled: Boolean(organizationId),
+    retry: false,
+  });
   const companiesQuery = useQuery({
     queryKey: ["companies"],
     queryFn: getCompanies,
@@ -85,6 +103,35 @@ export function EmailTemplatesPage() {
     enabled: Boolean(organizationId),
     retry: false,
   });
+  const generateMutation = useMutation({
+    mutationFn: () =>
+      generateEmailTemplateDraft(organizationId, {
+        prompt: generationPrompt.trim(),
+      }),
+    onSuccess: (generatedDraft) => {
+      setDraft(generatedDraft);
+      setPreview(null);
+      setSendResult(null);
+      setGeminiPanelOpen(false);
+      showToast({
+        type: "success",
+        title: "Draft generated",
+        message: "Review and edit the template before saving.",
+      });
+    },
+  });
+  const resetGenerateMutation = generateMutation.reset;
+
+  useEffect(() => {
+    const dialog = geminiDialogRef.current;
+    if (!dialog) return;
+    if (geminiPanelOpen && !dialog.open) {
+      dialog.showModal();
+      generationPromptRef.current?.focus();
+    } else if (!geminiPanelOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [geminiPanelOpen]);
 
   const templates = templatesQuery.data ?? [];
   const activeTemplate =
@@ -215,12 +262,17 @@ export function EmailTemplatesPage() {
     setEditingTemplateId(null);
     setCreatePermissionNotice(false);
     setDraft({ ...emptyDraft });
+    setGenerationPrompt("");
+    setVariableTarget("body_content");
+    setVariableSearch("");
+    resetGenerateMutation();
     setEditorOpen(true);
+    setGeminiPanelOpen(false);
     setPreview(null);
     setSendResult(null);
     resetSaveMutation();
     window.requestAnimationFrame(() => nameInputRef.current?.focus());
-  }, [resetSaveMutation]);
+  }, [resetGenerateMutation, resetSaveMutation]);
 
   useEffect(() => {
     if (!shouldCreateFromQuery || sessionQuery.isPending) return;
@@ -251,7 +303,12 @@ export function EmailTemplatesPage() {
       subject: template.subject,
       body_content: template.body_content,
     });
+    setGenerationPrompt("");
+    setVariableTarget("body_content");
+    setVariableSearch("");
+    resetGenerateMutation();
     setEditorOpen(true);
+    setGeminiPanelOpen(false);
     setPreview(null);
     setSendResult(null);
     saveMutation.reset();
@@ -262,6 +319,11 @@ export function EmailTemplatesPage() {
     setEditorOpen(false);
     setEditingTemplateId(null);
     setDraft({ ...emptyDraft });
+    setGenerationPrompt("");
+    setVariableTarget("body_content");
+    setVariableSearch("");
+    resetGenerateMutation();
+    setGeminiPanelOpen(false);
     saveMutation.reset();
   }
 
@@ -329,10 +391,21 @@ export function EmailTemplatesPage() {
   }
 
   const variables = variablesQuery.data ?? [];
-  const variableGroups = ["company", "contact", "sender"].map((group) => ({
-    group,
-    items: variables.filter((variable) => variable.path.startsWith(`${group}.`)),
-  }));
+  const normalizedVariableSearch = variableSearch.trim().toLowerCase();
+  const variableGroups = ["company", "contact", "sender"]
+    .map((group) => ({
+      group,
+      items: variables.filter((variable) => {
+        const matchesGroup = variable.path.startsWith(`${group}.`);
+        const matchesSearch =
+          !normalizedVariableSearch ||
+          `${variable.path} ${variable.label} ${variable.description}`
+            .toLowerCase()
+            .includes(normalizedVariableSearch);
+        return matchesGroup && matchesSearch;
+      }),
+    }))
+    .filter(({ items }) => items.length > 0);
   const previewDocument = preview
     ? [
         "<!doctype html><html><head><meta charset=\"utf-8\">",
@@ -354,39 +427,26 @@ export function EmailTemplatesPage() {
     !sendMutation.isPending;
 
   return (
-    <div className="email-templates-page">
-      <header className="email-templates-heading">
-        <div>
-          <p className="eyebrow">YOUR WORKSPACE / OUTREACH</p>
-          <h1>
-            {editorOpen
-              ? editingTemplateId
-                ? "Edit email template"
-                : "Create email template"
-              : "Email templates"}
-          </h1>
-          <p className="heading-copy">
-            {editorOpen
-              ? "Write a reusable message, add personalization fields, then save it for your organization."
-              : "Create and manage reusable outreach. Choose a template to preview it with company data."}
-          </p>
-        </div>
-        {editorOpen ? null : isAdmin ? (
-          <button
-            className="button button-primary template-create-action"
-            onClick={startNewTemplate}
-            type="button"
-          >
-            <Plus aria-hidden="true" size={17} />
-            New template
-          </button>
-        ) : sessionQuery.isSuccess ? (
-          <p className="template-admin-note">
-            Templates are shared with your organization. Ask an admin to add or
-            edit them.
-          </p>
-        ) : null}
-      </header>
+    <div className={`email-templates-page${editorOpen ? " is-editor-open" : ""}`}>
+      {!editorOpen && (
+        <header className="email-templates-heading">
+          <h1>Email templates</h1>
+          {isAdmin ? (
+            <button
+              className="button button-primary template-create-action"
+              onClick={startNewTemplate}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={17} />
+              New template
+            </button>
+          ) : sessionQuery.isSuccess ? (
+            <p className="template-admin-note">
+              Ask an admin to add or edit templates.
+            </p>
+          ) : null}
+        </header>
+      )}
 
       {createPermissionNotice && (
         <div className="email-template-alert template-permission-alert" role="status">
@@ -398,12 +458,10 @@ export function EmailTemplatesPage() {
         {!editorOpen && !sessionQuery.isError && (
           <aside aria-label="Email template library" className="panel template-library">
             <div className="template-library-heading">
-              <div>
-                <p className="eyebrow">LIBRARY</p>
-                <h2>Templates</h2>
-              </div>
-              <span className="template-count">
-                {templatesQuery.isPending ? "…" : templates.length}
+              <span className="template-library-count">
+                {templatesQuery.isPending
+                  ? "Loading"
+                  : `${templates.length} ${templates.length === 1 ? "template" : "templates"}`}
               </span>
             </div>
 
@@ -455,26 +513,18 @@ export function EmailTemplatesPage() {
                 ))}
               </ul>
             )}
-            <div className="template-library-footnote">
-              <span className="template-status-dot" />
-              Shared with your organization
-            </div>
           </aside>
         )}
 
         <section
           aria-label={editorOpen ? "Email template editor" : "Selected email template"}
-          className={`panel template-workspace${editorOpen ? " is-editing" : ""}`}
+          className={`template-workspace${editorOpen ? " is-editing" : " panel"}`}
         >
           {editorOpen ? (
             <div className="template-editor">
               <div className="template-section-heading">
                 <div>
-                  <p className="eyebrow">MESSAGE CONTENT</p>
-                  <h2>{editingTemplateId ? "Update your message" : "Write your message"}</h2>
-                  <p className="panel-subtitle">
-                    Set a clear name and subject, then write the email body.
-                  </p>
+                  <h2>{editingTemplateId ? "Edit template" : "New template"}</h2>
                 </div>
               </div>
 
@@ -503,6 +553,7 @@ export function EmailTemplatesPage() {
                       Subject
                       <input
                         maxLength={998}
+                        onFocus={() => setVariableTarget("subject")}
                         onChange={(event) => updateDraft("subject", event.target.value)}
                         placeholder="A short, relevant subject"
                         ref={subjectInputRef}
@@ -511,11 +562,12 @@ export function EmailTemplatesPage() {
                       />
                     </label>
                   </div>
-                  <label className="template-field">
+                  <label className="template-field template-body-field">
                     Email body (HTML)
                     <textarea
                       className="template-body-input"
                       maxLength={200_000}
+                      onFocus={() => setVariableTarget("body_content")}
                       onChange={(event) => updateDraft("body_content", event.target.value)}
                       placeholder={"<p>Hi {{ contact.first_name | default(\"there\") }},</p>\n<p>I noticed {{ company.name }}...</p>"}
                       ref={bodyInputRef}
@@ -523,108 +575,239 @@ export function EmailTemplatesPage() {
                       rows={16}
                       value={draft.body_content}
                     />
-                    <span className="template-field-hint">
-                      HTML is supported. Dynamic values are escaped when rendered.
-                    </span>
                   </label>
                 </div>
 
-                <aside
+                <section
                   aria-labelledby="template-variable-title"
-                  className="template-variable-inserter"
+                  className="template-variable-panel"
                 >
                   <div className="template-variable-heading">
-                    <div>
-                      <strong id="template-variable-title">Personalize your message</strong>
-                      <span>Insert a field at the cursor in the subject or body.</span>
-                    </div>
-                    {variablesQuery.isError && (
-                      <span className="template-variable-error" role="alert">
-                        {errorMessage(variablesQuery.error)}
-                      </span>
-                    )}
+                    <h3 id="template-variable-title">Personalization</h3>
+                    <span>
+                      {variables.length} {variables.length === 1 ? "field" : "fields"}
+                    </span>
                   </div>
-                  {variablesQuery.isPending ? (
-                    <p className="template-state">Loading available fields…</p>
-                  ) : variablesQuery.isError ? null : (
-                    <div className="template-variable-groups">
-                      {variableGroups.map(({ group, items }) => (
-                        <details className="template-variable-group" key={group}>
-                          <summary>
-                            <span>{group}</span>
-                            <small>{items.length}</small>
-                          </summary>
-                          <div className="template-variable-rows">
-                            {items.map((variable) => (
-                              <div className="template-variable-row" key={variable.path}>
-                                <span>
-                                  <code>{variable.path}</code>
-                                  <small>{variable.label}</small>
-                                </span>
-                                <div>
+                  <div className="template-variable-target-row">
+                    <span className="template-variable-target-label">
+                      Insert into
+                    </span>
+                    <div
+                      aria-label="Insert personalization into"
+                      className="template-variable-target"
+                      role="group"
+                    >
+                      <button
+                        aria-pressed={variableTarget === "subject"}
+                        className="template-variable-target-button"
+                        onClick={() => setVariableTarget("subject")}
+                        type="button"
+                      >
+                        Subject
+                      </button>
+                      <button
+                        aria-pressed={variableTarget === "body_content"}
+                        className="template-variable-target-button"
+                        onClick={() => setVariableTarget("body_content")}
+                        type="button"
+                      >
+                        Body
+                      </button>
+                    </div>
+                  </div>
+                  <label className="template-variable-search">
+                    <Search aria-hidden="true" size={15} />
+                    <input
+                      aria-label="Search personalization fields"
+                      onChange={(event) => setVariableSearch(event.target.value)}
+                      placeholder="Find a field"
+                      type="search"
+                      value={variableSearch}
+                    />
+                  </label>
+                  <div className="template-variable-list">
+                    {variablesQuery.isError ? (
+                      <p className="template-variable-error" role="alert">
+                        Could not load fields: {errorMessage(variablesQuery.error)}
+                      </p>
+                    ) : variablesQuery.isPending ? (
+                      <p className="template-state">Loading fields…</p>
+                    ) : variableGroups.length ? (
+                      <div className="template-variable-groups">
+                        {variableGroups.map(({ group, items }) => (
+                          <section
+                            aria-labelledby={`template-variable-group-${group}`}
+                            className="template-variable-group"
+                            key={group}
+                          >
+                            <h4 id={`template-variable-group-${group}`}>
+                              <span>{group}</span>
+                              <span>{items.length}</span>
+                            </h4>
+                            <div className="template-variable-rows">
+                              {items.map((variable) => (
+                                <div className="template-variable-row" key={variable.path}>
+                                  <span>
+                                    <code>{variable.path}</code>
+                                    <small>{variable.label}</small>
+                                  </span>
                                   <button
-                                    aria-label={`Insert ${variable.path} into the subject`}
+                                    aria-label={`Insert ${variable.path} into the ${variableTarget === "subject" ? "subject" : "email body"}`}
                                     className="template-variable-action"
-                                    onClick={() => insertVariable("subject", variable.placeholder)}
-                                    title={`${variable.description} — insert in subject`}
+                                    onClick={() =>
+                                      insertVariable(variableTarget, variable.placeholder)
+                                    }
+                                    title={variable.description}
                                     type="button"
                                   >
-                                    Subject
-                                  </button>
-                                  <button
-                                    aria-label={`Insert ${variable.path} into the email body`}
-                                    className="template-variable-action"
-                                    onClick={() => insertVariable("body_content", variable.placeholder)}
-                                    title={`${variable.description} — insert in body`}
-                                    type="button"
-                                  >
-                                    Body
+                                    Insert
                                   </button>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      ))}
-                    </div>
-                  )}
-                  <p className="template-variable-key">
-                    Choose a field, then choose where it belongs.
-                  </p>
-                </aside>
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="template-variable-empty" role="status">
+                        {variables.length
+                          ? "No fields match your search."
+                          : "No personalization fields are available."}
+                      </p>
+                    )}
+                  </div>
+                </section>
 
-                <div className="template-form-actions">
-                  <button
-                    className="button button-primary"
-                    disabled={
-                      !isAdmin ||
-                      saveMutation.isPending ||
-                      !draft.name.trim() ||
-                      !draft.subject.trim() ||
-                      !draft.body_content.trim()
-                    }
-                    type="submit"
-                  >
-                    {saveMutation.isPending
-                      ? "Saving…"
-                      : editingTemplateId
-                        ? "Save changes"
-                        : "Save template"}
-                  </button>
-                  <button
-                    className="button button-secondary"
-                    onClick={cancelEditing}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                </div>
                 {saveMutation.isError && (
                   <div className="email-template-alert email-template-alert-error template-save-error" role="alert">
                     Could not save this template: {errorMessage(saveMutation.error)}
                   </div>
                 )}
+                <div className="template-form-actions">
+                  {isAdmin && (
+                    <button
+                      aria-controls="template-gemini-panel"
+                      aria-expanded={geminiPanelOpen}
+                      className={`template-ai-action${geminiPanelOpen ? " is-open" : ""}`}
+                      onClick={() => setGeminiPanelOpen((open) => !open)}
+                      type="button"
+                    >
+                      <Sparkles aria-hidden="true" size={16} />
+                      Draft with Gemini
+                    </button>
+                  )}
+                  <div className="template-form-action-buttons">
+                    <button
+                      className="button button-secondary"
+                      onClick={cancelEditing}
+                      type="button"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="button button-primary"
+                      disabled={
+                        !isAdmin ||
+                        saveMutation.isPending ||
+                        !draft.name.trim() ||
+                        !draft.subject.trim() ||
+                        !draft.body_content.trim()
+                      }
+                      type="submit"
+                    >
+                      {saveMutation.isPending
+                        ? "Saving…"
+                        : editingTemplateId
+                          ? "Save changes"
+                          : "Save template"}
+                    </button>
+                  </div>
+                </div>
               </form>
+
+              {isAdmin && (
+                <dialog
+                  aria-labelledby="template-gemini-title"
+                  className="template-ai-dialog"
+                  id="template-gemini-panel"
+                  onClose={() => setGeminiPanelOpen(false)}
+                  onClick={(event) => {
+                    if (event.target === event.currentTarget) {
+                      setGeminiPanelOpen(false);
+                    }
+                  }}
+                  ref={geminiDialogRef}
+                >
+                  <div className="template-ai-dialog-heading">
+                    <div>
+                      <h2 id="template-gemini-title">Draft with Gemini</h2>
+                      <p>Creates an editable first draft.</p>
+                    </div>
+                    <button
+                      aria-label="Close Gemini draft dialog"
+                      className="template-ai-dialog-close"
+                      onClick={() => setGeminiPanelOpen(false)}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={18} />
+                    </button>
+                  </div>
+                  <label className="template-ai-prompt">
+                    Brief
+                    <textarea
+                      disabled={generateMutation.isPending}
+                      maxLength={4000}
+                      minLength={8}
+                      onChange={(event) => {
+                        setGenerationPrompt(event.target.value);
+                        generateMutation.reset();
+                      }}
+                      placeholder="Audience, goal, tone, and next step"
+                      ref={generationPromptRef}
+                      rows={4}
+                      value={generationPrompt}
+                    />
+                  </label>
+                  {geminiSettingsQuery.isError && (
+                    <p className="template-ai-message is-error" role="alert">
+                      Could not check Gemini settings.{" "}
+                      {errorMessage(geminiSettingsQuery.error)}
+                    </p>
+                  )}
+                  {geminiSettingsQuery.data &&
+                    !geminiSettingsQuery.data.gemini_configured && (
+                      <p className="template-ai-message">
+                        Add your key in{" "}
+                        <Link href="/settings?section=gemini">
+                          Gemini settings
+                        </Link>
+                        .
+                      </p>
+                    )}
+                  {generateMutation.isError && (
+                    <p className="template-ai-message is-error" role="alert">
+                      {errorMessage(generateMutation.error)}
+                    </p>
+                  )}
+                  <div className="template-ai-dialog-footer">
+                    <p>Replaces current fields. No email is sent.</p>
+                    <button
+                      className="button button-primary"
+                      disabled={
+                        generateMutation.isPending ||
+                        generationPrompt.trim().length < 8 ||
+                        geminiSettingsQuery.data?.gemini_configured !== true
+                      }
+                      onClick={() => generateMutation.mutate()}
+                      type="button"
+                    >
+                      {generateMutation.isPending
+                        ? "Generating…"
+                        : "Generate draft"}
+                    </button>
+                  </div>
+                </dialog>
+              )}
             </div>
           ) : templatesQuery.isError ? (
             <div className="template-empty-workspace" role="alert">
@@ -665,11 +848,7 @@ export function EmailTemplatesPage() {
             <div className="template-detail-view">
               <div className="template-section-heading template-detail-heading">
                 <div>
-                  <p className="eyebrow">SHARED TEMPLATE</p>
                   <h2>{activeTemplate.name}</h2>
-                  <p className="panel-subtitle">
-                    Updated {formatDate(activeTemplate.updated_at)}
-                  </p>
                 </div>
                 <div className="template-detail-actions">
                   {isAdmin && (
@@ -733,7 +912,6 @@ export function EmailTemplatesPage() {
                   <div className="template-use-heading">
                     <div>
                       <h3 id="template-preview-heading">Preview and test</h3>
-                      <p>Choose sample company data to see how this email will look.</p>
                     </div>
                   </div>
 
@@ -901,11 +1079,7 @@ export function EmailTemplatesPage() {
                   ) : (
                     <div className="template-preview-empty">
                       <span aria-hidden="true">✉</span>
-                      <h3>Your preview will appear here</h3>
-                      <p>
-                        Select a company, then choose <strong>Render preview</strong> to see
-                        personalized content.
-                      </p>
+                      <p>Select a company to preview this email.</p>
                     </div>
                   )}
                 </section>
@@ -916,7 +1090,6 @@ export function EmailTemplatesPage() {
                   <strong>Personalization fields</strong>
                   <span>{variablesQuery.isSuccess ? `${variables.length} available` : "View fields"}</span>
                 </summary>
-                <p>Values are filled from company, contact, and sender records.</p>
                 {variablesQuery.isPending && (
                   <p className="template-state" role="status">Loading fields…</p>
                 )}
@@ -1007,12 +1180,6 @@ export function EmailTemplatesPage() {
       )}
     </div>
   );
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-  }).format(new Date(value));
 }
 
 function errorMessage(error: unknown): string {

@@ -66,6 +66,7 @@ type SettingsSection =
   | "octoparse"
   | "hypestat"
   | "pagespeed"
+  | "gemini"
   | "gmail"
   | "crawler"
   | "organization"
@@ -94,6 +95,7 @@ export function SettingsPage() {
   const [octoparseApiKey, setOctoparseApiKey] = useState("");
   const [hypestatApiKey, setHypestatApiKey] = useState("");
   const [pagespeedApiKey, setPagespeedApiKey] = useState("");
+  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [hypestatAutoFetchEnabled, setHypestatAutoFetchEnabled] = useState<
     boolean | null
   >(null);
@@ -194,6 +196,7 @@ export function SettingsPage() {
       setOctoparseApiKey("");
       setHypestatApiKey("");
       setPagespeedApiKey("");
+      setGeminiApiKey("");
       setHypestatAutoFetchEnabled(null);
       setMaxPages(null);
       setMaxDepth(null);
@@ -372,6 +375,7 @@ export function SettingsPage() {
               <option value="octoparse">Octoparse</option>
               <option value="hypestat">HypeStat</option>
               <option value="pagespeed">PageSpeed</option>
+              <option value="gemini">Gemini</option>
               {isOrganizationAdmin && (
                 <option value="gmail">Gmail accounts</option>
               )}
@@ -910,8 +914,9 @@ export function SettingsPage() {
                 <p className="eyebrow">HYPESTAT</p>
                 <h2>API access and lookup behavior</h2>
                 <p className="panel-subtitle">
-                  The API key is encrypted in the application database and sent
-                  only from the Agent to the indexing service. It is never
+                  The API key is stored as plaintext in the application
+                  database and sent only from the Agent to the indexing service.
+                  It is never
                   returned to this page.
                 </p>
               </div>
@@ -1111,7 +1116,8 @@ export function SettingsPage() {
                 <h2>Your personal API key</h2>
                 <p className="panel-subtitle">
                   PageSpeed jobs use the key belonging to the user who created
-                  the job. The encrypted key is never returned.
+                  the job. The key is stored as plaintext in the application
+                  database and never returned.
                 </p>
               </div>
               <span
@@ -1171,6 +1177,94 @@ export function SettingsPage() {
                 role="alert"
               >
                 Could not save PageSpeed key: {saveMutation.error.message}
+              </p>
+            )}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
+          </section>
+
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "gemini"}
+          >
+            <div className="settings-section-heading">
+              <div>
+                <p className="eyebrow">GOOGLE GEMINI</p>
+                <h2>AI template drafts</h2>
+                <p className="panel-subtitle">
+                  Use your own Gemini key to create editable drafts from the
+                  Templates page. The key is never returned and is stored as
+                  plaintext in the application database.
+                </p>
+              </div>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.gemini_configured ? " is-configured" : ""}`}
+              >
+                {settingsQuery.data.gemini_configured
+                  ? "Configured"
+                  : "Not configured"}
+              </span>
+            </div>
+            <form
+              className="settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNotice("");
+                saveMutation.mutate({
+                  gemini_api_key: geminiApiKey.trim() || null,
+                });
+              }}
+            >
+              <label className="settings-field">
+                Gemini API key
+                <input
+                  autoComplete="new-password"
+                  onChange={(event) => setGeminiApiKey(event.target.value)}
+                  placeholder={
+                    settingsQuery.data.gemini_configured
+                      ? "Leave blank to keep the saved key"
+                      : "Paste your Gemini API key"
+                  }
+                  type="password"
+                  value={geminiApiKey}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={saveMutation.isPending || !geminiApiKey.trim()}
+                  type="submit"
+                >
+                  {saveMutation.isPending
+                    ? "Saving…"
+                    : settingsQuery.data.gemini_configured
+                      ? "Update key"
+                      : "Save key"}
+                </button>
+                {settingsQuery.data.gemini_configured && (
+                  <button
+                    className="button button-secondary"
+                    disabled={saveMutation.isPending}
+                    onClick={() => {
+                      setNotice("");
+                      saveMutation.mutate({ gemini_api_key: "" });
+                    }}
+                    type="button"
+                  >
+                    Remove key
+                  </button>
+                )}
+              </div>
+            </form>
+            {saveMutation.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not save Gemini key: {saveMutation.error.message}
               </p>
             )}
             {notice && (
@@ -1329,6 +1423,7 @@ function isSettingsSection(value: string): value is SettingsSection {
     value === "octoparse" ||
     value === "hypestat" ||
     value === "pagespeed" ||
+    value === "gemini" ||
     value === "gmail" ||
     value === "crawler" ||
     value === "organization" ||

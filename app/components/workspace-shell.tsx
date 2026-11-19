@@ -452,7 +452,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           pathname={pathname}
           role={sessionQuery.data.user.role}
         />
-        <div className="content-wrap">
+        <div
+          className={`content-wrap${pathname === "/templates" ? " is-templates-page" : ""}`}
+        >
           {children}
           <footer className="page-footer">
             Lead Intelligence <span>·</span> Your company data stays in your
