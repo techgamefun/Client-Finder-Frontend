@@ -549,6 +549,8 @@ export interface WebsiteBatchStatusUpdateResult {
   not_found_count: number;
 }
 
+const WEBSITE_ACTION_BATCH_SIZE = 500;
+
 export type WebsiteStatus = "new" | "lead" | "checked";
 
 export type WebsitePageType =
@@ -1614,23 +1616,78 @@ export function updateWebsite(
   });
 }
 
-export function addWebsitesToLeads(
+export async function addWebsitesToLeads(
   websiteIds: string[],
 ): Promise<WebsiteAddToLeadsResult> {
-  return request<WebsiteAddToLeadsResult>("/websites/add-to-leads", {
-    method: "POST",
-    body: JSON.stringify({ website_ids: websiteIds }),
-  });
+  const result: WebsiteAddToLeadsResult = {
+    requested_count: 0,
+    created_count: 0,
+    already_existing_count: 0,
+    status_updated_count: 0,
+    skipped_listing_count: 0,
+    skipped_uncrawled_count: 0,
+    not_found_count: 0,
+  };
+  for (
+    let offset = 0;
+    offset < websiteIds.length;
+    offset += WEBSITE_ACTION_BATCH_SIZE
+  ) {
+    const batch = await request<WebsiteAddToLeadsResult>(
+      "/websites/add-to-leads",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          website_ids: websiteIds.slice(
+            offset,
+            offset + WEBSITE_ACTION_BATCH_SIZE,
+          ),
+        }),
+      },
+    );
+    result.requested_count += batch.requested_count;
+    result.created_count += batch.created_count;
+    result.already_existing_count += batch.already_existing_count;
+    result.status_updated_count += batch.status_updated_count;
+    result.skipped_listing_count += batch.skipped_listing_count;
+    result.skipped_uncrawled_count += batch.skipped_uncrawled_count;
+    result.not_found_count += batch.not_found_count;
+  }
+  return result;
 }
 
-export function updateWebsitesStatus(
+export async function updateWebsitesStatus(
   website_ids: string[],
   status: WebsiteStatus,
 ): Promise<WebsiteBatchStatusUpdateResult> {
-  return request<WebsiteBatchStatusUpdateResult>("/websites/batch-status", {
-    method: "PATCH",
-    body: JSON.stringify({ website_ids, status }),
-  });
+  const result: WebsiteBatchStatusUpdateResult = {
+    requested_count: 0,
+    updated_count: 0,
+    not_found_count: 0,
+  };
+  for (
+    let offset = 0;
+    offset < website_ids.length;
+    offset += WEBSITE_ACTION_BATCH_SIZE
+  ) {
+    const batch = await request<WebsiteBatchStatusUpdateResult>(
+      "/websites/batch-status",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          website_ids: website_ids.slice(
+            offset,
+            offset + WEBSITE_ACTION_BATCH_SIZE,
+          ),
+          status,
+        }),
+      },
+    );
+    result.requested_count += batch.requested_count;
+    result.updated_count += batch.updated_count;
+    result.not_found_count += batch.not_found_count;
+  }
+  return result;
 }
 
 export function reclassifyWebsite(websiteId: string): Promise<WebsiteRecord> {

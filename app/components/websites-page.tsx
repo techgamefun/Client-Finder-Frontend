@@ -47,7 +47,6 @@ const pageTypes: WebsitePageType[] = [
 ];
 const pageSizes = [10, 25, 50];
 const websiteStatuses: WebsiteStatus[] = ["new", "lead", "checked"];
-const websiteSelectionLimit = 500;
 
 type WebsiteSortKey =
   | "website"
@@ -221,7 +220,7 @@ export function WebsitesPage() {
   const queryClient = useQueryClient();
   const showToast = useToast();
   const websiteScrollTimerRef = useRef<number | null>(null);
-  const selectPageRef = useRef<HTMLInputElement>(null);
+  const selectFilteredRef = useRef<HTMLInputElement>(null);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
   const [selectedWebsiteIds, setSelectedWebsiteIds] = useState<Set<string>>(
     new Set(),
@@ -530,21 +529,22 @@ export function WebsitesPage() {
     (visiblePage - 1) * pageSize,
     visiblePage * pageSize,
   );
-  const selectedVisibleCount = paginatedWebsites.filter((website) =>
+  const selectedFilteredCount = filteredWebsites.filter((website) =>
     selectedWebsiteIds.has(website.id),
   ).length;
-  const allVisibleSelected =
-    paginatedWebsites.length > 0 &&
-    selectedVisibleCount === paginatedWebsites.length;
-  const hasPartiallySelectedPage =
-    selectedVisibleCount > 0 && !allVisibleSelected;
+  const allFilteredSelected =
+    filteredWebsites.length > 0 &&
+    selectedFilteredCount === filteredWebsites.length;
+  const hasPartiallySelectedFiltered =
+    selectedFilteredCount > 0 && !allFilteredSelected;
   const selectedCount = selectedWebsiteIds.size;
 
   useEffect(() => {
-    if (selectPageRef.current) {
-      selectPageRef.current.indeterminate = hasPartiallySelectedPage;
+    if (selectFilteredRef.current) {
+      selectFilteredRef.current.indeterminate =
+        hasPartiallySelectedFiltered;
     }
-  }, [hasPartiallySelectedPage]);
+  }, [hasPartiallySelectedFiltered]);
   const activeAdvancedFilterCount = [
     minimumMonthlyVisits,
     minimumReferringDomains,
@@ -565,17 +565,6 @@ export function WebsitesPage() {
   }
 
   function toggleWebsiteSelection(websiteId: string) {
-    if (
-      !selectedWebsiteIds.has(websiteId) &&
-      selectedWebsiteIds.size >= websiteSelectionLimit
-    ) {
-      showToast({
-        type: "warning",
-        title: "Selection limit reached",
-        message: `Select up to ${websiteSelectionLimit} websites at a time.`,
-      });
-      return;
-    }
     setSelectedWebsiteIds((current) => {
       const next = new Set(current);
       if (next.has(websiteId)) {
@@ -587,11 +576,11 @@ export function WebsitesPage() {
     });
   }
 
-  function togglePageSelection() {
-    if (allVisibleSelected) {
+  function toggleFilteredSelection() {
+    if (allFilteredSelected) {
       setSelectedWebsiteIds((current) => {
         const next = new Set(current);
-        for (const website of paginatedWebsites) {
+        for (const website of filteredWebsites) {
           next.delete(website.id);
         }
         return next;
@@ -599,20 +588,9 @@ export function WebsitesPage() {
       return;
     }
 
-    const websitesToAdd = paginatedWebsites.filter(
-      (website) => !selectedWebsiteIds.has(website.id),
-    );
-    const availableSlots = websiteSelectionLimit - selectedCount;
-    if (websitesToAdd.length > availableSlots) {
-      showToast({
-        type: "warning",
-        title: "Selection limit reached",
-        message: `Select up to ${websiteSelectionLimit} websites at a time.`,
-      });
-    }
     setSelectedWebsiteIds((current) => {
       const next = new Set(current);
-      for (const website of websitesToAdd.slice(0, availableSlots)) {
+      for (const website of filteredWebsites) {
         next.add(website.id);
       }
       return next;
@@ -989,40 +967,50 @@ export function WebsitesPage() {
             className="website-bulk-toolbar"
             role="region"
           >
-            <span className="website-bulk-selection-count">
-              {selectedCount} selected
-            </span>
-            <label className="website-bulk-status">
-              <span>Change status</span>
-              <select
-                onChange={(event) => {
-                  const nextStatus = websiteStatuses.find(
-                    (value) => value === event.target.value,
-                  );
-                  setBulkStatus(nextStatus ?? "");
-                }}
-                value={bulkStatus}
+            <div className="website-bulk-selection-count">
+              <span className="website-bulk-selection-value">
+                {selectedCount}
+              </span>
+              <span>selected website{selectedCount === 1 ? "" : "s"}</span>
+            </div>
+            <div className="website-bulk-status-actions">
+              <label className="website-bulk-status">
+                <span>Change status</span>
+                <select
+                  aria-label="Status to apply to selected websites"
+                  disabled={
+                    batchStatusMutation.isPending ||
+                    addToLeadMutation.isPending
+                  }
+                  onChange={(event) => {
+                    const nextStatus = websiteStatuses.find(
+                      (value) => value === event.target.value,
+                    );
+                    setBulkStatus(nextStatus ?? "");
+                  }}
+                  value={bulkStatus}
+                >
+                  <option value="">Choose status…</option>
+                  {websiteStatuses.map((value) => (
+                    <option key={value} value={value}>
+                      {formatWebsiteStatus(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="button button-secondary"
+                disabled={
+                  !bulkStatus ||
+                  batchStatusMutation.isPending ||
+                  addToLeadMutation.isPending
+                }
+                onClick={changeSelectedWebsiteStatus}
+                type="button"
               >
-                <option value="">Choose status…</option>
-                {websiteStatuses.map((value) => (
-                  <option key={value} value={value}>
-                    {formatWebsiteStatus(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="button button-secondary"
-              disabled={
-                !bulkStatus ||
-                batchStatusMutation.isPending ||
-                addToLeadMutation.isPending
-              }
-              onClick={changeSelectedWebsiteStatus}
-              type="button"
-            >
-              {batchStatusMutation.isPending ? "Updating…" : "Apply status"}
-            </button>
+                {batchStatusMutation.isPending ? "Updating…" : "Apply status"}
+              </button>
+            </div>
             <button
               className="button button-primary"
               disabled={
@@ -1042,7 +1030,10 @@ export function WebsitesPage() {
               disabled={
                 batchStatusMutation.isPending || addToLeadMutation.isPending
               }
-              onClick={() => setSelectedWebsiteIds(new Set())}
+              onClick={() => {
+                setSelectedWebsiteIds(new Set());
+                setBulkStatus("");
+              }}
               type="button"
             >
               Clear selection
@@ -1179,18 +1170,20 @@ export function WebsitesPage() {
                       <span className="website-selection-heading">
                         <input
                           aria-label={
-                            allVisibleSelected
-                              ? "Deselect all websites on this page"
-                              : "Select all websites on this page"
+                            allFilteredSelected
+                              ? `Deselect all ${filteredWebsites.length} matching websites`
+                              : `Select all ${filteredWebsites.length} matching websites`
                           }
-                          checked={allVisibleSelected}
+                          checked={allFilteredSelected}
                           disabled={
                             batchStatusMutation.isPending ||
-                            addToLeadMutation.isPending
+                            addToLeadMutation.isPending ||
+                            filteredWebsites.length === 0
                           }
-                          onChange={togglePageSelection}
-                          ref={selectPageRef}
+                          onChange={toggleFilteredSelection}
+                          ref={selectFilteredRef}
                           type="checkbox"
+                          title={`Select all ${filteredWebsites.length} matching websites across every page`}
                         />
                         <span aria-hidden="true">#</span>
                       </span>
