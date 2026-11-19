@@ -1348,6 +1348,16 @@ function ExtractedPage({
 function SignalsAccordion({ page }: { page: CrawlPageClassification }) {
   const [open, setOpen] = useState(false);
   const populated = getPopulatedSignals(page.classification_signals);
+  const statusTone =
+    page.error
+      ? "is-failed"
+      : page.status_code != null && page.status_code > 0
+      ? page.status_code >= 400
+        ? "is-failed"
+        : page.status_code >= 300
+          ? "is-pending"
+          : "is-succeeded"
+      : "";
   const pageType =
     page.classification_signals?.og_type ??
     inferPageType(getUrlPath(page.url), page.classification_signals?.page_title);
@@ -1362,6 +1372,16 @@ function SignalsAccordion({ page }: { page: CrawlPageClassification }) {
         <span className="profile-signal-path" title={page.url}>
           {getUrlPath(page.url)}
         </span>
+        {(page.status_code != null && page.status_code > 0 || page.error) && (
+          <span
+            className={`profile-page-status ${statusTone}`}
+            title={page.error ?? "HTTP response status"}
+          >
+            {page.status_code != null && page.status_code > 0
+              ? `HTTP ${page.status_code}`
+              : "No response"}
+          </span>
+        )}
         <span className="profile-signal-count">
           {populated.length} populated
         </span>
@@ -1371,6 +1391,12 @@ function SignalsAccordion({ page }: { page: CrawlPageClassification }) {
         <ChevronDown aria-hidden="true" size={15} />
       </summary>
       <div className="profile-signal-content" id={contentId}>
+        {page.error && (
+          <div className="profile-page-diagnostic">
+            <strong>Page issue</strong>
+            <p>{page.error}</p>
+          </div>
+        )}
         {populated.length ? (
           <dl>
             {populated.map((signal) => (

@@ -41,6 +41,12 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
   });
   const crawlJob = jobQuery.data;
   const crawlResult = crawlJob?.result;
+  const pageIssues =
+    crawlResult?.classification_signals.filter(
+      (page) =>
+        Boolean(page.error) ||
+        (page.status_code != null && page.status_code >= 400),
+    ) ?? [];
   const isCrawlPending =
     crawlMutation.isPending ||
     crawlJob?.status === "queued" ||
@@ -235,6 +241,31 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
                 external
               />
             </div>
+
+            {pageIssues.length > 0 && (
+              <section
+                aria-label="Page fetch issues"
+                className="crawl-page-issues"
+              >
+                <h3>Page issues ({pageIssues.length})</h3>
+                <ul>
+                  {pageIssues.map((page, index) => (
+                    <li key={`${page.url}-${index}`}>
+                      <div>
+                        <a href={page.url} rel="noreferrer" target="_blank">
+                          {page.url}
+                        </a>
+                        {page.status_code != null &&
+                          page.status_code > 0 && (
+                            <span>HTTP {page.status_code}</span>
+                          )}
+                      </div>
+                      {page.error && <p>{page.error}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
         )}
       </article>

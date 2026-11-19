@@ -387,6 +387,8 @@ export interface WebsiteCrawlResponse {
 
 export interface CrawlPageClassification {
   url: string;
+  status_code?: number | null;
+  error?: string | null;
   rendering_mode: string | null;
   classification_signals: PageClassificationSignals | null;
 }
