@@ -186,6 +186,11 @@ export interface PageSpeedAudit {
   displayValue?: string;
 }
 
+export interface BatchJobRetryResponse {
+  retried_job_ids: string[];
+  failures: { job_id: string; message: string }[];
+}
+
 export interface PageSpeedScanReport extends PageSpeedScanSummary {
   report: {
     analysisUTCTimestamp?: string | null;
@@ -203,6 +208,7 @@ export interface PageSpeedScanReport extends PageSpeedScanSummary {
 export interface PageSpeedScanJob {
   id: string;
   company_ids: string[];
+  website_id?: string | null;
   website_url: string;
   strategy: "mobile" | "desktop";
   status: "queued" | "running" | "succeeded" | "failed";
@@ -431,6 +437,15 @@ export interface WebsiteCrawlJobResponse {
   result: WebsiteCrawlResponse | null;
 }
 
+export interface WebsiteCrawlBatchJobResponse {
+  id: string;
+  website_url: string;
+}
+
+export interface WebsiteCrawlBatchResponse {
+  jobs: WebsiteCrawlBatchJobResponse[];
+}
+
 export interface WebsiteCrawlJobHistory {
   id: string;
   status: "queued" | "running" | "succeeded" | "failed";
@@ -475,6 +490,7 @@ export interface WebsiteRecord {
 export interface WebsiteDetailResponse {
   website: WebsiteRecord;
   crawl: WebsiteCrawlResponse | null;
+  pagespeed_scans: PageSpeedScanSummary[];
   hypestat_profile: WebsiteHypeStatProfile | null;
   crawl_jobs: WebsiteCrawlJobHistory[];
   discovery_keywords: SearchKeyword[];
@@ -1465,6 +1481,15 @@ export function getPageSpeedScan(
   );
 }
 
+export function getWebsitePageSpeedScan(
+  websiteId: string,
+  scanId: string,
+): Promise<PageSpeedScanReport> {
+  return request<PageSpeedScanReport>(
+    `/websites/${encodeURIComponent(websiteId)}/pagespeed-scans/${encodeURIComponent(scanId)}`,
+  );
+}
+
 export function getPageSpeedScanJob(
   companyId: string,
   jobId: string,
@@ -1614,6 +1639,15 @@ export function crawlWebsite(
   });
 }
 
+export function crawlWebsites(
+  website_urls: string[],
+): Promise<WebsiteCrawlBatchResponse> {
+  return request<WebsiteCrawlBatchResponse>("/crawler/crawl/batch", {
+    method: "POST",
+    body: JSON.stringify({ website_urls }),
+  });
+}
+
 export function getWebsiteCrawlJob(
   jobId: string,
 ): Promise<WebsiteCrawlJobResponse> {
@@ -1650,11 +1684,29 @@ export function retryWebsiteCrawlJob(
   );
 }
 
+export function retryWebsiteCrawlJobs(
+  jobIds: string[],
+): Promise<BatchJobRetryResponse> {
+  return request<BatchJobRetryResponse>("/crawler/jobs/retry-batch", {
+    method: "POST",
+    body: JSON.stringify({ job_ids: jobIds }),
+  });
+}
+
 export function retryPageSpeedScanJob(
   jobId: string,
 ): Promise<PageSpeedScanJob> {
   return request<PageSpeedScanJob>(`/pagespeed/jobs/${jobId}/retry`, {
     method: "POST",
+  });
+}
+
+export function retryPageSpeedScanJobs(
+  jobIds: string[],
+): Promise<BatchJobRetryResponse> {
+  return request<BatchJobRetryResponse>("/pagespeed/jobs/retry-batch", {
+    method: "POST",
+    body: JSON.stringify({ job_ids: jobIds }),
   });
 }
 

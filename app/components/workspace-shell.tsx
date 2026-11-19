@@ -48,6 +48,7 @@ import {
   type NavigationItem,
   type NavigationRole,
 } from "./nav.config";
+import { useToast } from "./toast-provider";
 
 const noCompanies: Company[] = [];
 type ThemePreference = "light" | "dark" | "system";
@@ -117,6 +118,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const currentLocation = `${pathname}${search ? `?${search}` : ""}`;
   const router = useRouter();
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const sidebarCollapsed = useSyncExternalStore(
     subscribeToSidebarPreference,
@@ -166,6 +168,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["auth-session"] });
       router.replace("/login");
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not sign out",
+        message: error.message,
+      });
     },
   });
   const companies = companiesQuery.data ?? noCompanies;
@@ -301,11 +310,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   if (pathname === "/") return children;
   if (isPublicNotFoundPage) return children;
   if (isPublicAuthPage) {
-    if (
-      sessionQuery.isLoading ||
-      sessionQuery.isFetching ||
-      (sessionQuery.data && !sessionIsUnauthorized)
-    ) {
+    if (sessionQuery.data && !sessionIsUnauthorized) {
       return <PublicAuthChecking />;
     }
     return children;
@@ -693,6 +698,7 @@ const workspaceRoutes = new Set([
   "/gmail",
   "/companies",
   "/jobs",
+  "/jobs/import",
   "/leads",
   "/login",
   "/overview",

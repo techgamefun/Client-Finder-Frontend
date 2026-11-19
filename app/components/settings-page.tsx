@@ -33,6 +33,7 @@ import {
 import { TAVILY_COUNTRIES } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
 import { EmailSuppressionSettings } from "./email-suppression-settings";
+import { useToast } from "./toast-provider";
 
 const deploymentManagedSettings = [
   "HTTP_ADDR",
@@ -1426,6 +1427,7 @@ function ChangePasswordPanel() {
 
 function GmailAccountsPanel({ session }: { session: AuthSession }) {
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [selectedUsers, setSelectedUsers] = useState<Record<string, string>>(
     {},
   );
@@ -1453,12 +1455,28 @@ function GmailAccountsPanel({ session }: { session: AuthSession }) {
         [variables.gmailAccountId]: "",
       }));
       await queryClient.invalidateQueries({ queryKey: ["gmail-accounts"] });
+      const accountEmail = accountsQuery.data?.find(
+        (account) => account.id === variables.gmailAccountId,
+      )?.email_address;
+      const userEmail = usersQuery.data?.users.find(
+        (user) => user.id === variables.userId,
+      )?.email;
+      showToast({
+        type: "success",
+        title: "Gmail account assigned",
+        message: `${accountEmail ?? "The Gmail account"} was assigned to ${userEmail ?? "the selected user"}.`,
+      });
     },
   });
   const removeMutation = useMutation({
     mutationFn: removeGmailAssignment,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["gmail-accounts"] });
+      showToast({
+        type: "success",
+        title: "Gmail assignment removed",
+        message: "The user no longer has access to that account.",
+      });
     },
   });
 
@@ -1669,6 +1687,7 @@ function GmailAccountCard({
 
 function OrganizationUsersPanel() {
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
@@ -1679,11 +1698,16 @@ function OrganizationUsersPanel() {
   });
   const createUserMutation = useMutation({
     mutationFn: createOrganizationUser,
-    onSuccess: async () => {
+    onSuccess: async (_user, variables) => {
       setEmail("");
       setPassword("");
       setRole("user");
       await queryClient.invalidateQueries({ queryKey: ["organization-users"] });
+      showToast({
+        type: "success",
+        title: "Organization user added",
+        message: `${variables.email} can now access this organization.`,
+      });
     },
   });
 

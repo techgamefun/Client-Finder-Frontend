@@ -23,6 +23,7 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
   const [organizationName, setOrganizationName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const authMutation = useMutation({
     mutationFn: async () => {
       const input = {
@@ -140,15 +141,23 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
               Checking workspace setup…
             </div>
           ) : (
-            <form className="auth-form" onSubmit={submit}>
+            <form
+              aria-busy={authMutation.isPending}
+              className="auth-form"
+              onSubmit={submit}
+            >
               {isSignup && (
                 <label className="auth-field">
                   <span>Organization name</span>
                   <input
                     autoComplete="organization"
+                    disabled={authMutation.isPending}
                     maxLength={200}
                     minLength={2}
-                    onChange={(event) => setOrganizationName(event.target.value)}
+                    onChange={(event) => {
+                      setOrganizationName(event.target.value);
+                      authMutation.reset();
+                    }}
                     placeholder="Acme Inc."
                     required
                     value={organizationName}
@@ -159,7 +168,12 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
                 <span>Work email</span>
                 <input
                   autoComplete="username"
-                  onChange={(event) => setEmail(event.target.value)}
+                  autoCapitalize="none"
+                  disabled={authMutation.isPending}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    authMutation.reset();
+                  }}
                   placeholder="you@company.com"
                   required
                   type="email"
@@ -168,15 +182,35 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
               </label>
               <label className="auth-field">
                 <span>Password</span>
-                <input
-                  autoComplete={isSignup ? "new-password" : "current-password"}
-                  minLength={isSignup ? 12 : undefined}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={isSignup ? "At least 12 characters" : "Enter your password"}
-                  required
-                  type="password"
-                  value={password}
-                />
+                <span className="auth-password-control">
+                  <input
+                    autoComplete={
+                      isSignup ? "new-password" : "current-password"
+                    }
+                    disabled={authMutation.isPending}
+                    minLength={isSignup ? 12 : undefined}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      authMutation.reset();
+                    }}
+                    placeholder={
+                      isSignup ? "At least 12 characters" : "Enter your password"
+                    }
+                    required
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                  />
+                  <button
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="auth-password-toggle"
+                    disabled={authMutation.isPending}
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    type="button"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </span>
                 {isSignup && <small>Use at least 12 characters.</small>}
               </label>
 
@@ -191,13 +225,20 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
                 disabled={authMutation.isPending}
                 type="submit"
               >
-                {authMutation.isPending
-                  ? "Please wait…"
-                  : isSignup
-                    ? isBootstrap
-                      ? "Create workspace"
-                      : "Create account"
-                    : "Sign in"}
+                {authMutation.isPending ? (
+                  <>
+                    <span aria-hidden="true" className="auth-submit-spinner" />
+                    {isSignup
+                      ? isBootstrap
+                        ? "Creating workspace…"
+                        : "Creating account…"
+                      : "Signing in…"}
+                  </>
+                ) : isSignup ? (
+                  isBootstrap ? "Create workspace" : "Create account"
+                ) : (
+                  "Sign in"
+                )}
                 {!authMutation.isPending && <span aria-hidden="true">→</span>}
               </button>
             </form>

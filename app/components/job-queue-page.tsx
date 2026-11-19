@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   getPageSpeedScanJobs,
   getWebsiteCrawlJobs,
   retryPageSpeedScanJob,
+  retryPageSpeedScanJobs,
   retryWebsiteCrawlJob,
+  retryWebsiteCrawlJobs,
   type PageSpeedScanJob,
   type WebsiteCrawlJobResponse,
 } from "@/lib/api";
@@ -17,6 +20,7 @@ import {
   type QueueJobStatus,
 } from "@/lib/job-format";
 import { formatSiteType } from "@/lib/site-type";
+import { useToast } from "./toast-provider";
 
 type QueueKind = "crawler" | "pagespeed";
 
@@ -80,6 +84,8 @@ function normalizePageSpeedJob(job: PageSpeedScanJob): QueueJob {
 
 export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const config = queueConfig[kind];
+  const queueLabel = kind === "crawler" ? "indexing" : "PageSpeed";
+  const showToast = useToast();
   const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
     "all",
   );
@@ -105,31 +111,65 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       }
     },
     onSuccess: async () => {
+      showToast({
+        type: "success",
+        title: "Retry queued",
+        message: `The ${queueLabel} job was returned to the queue.`,
+      });
       await jobsQuery.refetch();
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not retry job",
+        message: error.message,
+      });
     },
   });
   const retryAllMutation = useMutation({
     mutationFn: async (failedJobs: QueueJob[]) => {
-      let retriedCount = 0;
-      const failures: { websiteUrl: string; message: string }[] = [];
+      const result =
+        kind === "crawler"
+          ? await retryWebsiteCrawlJobs(failedJobs.map((job) => job.id))
+          : await retryPageSpeedScanJobs(failedJobs.map((job) => job.id));
+      const jobsById = new Map(failedJobs.map((job) => [job.id, job]));
 
-      for (const job of failedJobs) {
-        try {
-          await retryWebsiteCrawlJob(job.id);
-          retriedCount += 1;
-        } catch (error) {
-          failures.push({
-            websiteUrl: job.websiteUrl,
-            message:
-              error instanceof Error ? error.message : "Unexpected error.",
-          });
-        }
-      }
-
-      return { total: failedJobs.length, retriedCount, failures };
+      return {
+        total: failedJobs.length,
+        retriedCount: result.retried_job_ids.length,
+        failures: result.failures.map((failure) => ({
+          websiteUrl:
+            jobsById.get(failure.job_id)?.websiteUrl ?? failure.job_id,
+          message: failure.message,
+        })),
+        queueLabel: kind === "crawler" ? "indexing" : "PageSpeed",
+      };
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if (result.failures.length > 0) {
+        showToast({
+          type: result.retriedCount > 0 ? "warning" : "error",
+          title:
+            result.retriedCount > 0
+              ? "Some retries were not queued"
+              : "Could not retry jobs",
+          message: `Retried ${result.retriedCount} of ${result.total} failed ${result.queueLabel} jobs. See the details below.`,
+        });
+      } else {
+        showToast({
+          type: "success",
+          title: "Retries queued",
+          message: `${result.retriedCount} failed ${result.queueLabel} jobs were returned to the queue.`,
+        });
+      }
       await jobsQuery.refetch();
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: `Could not retry failed ${queueLabel} jobs`,
+        message: error.message,
+      });
     },
   });
   const jobs = jobsQuery.data ?? [];
@@ -141,7 +181,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const failedJobs = jobs.filter((job) => job.status === "failed");
   const failedCount = failedJobs.length;
   const visibleJobs =
-    kind === "crawler" && statusFilter !== "all"
+    statusFilter !== "all"
       ? jobs.filter((job) => job.status === statusFilter)
       : jobs;
 
@@ -153,14 +193,21 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <h1>{config.title}</h1>
           <p className="heading-copy">{config.description}</p>
         </div>
-        <button
-          className="button button-secondary"
-          disabled={jobsQuery.isFetching}
-          onClick={() => void jobsQuery.refetch()}
-          type="button"
-        >
-          {jobsQuery.isFetching ? "Refreshing..." : "Refresh"}
-        </button>
+        <div className="queue-heading-actions">
+          {kind === "crawler" && (
+            <Link className="button button-secondary" href="/jobs/import">
+              Import CSV
+            </Link>
+          )}
+          <button
+            className="button button-secondary"
+            disabled={jobsQuery.isFetching}
+            onClick={() => void jobsQuery.refetch()}
+            type="button"
+          >
+            {jobsQuery.isFetching ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </header>
 
       <section aria-label="Queue summary" className="queue-stats-grid">
@@ -175,38 +222,18 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           Could not refresh the queue: {jobsQuery.error.message}
         </p>
       )}
-      {retryMutation.isError && (
-        <p className="alert alert-error" role="alert">
-          Could not retry the job: {retryMutation.error.message}
-        </p>
-      )}
-      {retryAllMutation.isError && (
-        <p className="alert alert-error" role="alert">
-          Could not retry failed indexing jobs: {retryAllMutation.error.message}
-        </p>
-      )}
-      {retryAllMutation.data && (
-        <p
-          className={`alert ${
-            retryAllMutation.data.failures.length
-              ? "alert-error"
-              : "alert-success"
-          }`}
-          role="status"
-        >
-          Queued {retryAllMutation.data.retriedCount} of{" "}
-          {retryAllMutation.data.total} failed indexing jobs for retry.
-          {retryAllMutation.data.failures.length > 0 && (
-            <>
-              {" "}
-              {retryAllMutation.data.failures.length} could not be retried.
-              First failure for{" "}
-              {retryAllMutation.data.failures[0].websiteUrl}:{" "}
-              {retryAllMutation.data.failures[0].message}
-            </>
-          )}
-        </p>
-      )}
+      {retryAllMutation.data &&
+        retryAllMutation.data.failures.length > 0 && (
+          <p className="alert alert-error" role="alert">
+            Queued {retryAllMutation.data.retriedCount} of{" "}
+            {retryAllMutation.data.total} failed{" "}
+            {retryAllMutation.data.queueLabel} jobs for retry.{" "}
+            {retryAllMutation.data.failures.length} could not be retried.
+            First failure for{" "}
+            {retryAllMutation.data.failures[0].websiteUrl}:{" "}
+            {retryAllMutation.data.failures[0].message}
+          </p>
+        )}
 
       <section aria-labelledby="queue-jobs-heading" className="panel queue-panel">
         <div className="queue-panel-heading">
@@ -217,46 +244,49 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
               Job status updates are streamed in real time.
             </p>
           </div>
-          {kind === "crawler" && (
-            <div className="queue-panel-controls">
-              {failedCount > 0 && (
-                <button
-                  className="button button-secondary queue-retry-button"
-                  disabled={
-                    retryAllMutation.isPending ||
-                    retryMutation.isPending
-                  }
-                  onClick={() => retryAllMutation.mutate(failedJobs)}
-                  title={`Retry all ${failedCount} failed indexing jobs in the recent jobs list`}
-                  type="button"
-                >
-                  {retryAllMutation.isPending
-                    ? "Retrying all..."
-                    : `Retry all (${failedCount})`}
-                </button>
-              )}
-              <label className="select-filter queue-status-filter">
-                <span className="sr-only">Filter indexing jobs by status</span>
-                <select
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setStatusFilter(
-                      value === "all" || isQueueJobStatus(value)
-                        ? value
-                        : "all",
-                    );
-                  }}
-                  value={statusFilter}
-                >
-                  <option value="all">All statuses</option>
-                  <option value="queued">Queued</option>
-                  <option value="running">Running</option>
-                  <option value="succeeded">Finished</option>
-                  <option value="failed">Failed</option>
-                </select>
-              </label>
-            </div>
-          )}
+          <div className="queue-panel-controls">
+            {failedCount > 0 && (
+              <button
+                className="button button-secondary queue-retry-button"
+                disabled={
+                  retryAllMutation.isPending ||
+                  retryMutation.isPending
+                }
+                onClick={() => retryAllMutation.mutate(failedJobs)}
+                title={`Retry all ${failedCount} failed ${
+                  kind === "crawler" ? "indexing" : "PageSpeed"
+                } jobs in the recent jobs list`}
+                type="button"
+              >
+                {retryAllMutation.isPending
+                  ? "Retrying all..."
+                  : `Retry all (${failedCount})`}
+              </button>
+            )}
+            <label className="select-filter queue-status-filter">
+              <span className="sr-only">
+                Filter {kind === "crawler" ? "indexing" : "PageSpeed"} jobs by
+                status
+              </span>
+              <select
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setStatusFilter(
+                    value === "all" || isQueueJobStatus(value)
+                      ? value
+                      : "all",
+                  );
+                }}
+                value={statusFilter}
+              >
+                <option value="all">All statuses</option>
+                <option value="queued">Queued</option>
+                <option value="running">Running</option>
+                <option value="succeeded">Finished</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         {jobsQuery.isLoading ? (

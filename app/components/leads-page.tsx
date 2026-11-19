@@ -13,6 +13,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { useToast } from "./toast-provider";
 import {
   createCompany,
   deleteCompany,
@@ -86,6 +87,7 @@ export function LeadsPage({
 }) {
   const isCompanyDatabaseView = view === "companies";
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const shouldOpenAddCompany =
@@ -183,9 +185,14 @@ export function LeadsPage({
       companyId: string;
       input: CompanyUpdateInput;
     }) => updateCompany(companyId, input),
-    onSuccess: async () => {
+    onSuccess: async (updatedCompany) => {
       await queryClient.invalidateQueries({ queryKey: ["companies"] });
       setEditingCompanyId(null);
+      showToast({
+        type: "success",
+        title: "Company updated",
+        message: `${updatedCompany.name} changes were saved.`,
+      });
     },
   });
   const statusMutation = useMutation({
@@ -196,7 +203,14 @@ export function LeadsPage({
       companyId: string;
       leadStatus: string;
     }) => updateLeadStatus(companyId, leadStatus),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["companies"] }),
+    onSuccess: async (updatedCompany) => {
+      await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      showToast({
+        type: "success",
+        title: "Lead status updated",
+        message: `${updatedCompany.name} is now marked ${updatedCompany.lead_status.replaceAll("_", " ")}.`,
+      });
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: deleteCompany,
@@ -204,6 +218,11 @@ export function LeadsPage({
       await queryClient.invalidateQueries({ queryKey: ["companies"] });
       setConfirmDeleteId(null);
       setExpandedCompanyId(null);
+      showToast({
+        type: "success",
+        title: "Company deleted",
+        message: "The company was removed from your pipeline.",
+      });
     },
   });
 

@@ -27,6 +27,7 @@ import type {
   PageSpeedAudit,
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
+import { useToast } from "./toast-provider";
 
 const leadStatuses = [
   "new",
@@ -60,6 +61,7 @@ export function CompanyDetailPage({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleteConfirmed, setIsDeleteConfirmed] = useState(false);
   const [isCompanyInfoExpanded, setIsCompanyInfoExpanded] = useState(false);
@@ -173,6 +175,11 @@ export function CompanyDetailPage({
           queryClient.invalidateQueries({ queryKey: ["companies"] }),
         ]);
       }
+      showToast({
+        type: "success",
+        title: "PageSpeed scan complete",
+        message: `${scan.strategy === "mobile" ? "Mobile" : "Desktop"} results are ready.`,
+      });
     },
   });
   const updateMutation = useMutation({
@@ -191,6 +198,11 @@ export function CompanyDetailPage({
         }),
       ]);
       setIsEditing(false);
+      showToast({
+        type: "success",
+        title: "Company updated",
+        message: `${updatedCompany.name} changes were saved.`,
+      });
     },
   });
   const statusMutation = useMutation({
@@ -205,6 +217,11 @@ export function CompanyDetailPage({
     onSuccess: async (updatedCompany) => {
       queryClient.setQueryData(["company", updatedCompany.id], updatedCompany);
       await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      showToast({
+        type: "success",
+        title: "Lead status updated",
+        message: `${updatedCompany.name} is now marked ${updatedCompany.lead_status.replaceAll("_", " ")}.`,
+      });
     },
   });
   const deleteMutation = useMutation({
@@ -216,6 +233,11 @@ export function CompanyDetailPage({
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      showToast({
+        type: "success",
+        title: "Company deleted",
+        message: "The company was removed from your pipeline.",
+      });
       router.push("/leads");
     },
   });
@@ -237,6 +259,11 @@ export function CompanyDetailPage({
       setIsContactFormOpen(false);
       setContactForm({ ...emptyContactForm });
       setContactInteractionCompanyId(null);
+      showToast({
+        type: "success",
+        title: "Contact added",
+        message: "The contact was added to this company.",
+      });
     },
   });
   const updateContactMutation = useMutation({
@@ -264,6 +291,11 @@ export function CompanyDetailPage({
       setEditingContactId(null);
       setContactForm({ ...emptyContactForm });
       setContactInteractionCompanyId(null);
+      showToast({
+        type: "success",
+        title: "Contact updated",
+        message: "The contact changes were saved.",
+      });
     },
   });
   const deleteContactMutation = useMutation({
@@ -283,6 +315,11 @@ export function CompanyDetailPage({
       ]);
       setDeletingContactId(null);
       setContactInteractionCompanyId(null);
+      showToast({
+        type: "success",
+        title: "Contact deleted",
+        message: "The contact was removed from this company.",
+      });
     },
   });
   useEffect(() => {

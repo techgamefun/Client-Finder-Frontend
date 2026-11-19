@@ -26,6 +26,7 @@ import {
   type EmailCampaignInput,
   type EmailCampaignPreview,
 } from "@/lib/api";
+import { useToast } from "./toast-provider";
 
 interface CampaignPreviewState {
   campaignId: string;
@@ -52,6 +53,7 @@ export function EmailCampaignsPage() {
   const searchParams = useSearchParams();
   const shouldCreateFromQuery = searchParams.get("create") === "1";
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(
     null,
   );
@@ -258,6 +260,11 @@ export function EmailCampaignsPage() {
       setPendingAudienceError("");
       router.replace("/campaigns", { scroll: false });
       await invalidateCampaignQueries(campaign.id);
+      showToast({
+        type: "success",
+        title: "Campaign created",
+        message: `${campaign.name} is ready to configure.`,
+      });
     },
   });
   const previewMutation = useMutation({
@@ -288,17 +295,36 @@ export function EmailCampaignsPage() {
       setPreviewState(null);
       setCompanySelection({ campaignId: campaign.id, ids: [] });
       await invalidateCampaignQueries(campaign.id);
+      showToast({
+        type: "success",
+        title: "Campaign started",
+        message: `${campaign.name} has been queued for sending.`,
+      });
     },
   });
   const pauseMutation = useMutation({
     mutationFn: (campaignId: string) =>
       pauseEmailCampaign(organizationId, campaignId),
-    onSuccess: (campaign) => invalidateCampaignQueries(campaign.id),
+    onSuccess: async (campaign) => {
+      await invalidateCampaignQueries(campaign.id);
+      showToast({
+        type: "success",
+        title: "Campaign paused",
+        message: `${campaign.name} will not send additional messages until resumed.`,
+      });
+    },
   });
   const resumeMutation = useMutation({
     mutationFn: (campaignId: string) =>
       resumeEmailCampaign(organizationId, campaignId),
-    onSuccess: (campaign) => invalidateCampaignQueries(campaign.id),
+    onSuccess: async (campaign) => {
+      await invalidateCampaignQueries(campaign.id);
+      showToast({
+        type: "success",
+        title: "Campaign resumed",
+        message: `${campaign.name} is active again.`,
+      });
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: (campaignId: string) =>
@@ -313,6 +339,11 @@ export function EmailCampaignsPage() {
       setCompanySelection({ campaignId: null, ids: [] });
       setCompanySelectionError("");
       await invalidateCampaignQueries(campaignId);
+      showToast({
+        type: "success",
+        title: "Campaign deleted",
+        message: "The campaign was removed.",
+      });
     },
   });
 

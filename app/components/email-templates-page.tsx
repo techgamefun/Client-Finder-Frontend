@@ -18,6 +18,7 @@ import {
   type EmailTemplate,
   type EmailTemplateInput,
 } from "@/lib/api";
+import { useToast } from "./toast-provider";
 
 const emptyDraft: EmailTemplateInput = {
   name: "",
@@ -30,6 +31,7 @@ export function EmailTemplatesPage() {
   const searchParams = useSearchParams();
   const shouldCreateFromQuery = searchParams.get("create") === "1";
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const nameInputRef = useRef<HTMLInputElement>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
@@ -115,7 +117,7 @@ export function EmailTemplatesPage() {
       templateId
         ? updateEmailTemplate(organizationId, templateId, input)
         : createEmailTemplate(organizationId, input),
-    onSuccess: async (template) => {
+    onSuccess: async (template, variables) => {
       await queryClient.invalidateQueries({
         queryKey: ["email-templates", organizationId],
       });
@@ -124,6 +126,11 @@ export function EmailTemplatesPage() {
       setEditorOpen(false);
       setPreview(null);
       setSendResult(null);
+      showToast({
+        type: "success",
+        title: variables.templateId ? "Template updated" : "Template created",
+        message: `${template.name} was saved.`,
+      });
     },
   });
   const resetSaveMutation = saveMutation.reset;
@@ -138,6 +145,11 @@ export function EmailTemplatesPage() {
       setDeleteConfirmationOpen(false);
       setPreview(null);
       setSendResult(null);
+      showToast({
+        type: "success",
+        title: "Template deleted",
+        message: "The email template was removed.",
+      });
     },
   });
   const previewMutation = useMutation({

@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { getQueueEventsWebSocketUrl } from "@/lib/api";
+import { ToastProvider } from "./components/toast-provider";
 
 type QueueJobEvent = {
   kind: "crawler" | "pagespeed";
@@ -32,8 +33,10 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <QueueEventsListener />
-      {children}
+      <ToastProvider>
+        <QueueEventsListener />
+        {children}
+      </ToastProvider>
     </QueryClientProvider>
   );
 }
@@ -61,7 +64,12 @@ function QueueEventsListener() {
               ["company"],
               ["overview"],
             ]
-          : [["pagespeed", "queue-jobs"], ["company"], ["overview"]];
+          : [
+              ["pagespeed", "queue-jobs"],
+              ["company"],
+              ["website-detail"],
+              ["overview"],
+            ];
       for (const queryKey of queryKeys) {
         void queryClient.invalidateQueries({ queryKey });
       }

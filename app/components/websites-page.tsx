@@ -27,6 +27,7 @@ import type {
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
 import { CrawlWebsiteDialog } from "./crawler-page";
+import { useToast } from "./toast-provider";
 
 const pageTypes: WebsitePageType[] = [
   "business_site",
@@ -216,6 +217,7 @@ export function WebsitesPage() {
   const searchParams = useSearchParams();
   const shouldOpenCrawlDialog = searchParams.get("crawl") === "1";
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const websiteScrollTimerRef = useRef<number | null>(null);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
 
@@ -274,12 +276,19 @@ export function WebsitesPage() {
       websiteId: string;
       input: WebsiteUpdateInput;
     }) => updateWebsite(websiteId, input),
-    onSuccess: (updatedWebsite) => {
+    onSuccess: (updatedWebsite, variables) => {
       queryClient.setQueryData<WebsiteRecord[]>(["websites"], (websites) =>
         websites?.map((website) =>
           website.id === updatedWebsite.id ? updatedWebsite : website,
         ),
       );
+      if (variables.input.status) {
+        showToast({
+          type: "success",
+          title: "Website status updated",
+          message: `${updatedWebsite.domain} is now marked ${formatWebsiteStatus(updatedWebsite.status)}.`,
+        });
+      }
     },
   });
   const addToLeadMutation = useMutation({

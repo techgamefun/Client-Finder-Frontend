@@ -31,6 +31,7 @@ import type {
 } from "@/lib/api";
 import { TAVILY_COUNTRIES, TAVILY_DIRECTORY_BLOCKLIST } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
+import { useToast } from "./toast-provider";
 
 const suggestedQueries = [
   "B2B SaaS companies in Austin",
@@ -40,6 +41,7 @@ const suggestedQueries = [
 
 export function DiscoveryPage() {
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [searchText, setSearchText] = useState("");
   const [saveResult, setSaveResult] =
     useState<DiscoveryWebsiteSaveResponse | null>(null);
@@ -164,6 +166,11 @@ export function DiscoveryPage() {
     onSuccess: (settings) => {
       setPreferenceError("");
       queryClient.setQueryData(["application-settings"], settings);
+      showToast({
+        type: "success",
+        title: "Discovery preferences saved",
+        message: "Your selected search providers are ready to use.",
+      });
     },
     onError: (error: Error) => setPreferenceError(error.message),
   });

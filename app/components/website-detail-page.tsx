@@ -20,11 +20,15 @@ import type { ReactNode } from "react";
 import {
   crawlWebsite,
   getWebsiteDetail,
+  getWebsitePageSpeedScan,
   refetchWebsiteHypeStat,
   updateWebsite,
 } from "@/lib/api";
 import type {
   CrawlPageClassification,
+  PageSpeedAudit,
+  PageSpeedScanReport,
+  PageSpeedScanSummary,
   WebsiteCrawlJobHistory,
   WebsiteDetailResponse,
   WebsiteStatus,
@@ -37,6 +41,7 @@ const uuidPattern =
 
 const WEBSITE_PROFILE_SECTIONS = [
   ["overview", "Overview"],
+  ["pagespeed", "PageSpeed"],
   ["content", "Content"],
   ["contacts", "Contacts"],
   ["signals", "Signals"],
@@ -90,6 +95,9 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState("overview");
   const [showCompactHeader, setShowCompactHeader] = useState(false);
+  const [expandedPageSpeedScanId, setExpandedPageSpeedScanId] = useState<
+    string | null
+  >(null);
   const {
     website,
     crawl,
@@ -160,7 +168,26 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
     mutationFn: () => refetchWebsiteHypeStat(website.id),
     onSuccess: invalidateWebsite,
   });
+  const pageSpeedQuery = useQuery({
+    queryKey: [
+      "website-pagespeed-scan",
+      website.id,
+      expandedPageSpeedScanId,
+    ],
+    queryFn: () => {
+      if (expandedPageSpeedScanId === null) {
+        throw new Error("Select a PageSpeed scan to view its report.");
+      }
+      return getWebsitePageSpeedScan(website.id, expandedPageSpeedScanId);
+    },
+    enabled: expandedPageSpeedScanId !== null,
+  });
   const isCrawled = website.is_crawled || crawlStatus === "succeeded";
+  const expandedPageSpeedReport =
+    expandedPageSpeedScanId !== null &&
+    pageSpeedQuery.data?.id === expandedPageSpeedScanId
+      ? pageSpeedQuery.data
+      : null;
 
   return (
     <div className="company-detail-page website-detail-page">
@@ -311,6 +338,22 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
 
       <div className="profile-content-layout">
         <div className="profile-main-column">
+          <PageSpeedSection
+            audits={Object.entries(
+              expandedPageSpeedReport?.report.lighthouseResult.audits ?? {},
+            )}
+            error={pageSpeedQuery.error?.message}
+            expandedReport={expandedPageSpeedReport}
+            expandedScanId={expandedPageSpeedScanId}
+            isLoading={pageSpeedQuery.isPending}
+            isCrawled={isCrawled}
+            onToggleScan={(scanId) =>
+              setExpandedPageSpeedScanId((current) =>
+                current === scanId ? null : scanId,
+              )
+            }
+            scans={data.pagespeed_scans}
+          />
           <section className="profile-card" id="content">
             <SectionHeading
               count={crawlPages.length}
@@ -394,6 +437,159 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
         />
       </div>
     </div>
+  );
+}
+
+function PageSpeedSection({
+  audits,
+  error,
+  expandedReport,
+  expandedScanId,
+  isCrawled,
+  isLoading,
+  onToggleScan,
+  scans,
+}: {
+  audits: [string, PageSpeedAudit][];
+  error: string | undefined;
+  expandedReport: PageSpeedScanReport | null;
+  expandedScanId: string | null;
+  isCrawled: boolean;
+  isLoading: boolean;
+  onToggleScan: (scanId: string) => void;
+  scans: PageSpeedScanSummary[];
+}) {
+  return (
+    <section className="profile-card" id="pagespeed">
+      <SectionHeading count={scans.length} title="PageSpeed insights" />
+      {scans.length ? (
+        <>
+          <p className="website-pagespeed-caption">
+            Google Lighthouse scores from recent mobile and desktop scans.
+          </p>
+          <div className="website-pagespeed-list">
+            {scans.map((scan) => {
+              const isExpanded = expandedScanId === scan.id;
+              const auditListId = `website-pagespeed-audits-${scan.id}`;
+              return (
+                <article className="website-pagespeed-scan" key={scan.id}>
+                  <header className="website-pagespeed-heading">
+                    <h3>{scan.strategy} scan</h3>
+                    <time dateTime={scan.scanned_at}>
+                      {formatAbsoluteDate(scan.scanned_at)}
+                    </time>
+                  </header>
+                  <div className="website-pagespeed-scores">
+                    {[
+                      ["Performance", "performance"],
+                      ["Accessibility", "accessibility"],
+                      ["Best practices", "best-practices"],
+                      ["SEO", "seo"],
+                    ].map(([label, category]) => (
+                      <PageSpeedScore
+                        key={category}
+                        label={label}
+                        score={scan.category_scores[category]}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    aria-controls={isExpanded ? auditListId : undefined}
+                    aria-expanded={isExpanded}
+                    className="website-pagespeed-toggle"
+                    onClick={() => onToggleScan(scan.id)}
+                    type="button"
+                  >
+                    {isExpanded
+                      ? "Hide Lighthouse audits"
+                      : "View Lighthouse audits"}
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={isExpanded ? "is-open" : ""}
+                      size={15}
+                    />
+                  </button>
+                  {isExpanded && isLoading && (
+                    <p className="profile-empty">Loading audit details…</p>
+                  )}
+                  {isExpanded && error && (
+                    <p className="website-pagespeed-error" role="alert">
+                      Could not load Lighthouse audits: {error}
+                    </p>
+                  )}
+                  {isExpanded && expandedReport && (
+                    <div
+                      className="website-pagespeed-audits"
+                      id={auditListId}
+                    >
+                      <p className="website-pagespeed-version">
+                        Lighthouse{" "}
+                        {expandedReport.report.lighthouseResult
+                          .lighthouseVersion ?? "version unavailable"}
+                      </p>
+                      {audits.map(([id, audit]) => (
+                        <PageSpeedAuditItem audit={audit} key={id} />
+                      ))}
+                      {audits.length === 0 && (
+                        <p className="profile-empty">
+                          No detailed Lighthouse audits were included.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <p className="profile-empty website-pagespeed-empty">
+          {isCrawled
+            ? "No completed PageSpeed scans are available yet."
+            : "PageSpeed scans are queued after the first successful crawl."}{" "}
+          <Link href="/jobs?tab=pagespeed">View the PageSpeed queue</Link>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function PageSpeedScore({
+  label,
+  score,
+}: {
+  label: string;
+  score: number | null | undefined;
+}) {
+  const tone =
+    score === null || score === undefined
+      ? "unknown"
+      : score >= 90
+        ? "good"
+        : score >= 50
+          ? "needs-work"
+          : "poor";
+  return (
+    <div className="website-pagespeed-score">
+      <span>{label}</span>
+      <strong className={`is-${tone}`}>
+        {score === null || score === undefined ? "—" : score}
+        <small>{score === null || score === undefined ? "" : " / 100"}</small>
+      </strong>
+    </div>
+  );
+}
+
+function PageSpeedAuditItem({ audit }: { audit: PageSpeedAudit }) {
+  return (
+    <article className="website-pagespeed-audit">
+      <strong>{audit.title ?? "Unnamed audit"}</strong>
+      {audit.description && <p>{audit.description}</p>}
+      {audit.displayValue && <span>{audit.displayValue}</span>}
+      {audit.score !== null && audit.score !== undefined && (
+        <span>Score: {Math.round(audit.score * 100)}/100</span>
+      )}
+    </article>
   );
 }
 
