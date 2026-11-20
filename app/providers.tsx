@@ -12,7 +12,7 @@ import { ToastProvider } from "./components/toast-provider";
 type QueueJobEvent = {
   kind: "crawler" | "pagespeed";
   id: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
 };
 
 export function Providers({ children }: { children: ReactNode }) {

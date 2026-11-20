@@ -427,9 +427,10 @@ export interface PageClassificationSignals {
 export interface WebsiteCrawlJobResponse {
   id: string;
   website_url: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
   attempts: number;
   error: string | null;
+  skip_reason: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -440,6 +441,8 @@ export interface WebsiteCrawlJobResponse {
 export interface WebsiteCrawlBatchJobResponse {
   id: string;
   website_url: string;
+  status: "queued" | "skipped";
+  skip_reason: string | null;
 }
 
 export interface WebsiteCrawlBatchResponse {
@@ -448,13 +451,42 @@ export interface WebsiteCrawlBatchResponse {
 
 export interface WebsiteCrawlJobHistory {
   id: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
   attempts: number;
   error: string | null;
+  skip_reason: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
   completed_at: string | null;
+}
+
+export type ExcludedDomainReason =
+  | "Big Tech / Social"
+  | "Manual Exclusion"
+  | "Unreachable"
+  | "Blocked (403/429)";
+
+export type ExcludedDomainSource =
+  | "system_preset"
+  | "user"
+  | "auto_crawler";
+
+export interface ExcludedDomainRecord {
+  id: string;
+  domain: string;
+  reason: ExcludedDomainReason;
+  note: string | null;
+  source: ExcludedDomainSource;
+  failure_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExcludedDomainInput {
+  domain: string;
+  reason: ExcludedDomainReason;
+  note?: string;
 }
 
 export interface WebsiteRecord {
@@ -464,7 +496,13 @@ export interface WebsiteRecord {
   favicon_url: string | null;
   crawl_id: string | null;
   is_crawled: boolean;
-  crawl_job_status: "queued" | "running" | "succeeded" | "failed" | null;
+  crawl_job_status:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | null;
   category: string | null;
   page_type: WebsitePageType | null;
   site_topic: string[];
@@ -1748,6 +1786,33 @@ export function getWebsiteCrawlJob(
 
 export function getWebsiteCrawlJobs(): Promise<WebsiteCrawlJobResponse[]> {
   return request<WebsiteCrawlJobResponse[]>("/crawler/jobs?limit=100");
+}
+
+export function getExcludedDomains(
+  search = "",
+  reason?: ExcludedDomainReason,
+): Promise<ExcludedDomainRecord[]> {
+  const query = new URLSearchParams({ limit: "500" });
+  if (search.trim()) query.set("search", search.trim());
+  if (reason) query.set("reason", reason);
+  return request<ExcludedDomainRecord[]>(
+    `/excluded-domains?${query.toString()}`,
+  );
+}
+
+export function addExcludedDomain(
+  input: ExcludedDomainInput,
+): Promise<ExcludedDomainRecord> {
+  return request<ExcludedDomainRecord>("/excluded-domains", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteExcludedDomain(domainId: string): Promise<void> {
+  return request<void>(`/excluded-domains/${domainId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function getWebsites(): Promise<WebsiteRecord[]> {

@@ -1651,6 +1651,7 @@ function CrawlActivity({
                 <span>{job.attempts} attempts</span>
                 <AbsoluteTime value={job.created_at} />
                 {job.error && <p>{job.error}</p>}
+                {job.skip_reason && <p>Skipped: {job.skip_reason}</p>}
               </li>
             ))}
           </ul>
@@ -2366,9 +2367,12 @@ function formatDiscoverySource(
   return [...new Set(values)].join(" · ") || "Not reported";
 }
 
-function getStatusTone(status: string): "succeeded" | "failed" | "pending" {
+function getStatusTone(
+  status: string,
+): "succeeded" | "failed" | "pending" | "skipped" {
   if (status === "succeeded") return "succeeded";
   if (status === "failed") return "failed";
+  if (status === "skipped") return "skipped";
   return "pending";
 }
 
