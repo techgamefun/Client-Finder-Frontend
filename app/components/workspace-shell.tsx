@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -395,10 +396,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </nav>
         <AccountMenu
           email={sessionQuery.data.user.email}
+          profilePhotoUrl={sessionQuery.data.user.profile_photo_url}
           logoutPending={logoutMutation.isPending}
           onLogout={() => logoutMutation.mutate()}
           onNavigate={() => setMobileMenuOpen(false)}
           onThemeChange={persistThemePreference}
+          organizationLogoUrl={sessionQuery.data.organization_logo_url}
           organizationName={sessionQuery.data.organization_name}
           role={sessionQuery.data.user.role}
           themePreference={themePreference}
@@ -542,6 +545,18 @@ function getWorkspaceBreadcrumbs(
 ): WorkspaceBreadcrumb[] {
   const pathname = location.split("?")[0] ?? "/";
   const companyDetailMatch = pathname.match(/^\/company\/([^/]+)$/);
+  if (pathname === "/organization/settings") {
+    return [
+      { label: "Organization", href: "/organization" },
+      { label: "Settings" },
+    ];
+  }
+  if (pathname === "/organization/members") {
+    return [
+      { label: "Organization", href: "/organization" },
+      { label: "Members" },
+    ];
+  }
   if (/^\/organization\/members\/[^/]+$/.test(pathname)) {
     return [
       { label: "Organization", href: "/organization" },
@@ -676,6 +691,8 @@ const workspaceRoutes = new Set([
   "/login",
   "/overview",
   "/organization",
+  "/organization/members",
+  "/organization/settings",
   "/pagespeed-queue",
   "/settings",
   "/signup",
@@ -1264,7 +1281,9 @@ function AccountMenu({
   onLogout,
   onNavigate,
   onThemeChange,
+  organizationLogoUrl,
   organizationName,
+  profilePhotoUrl,
   role,
   themePreference,
 }: {
@@ -1273,7 +1292,9 @@ function AccountMenu({
   onLogout: () => void;
   onNavigate: () => void;
   onThemeChange: (preference: ThemePreference) => void;
+  organizationLogoUrl: string | null;
   organizationName: string;
+  profilePhotoUrl: string | null;
   role: NavigationRole;
   themePreference: ThemePreference;
 }) {
@@ -1331,12 +1352,35 @@ function AccountMenu({
         type="button"
       >
         <span aria-hidden="true" className="avatar account-avatar">
-          {initials}
+          {profilePhotoUrl ? (
+            <Image
+              alt=""
+              height={34}
+              src={profilePhotoUrl}
+              unoptimized
+              width={34}
+            />
+          ) : (
+            initials
+          )}
         </span>
         <span className="account-trigger-copy">
           <span className="account-trigger-email">{email}</span>
           <span className="account-trigger-organization">
-            {organizationName}
+            {organizationLogoUrl ? (
+              <Image
+                alt=""
+                height={14}
+                src={organizationLogoUrl}
+                unoptimized
+                width={14}
+              />
+            ) : (
+              <Building2 aria-hidden="true" size={12} />
+            )}
+            <span className="account-trigger-organization-name">
+              {organizationName}
+            </span>
           </span>
         </span>
         <ChevronDown

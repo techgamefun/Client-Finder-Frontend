@@ -708,14 +708,17 @@ export class ApiError extends Error {
 let refreshRequest: Promise<boolean> | undefined;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  const isMultipartBody =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
+  if (!isMultipartBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const sendRequest = () =>
     fetch(`${API_BASE_URL}${path}`, {
       ...init,
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
+      headers,
     });
 
   let response = await sendRequest();
@@ -775,20 +778,62 @@ export interface AuthSession {
   user: {
     id: string;
     email: string;
+    first_name: string | null;
+    last_name: string | null;
     role: "admin" | "user";
     is_active: boolean;
     created_at: string;
+    profile_photo_url: string | null;
   };
   organization_id: string;
   organization_name: string;
+  organization_description: string | null;
+  organization_logo_url: string | null;
+  organization_banner_url: string | null;
 }
 
 export interface OrganizationUser {
   id: string;
   email: string;
+  first_name: string | null;
+  last_name: string | null;
   role: "admin" | "user";
   is_active: boolean;
   created_at: string;
+  profile_photo_url: string | null;
+}
+
+export type OrganizationImageAsset = "logo" | "banner";
+
+export function uploadProfilePhoto(file: File): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<{ url: string }>("/media/profile-photo", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function deleteProfilePhoto(): Promise<void> {
+  return request("/media/profile-photo", { method: "DELETE" });
+}
+
+export function uploadOrganizationImage(
+  asset: OrganizationImageAsset,
+  file: File,
+): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<{ url: string }>(`/media/organization/${asset}`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function deleteOrganizationImage(
+  asset: OrganizationImageAsset,
+): Promise<void> {
+  return request(`/media/organization/${asset}`, { method: "DELETE" });
 }
 
 export interface GmailAccountAssignee {
@@ -1102,11 +1147,35 @@ export function getOrganizationUsers(): Promise<{ users: OrganizationUser[] }> {
 export function createOrganizationUser(input: {
   email: string;
   password: string;
+  first_name: string;
+  last_name: string;
   role: "admin" | "user";
 }): Promise<OrganizationUser> {
   return request<OrganizationUser>("/auth/users", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function updateOrganizationUserRole(
+  userId: string,
+  role: "admin" | "user",
+): Promise<OrganizationUser> {
+  return request<OrganizationUser>(
+    `/auth/users/${encodeURIComponent(userId)}/role`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    },
+  );
+}
+
+export function updateOrganizationDescription(
+  description: string | null,
+): Promise<{ description: string | null }> {
+  return request<{ description: string | null }>("/auth/organization", {
+    method: "PATCH",
+    body: JSON.stringify({ description }),
   });
 }
 

@@ -11,6 +11,7 @@ import {
 import {
   assignGmailAccount,
   changePassword,
+  deleteProfilePhoto,
   getApplicationSettings,
   getAuthSession,
   getConnectedGmailAccounts,
@@ -21,6 +22,7 @@ import {
   getTavilyUsage,
   removeGmailAssignment,
   updateApplicationSettings,
+  uploadProfilePhoto,
   type AuthSession,
   type ConnectedGmailAccount,
   type OctoparseTemplateConfiguration,
@@ -32,6 +34,7 @@ import {
 import { TAVILY_COUNTRIES } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
 import { EmailSuppressionSettings } from "./email-suppression-settings";
+import { ImageAssetEditor } from "./image-asset-editor";
 import { useToast } from "./toast-provider";
 
 const deploymentManagedSettings = [
@@ -1290,6 +1293,9 @@ export function SettingsPage() {
             className="panel settings-panel"
             hidden={activeSection !== "account"}
           >
+            {authSessionQuery.data && (
+              <ProfilePhotoPanel session={authSessionQuery.data} />
+            )}
             <ChangePasswordPanel />
           </section>
         </>
@@ -1501,6 +1507,48 @@ function ChangePasswordPanel() {
         </div>
       </form>
     </>
+  );
+}
+
+function ProfilePhotoPanel({ session }: { session: AuthSession }) {
+  const queryClient = useQueryClient();
+  const photoMutation = useMutation<
+    { url: string } | void,
+    Error,
+    File | null
+  >({
+    mutationFn: (file: File | null) =>
+      file ? uploadProfilePhoto(file) : deleteProfilePhoto(),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["auth-session"] }),
+        queryClient.invalidateQueries({ queryKey: ["organization-users"] }),
+      ]);
+    },
+  });
+
+  return (
+    <div className="settings-profile-photo">
+      <div>
+        <p className="eyebrow">MY ACCOUNT</p>
+        <h2>Profile photo</h2>
+        <p className="panel-subtitle">
+          Add a photo to personalize your account across the workspace.
+        </p>
+      </div>
+      <ImageAssetEditor
+        error={
+          photoMutation.isError ? photoMutation.error.message : undefined
+        }
+        fallback={session.user.email.slice(0, 1).toUpperCase()}
+        label="Your photo"
+        onRemove={() => photoMutation.mutate(null)}
+        onUpload={(file) => photoMutation.mutate(file)}
+        pending={photoMutation.isPending}
+        url={session.user.profile_photo_url}
+        variant="profile"
+      />
+    </div>
   );
 }
 

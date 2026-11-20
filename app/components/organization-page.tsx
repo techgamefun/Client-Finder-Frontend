@@ -1,22 +1,16 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Settings2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  createOrganizationUser,
   getAuthSession,
   getOrganizationUsers,
+  type AuthSession,
 } from "@/lib/api";
-import { formatTimestamp } from "@/lib/job-format";
-import { useToast } from "./toast-provider";
 
 export function OrganizationPage() {
-  const queryClient = useQueryClient();
-  const showToast = useToast();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "user">("user");
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
@@ -29,20 +23,6 @@ export function OrganizationPage() {
     enabled: isAdmin,
     retry: false,
   });
-  const createUserMutation = useMutation({
-    mutationFn: createOrganizationUser,
-    onSuccess: async (_user, variables) => {
-      setEmail("");
-      setPassword("");
-      setRole("user");
-      await queryClient.invalidateQueries({ queryKey: ["organization-users"] });
-      showToast({
-        type: "success",
-        title: "Organization user added",
-        message: `${variables.email} can now access this organization.`,
-      });
-    },
-  });
 
   if (sessionQuery.isLoading) {
     return (
@@ -51,7 +31,6 @@ export function OrganizationPage() {
       </div>
     );
   }
-
   if (sessionQuery.isError) {
     return (
       <p className="alert alert-error" role="alert">
@@ -59,7 +38,6 @@ export function OrganizationPage() {
       </p>
     );
   }
-
   if (!sessionQuery.data) {
     return (
       <div className="workspace-route-loading" role="status">
@@ -67,171 +45,100 @@ export function OrganizationPage() {
       </div>
     );
   }
-
   if (!isAdmin) {
     return (
       <section className="panel organization-access-panel" role="alert">
         <h1>Organization access restricted</h1>
-        <p>Only organization administrators can view this page.</p>
+        <p>Only organization administrators can manage this page.</p>
       </section>
     );
   }
 
-  const members = usersQuery.data?.users ?? [];
-
   return (
-    <>
-      <header className="page-heading organization-page-heading">
-        <div>
-          <p className="eyebrow">ADMINISTRATION</p>
-          <h1>Organization</h1>
-          <p className="heading-copy">
-            View your organization profile and manage the people who can access
-            it.
-          </p>
-        </div>
-      </header>
-
-      <section
-        aria-label="Organization profile"
-        className="organization-profile-grid"
+    <div className="organization-page">
+      <OrganizationHero session={sessionQuery.data} />
+      {usersQuery.isError && (
+        <p className="alert alert-error" role="alert">
+          Could not load the member count: {usersQuery.error.message}
+        </p>
+      )}
+      <Link
+        aria-label={`View ${usersQuery.data?.users.length ?? "organization"} members`}
+        className="organization-member-count-card"
+        href="/organization/members"
       >
-        <article className="panel organization-profile-card">
-          <span className="organization-profile-label">Organization name</span>
-          <strong>{sessionQuery.data.organization_name}</strong>
-        </article>
-        <article className="panel organization-profile-card">
-          <span className="organization-profile-label">Organization ID</span>
-          <code>{sessionQuery.data.organization_id}</code>
-        </article>
-        <article className="panel organization-profile-card">
-          <span className="organization-profile-label">Members</span>
+        <span className="organization-member-count-copy">
+          <span className="organization-member-count-label">Members</span>
           <strong>
             {usersQuery.isLoading ? "…" : usersQuery.data?.users.length ?? "—"}
           </strong>
-        </article>
-      </section>
+        </span>
+        <span className="organization-member-count-action">
+          Manage members
+          <ArrowRight aria-hidden="true" size={17} />
+        </span>
+      </Link>
+    </div>
+  );
+}
 
-      <section
-        aria-labelledby="organization-members-heading"
-        className="panel organization-members-panel"
-      >
-        <div className="organization-section-heading">
-          <div>
-            <h2 id="organization-members-heading">Organization members</h2>
-            <p className="panel-subtitle">
-              Members share organization business records. Each member manages
-              their own provider API keys.
+function OrganizationHero({ session }: { session: AuthSession }) {
+  return (
+    <section
+      aria-labelledby="organization-hero-title"
+      className="organization-hero"
+    >
+      <div className="organization-hero-background">
+        {session.organization_banner_url ? (
+          <Image
+            alt=""
+            className="organization-hero-banner"
+            fill
+            priority
+            sizes="(max-width: 700px) 100vw, 1200px"
+            src={session.organization_banner_url}
+            unoptimized
+          />
+        ) : (
+          <div className="organization-hero-placeholder" />
+        )}
+        <div aria-hidden="true" className="organization-hero-scrim" />
+      </div>
+
+      <div className="organization-hero-content">
+        <div className="organization-hero-main">
+          <span className="organization-hero-logo">
+            {session.organization_logo_url ? (
+              <Image
+                alt=""
+                height={76}
+                src={session.organization_logo_url}
+                unoptimized
+                width={76}
+              />
+            ) : (
+              session.organization_name.slice(0, 1).toUpperCase()
+            )}
+          </span>
+          <div className="organization-hero-copy">
+            <p className="eyebrow">ORGANIZATION</p>
+            <h1 id="organization-hero-title">{session.organization_name}</h1>
+            <p className="organization-hero-description">
+              {session.organization_description || "No description added."}
             </p>
           </div>
         </div>
 
-        <form
-          className="organization-member-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            createUserMutation.mutate({ email: email.trim(), password, role });
-          }}
-        >
-          <label>
-            <span>Email address</span>
-            <input
-              autoComplete="off"
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              type="email"
-              value={email}
-            />
-          </label>
-          <label>
-            <span>Temporary password</span>
-            <input
-              autoComplete="new-password"
-              minLength={12}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-          </label>
-          <label>
-            <span>Role</span>
-            <select
-              onChange={(event) =>
-                setRole(event.target.value === "admin" ? "admin" : "user")
-              }
-              value={role}
-            >
-              <option value="user">Member</option>
-              <option value="admin">Administrator</option>
-            </select>
-          </label>
-          <button
-            className="button button-primary"
-            disabled={createUserMutation.isPending}
-            type="submit"
+        <div className="organization-hero-settings-actions">
+          <Link
+            className="organization-hero-settings-link"
+            href="/organization/settings"
           >
-            {createUserMutation.isPending ? "Adding member…" : "Add member"}
-          </button>
-        </form>
-
-        {createUserMutation.isError && (
-          <p className="alert alert-error" role="alert">
-            Could not add member: {createUserMutation.error.message}
-          </p>
-        )}
-        {usersQuery.isError && (
-          <p className="alert alert-error" role="alert">
-            Could not load organization members: {usersQuery.error.message}
-          </p>
-        )}
-
-        {usersQuery.isLoading ? (
-          <p className="empty-copy">Loading members…</p>
-        ) : usersQuery.data ? (
-          <div className="table-scroll organization-member-table">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">Member</th>
-                  <th scope="col">Role</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Joined</th>
-                  <th scope="col">Activity</th>
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((member) => (
-                  <tr key={member.id}>
-                    <td>{member.email}</td>
-                    <td>
-                      {member.role === "admin" ? "Administrator" : "Member"}
-                    </td>
-                    <td>
-                      <span
-                        className={`organization-member-status ${
-                          member.is_active ? "is-active" : "is-inactive"
-                        }`}
-                      >
-                        {member.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td>{formatTimestamp(member.created_at)}</td>
-                    <td>
-                      <Link
-                        className="button button-secondary organization-member-view"
-                        href={`/organization/members/${encodeURIComponent(member.id)}`}
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </section>
-    </>
+            <Settings2 aria-hidden="true" size={15} />
+            Organization settings
+          </Link>
+        </div>
+      </div>
+    </section>
   );
 }
