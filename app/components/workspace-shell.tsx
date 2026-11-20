@@ -253,7 +253,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       !sessionQuery.isFetching
     ) {
       router.replace(
-        sessionQuery.data.user.role === "admin" ? "/admin" : "/overview",
+        sessionQuery.data.user.role === "admin"
+          ? "/organization"
+          : "/overview",
       );
     }
   }, [
@@ -340,7 +342,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             aria-label="ProspectLoop home"
             className="brand"
             href={
-              sessionQuery.data.user.role === "admin" ? "/admin" : "/overview"
+              sessionQuery.data.user.role === "admin"
+                ? "/organization"
+                : "/overview"
             }
             title="ProspectLoop"
           >

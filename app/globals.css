@@ -2315,7 +2315,7 @@ html[data-theme="dark"] .toast-error .toast-icon {
   letter-spacing: 0.12em;
 }
 
-.organization-hero-copy h1 {
+.organization-hero-copy h2 {
   overflow-wrap: anywhere;
   margin: 0;
   color: #fff;
@@ -3198,7 +3198,7 @@ html[data-theme="dark"] .toast-error .toast-icon {
     margin-bottom: 4px;
   }
 
-  .organization-hero-copy h1 {
+  .organization-hero-copy h2 {
     font-size: 20px;
   }
 

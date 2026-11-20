@@ -22,7 +22,9 @@ export default function Home() {
     );
   const showPublicActions = !sessionQuery.isLoading && !hasSession;
   const workspaceHref =
-    sessionQuery.data?.user.role === "admin" ? "/admin" : "/overview";
+    sessionQuery.data?.user.role === "admin"
+      ? "/organization"
+      : "/overview";
 
   return (
     <div className="overview-redesign public-home">

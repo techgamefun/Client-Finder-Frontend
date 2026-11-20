@@ -17,7 +17,7 @@ import {
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   getAdminOverview,
   getApplicationSettings,
@@ -64,8 +64,10 @@ type OverviewQuery = UseQueryResult<OverviewDashboardData, Error>;
 
 export function OverviewPage({
   adminDashboard = false,
+  children,
 }: {
   adminDashboard?: boolean;
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -122,11 +124,11 @@ export function OverviewPage({
 
   useEffect(() => {
     if (!requestedRange) {
-      router.replace(`${adminDashboard ? "/admin" : ""}?range=30d`, {
+      router.replace(`${adminDashboard ? "/organization" : ""}?range=30d`, {
         scroll: false,
       });
     } else if (!isOverviewRange(requestedRange)) {
-      router.replace(`${adminDashboard ? "/admin" : ""}?range=30d`, {
+      router.replace(`${adminDashboard ? "/organization" : ""}?range=30d`, {
         scroll: false,
       });
     }
@@ -161,9 +163,12 @@ export function OverviewPage({
   function changeRange(nextRange: OverviewRange) {
     const query = new URLSearchParams(searchParams.toString());
     query.set("range", nextRange);
-    router.push(`${adminDashboard ? "/admin" : "/"}?${query.toString()}`, {
-      scroll: false,
-    });
+    router.push(
+      `${adminDashboard ? "/organization" : "/"}?${query.toString()}`,
+      {
+        scroll: false,
+      },
+    );
   }
 
   if (adminDashboard && sessionQuery.isLoading) {
@@ -241,6 +246,8 @@ export function OverviewPage({
           </Link>
         </div>
       </header>
+
+      {children}
 
       <section aria-label="Attention and onboarding">
         {overviewQuery.isLoading ? (

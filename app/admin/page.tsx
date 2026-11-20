@@ -1,10 +1,14 @@
-import { Suspense } from "react";
-import { OverviewPage } from "../components/overview-page";
+import { redirect } from "next/navigation";
 
-export default function AdminDashboard() {
-  return (
-    <Suspense fallback={<div aria-busy="true" className="overview-page-loading" />}>
-      <OverviewPage adminDashboard />
-    </Suspense>
-  );
+export default async function AdminDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { range } = await searchParams;
+  const selectedRange = Array.isArray(range) ? range[0] : range;
+  const query = selectedRange
+    ? `?range=${encodeURIComponent(selectedRange)}`
+    : "";
+  redirect(`/organization${query}`);
 }

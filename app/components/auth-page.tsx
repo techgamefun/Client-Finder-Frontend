@@ -47,7 +47,9 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
     },
     onSuccess: async (session: AuthSession) => {
       queryClient.setQueryData(["auth-session"], session);
-      router.replace(session.user.role === "admin" ? "/admin" : "/overview");
+      router.replace(
+        session.user.role === "admin" ? "/organization" : "/overview",
+      );
     },
   });
 
