@@ -35,6 +35,7 @@ import { TAVILY_COUNTRIES } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
 import { EmailSuppressionSettings } from "./email-suppression-settings";
 import { ImageAssetEditor } from "./image-asset-editor";
+import { PushNotificationSettings } from "./push-notification-settings";
 import { useToast } from "./toast-provider";
 
 const deploymentManagedSettings = [
@@ -72,7 +73,8 @@ type SettingsSection =
   | "gmail"
   | "crawler"
   | "suppression"
-  | "account";
+  | "account"
+  | "notifications";
 
 export function SettingsPage() {
   const router = useRouter();
@@ -353,7 +355,7 @@ export function SettingsPage() {
         <div>
           <h1>Settings</h1>
           <p className="heading-copy">
-            Manage providers, website indexing, Gmail, and account settings.
+            Manage providers, website indexing, notifications, and your account.
           </p>
         </div>
         <div className="settings-section-picker">
@@ -381,6 +383,7 @@ export function SettingsPage() {
               )}
               {isOrganizationAdmin && <option value="crawler">Indexing</option>}
               <option value="account">My account</option>
+              <option value="notifications">Notifications</option>
               {isOrganizationAdmin && (
                 <option value="suppression">Email suppression</option>
               )}
@@ -1300,6 +1303,7 @@ export function SettingsPage() {
           </section>
         </>
       )}
+      {activeSection === "notifications" && <PushNotificationSettings />}
     </>
   );
 }
@@ -1418,7 +1422,8 @@ function isSettingsSection(value: string): value is SettingsSection {
     value === "gmail" ||
     value === "crawler" ||
     value === "suppression" ||
-    value === "account"
+    value === "account" ||
+    value === "notifications"
   );
 }
 

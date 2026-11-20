@@ -4002,6 +4002,105 @@ html[data-theme="dark"] .toast-error .toast-icon {
   accent-color: var(--purple);
 }
 
+.push-notification-settings {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.push-notification-settings > .settings-panel {
+  margin-top: 0;
+}
+
+.push-notification-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.push-notification-status.is-enabled {
+  border-color: #b7dfc3;
+  background: #edf8f1;
+  color: #38764d;
+}
+
+.push-notification-device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  padding: 14px;
+}
+
+.push-notification-device-row strong,
+.push-notification-preference strong {
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.push-notification-device-row p,
+.push-notification-other-devices {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.push-notification-preferences {
+  display: grid;
+  gap: 10px;
+}
+
+.push-notification-preference {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.push-notification-preference input {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  accent-color: var(--purple);
+}
+
+.push-notification-preference span {
+  display: grid;
+  gap: 3px;
+}
+
+.push-notification-preference small {
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.push-notification-other-devices {
+  margin-top: -6px;
+}
+
+@media (max-width: 560px) {
+  .push-notification-device-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .push-notification-device-row .button {
+    width: 100%;
+  }
+}
+
 .gmail-account-list {
   display: grid;
   gap: 12px;

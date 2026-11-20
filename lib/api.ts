@@ -805,6 +805,64 @@ export interface OrganizationUser {
 
 export type OrganizationImageAsset = "logo" | "banner";
 
+export interface PushNotificationPreferences {
+  website_crawl_enabled: boolean;
+  pagespeed_enabled: boolean;
+  outreach_enabled: boolean;
+}
+
+export interface PushSubscriptionSummary {
+  id: string;
+  endpoint: string;
+  created_at: string;
+}
+
+export interface PushNotificationSettings {
+  configured: boolean;
+  public_key: string | null;
+  subscriptions: PushSubscriptionSummary[];
+  preferences: PushNotificationPreferences;
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export function getPushNotificationSettings(): Promise<PushNotificationSettings> {
+  return request<PushNotificationSettings>("/notifications/push/settings");
+}
+
+export function savePushSubscription(
+  subscription: PushSubscriptionInput,
+): Promise<PushSubscriptionSummary> {
+  return request<PushSubscriptionSummary>("/notifications/push/subscriptions", {
+    method: "POST",
+    body: JSON.stringify(subscription),
+  });
+}
+
+export function removePushSubscription(endpoint: string): Promise<{
+  removed: boolean;
+}> {
+  return request<{ removed: boolean }>("/notifications/push/subscriptions", {
+    method: "DELETE",
+    body: JSON.stringify({ endpoint }),
+  });
+}
+
+export function updatePushNotificationPreferences(
+  preferences: PushNotificationPreferences,
+): Promise<PushNotificationPreferences> {
+  return request<PushNotificationPreferences>("/notifications/push/preferences", {
+    method: "PATCH",
+    body: JSON.stringify(preferences),
+  });
+}
+
 export function uploadProfilePhoto(file: File): Promise<{ url: string }> {
   const formData = new FormData();
   formData.append("file", file);
