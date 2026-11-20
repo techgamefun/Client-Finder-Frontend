@@ -375,8 +375,8 @@ function UserProgressWidget({
         />
       ) : users.length === 0 ? (
         <EmptyWidget
-          actionHref="/settings?section=organization"
-          actionLabel="Manage organization users"
+          actionHref="/organization"
+          actionLabel="Manage organization"
           message="There are no users in this organization yet."
         />
       ) : (

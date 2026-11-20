@@ -542,6 +542,12 @@ function getWorkspaceBreadcrumbs(
 ): WorkspaceBreadcrumb[] {
   const pathname = location.split("?")[0] ?? "/";
   const companyDetailMatch = pathname.match(/^\/company\/([^/]+)$/);
+  if (/^\/organization\/members\/[^/]+$/.test(pathname)) {
+    return [
+      { label: "Organization", href: "/organization" },
+      { label: "Member activity" },
+    ];
+  }
   if (companyDetailMatch) {
     const company = companies.find(
       (candidate) => candidate.id === companyDetailMatch[1],
@@ -638,8 +644,8 @@ function getWorkspaceAction(
   if (pathname === "/settings") {
     return role === "admin"
       ? {
-          label: "Organization users",
-          href: "/settings?section=organization",
+          label: "Organization",
+          href: "/organization",
           icon: Settings,
         }
       : {
@@ -669,6 +675,7 @@ const workspaceRoutes = new Set([
   "/leads",
   "/login",
   "/overview",
+  "/organization",
   "/pagespeed-queue",
   "/settings",
   "/signup",
@@ -679,6 +686,7 @@ const workspaceRoutes = new Set([
 function isKnownWorkspaceRoute(pathname: string) {
   return (
     workspaceRoutes.has(pathname) ||
+    /^\/organization\/members\/[^/]+$/.test(pathname) ||
     /^\/company\/[^/]+$/.test(pathname) ||
     /^\/websites\/[^/]+$/.test(pathname)
   );

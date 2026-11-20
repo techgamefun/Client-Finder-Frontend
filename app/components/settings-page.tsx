@@ -11,7 +11,6 @@ import {
 import {
   assignGmailAccount,
   changePassword,
-  createOrganizationUser,
   getApplicationSettings,
   getAuthSession,
   getConnectedGmailAccounts,
@@ -69,7 +68,6 @@ type SettingsSection =
   | "gemini"
   | "gmail"
   | "crawler"
-  | "organization"
   | "suppression"
   | "account";
 
@@ -133,8 +131,7 @@ export function SettingsPage() {
     if (!requestedSection) return;
     if (
       isSettingsSection(requestedSection) &&
-      ((requestedSection !== "organization" &&
-        requestedSection !== "suppression") ||
+      (requestedSection !== "suppression" ||
         isOrganizationAdmin)
     ) {
       window.requestAnimationFrame(() =>
@@ -381,9 +378,6 @@ export function SettingsPage() {
               )}
               {isOrganizationAdmin && <option value="crawler">Indexing</option>}
               <option value="account">My account</option>
-              {authSessionQuery.data?.user.role === "admin" && (
-                <option value="organization">Organization users</option>
-              )}
               {isOrganizationAdmin && (
                 <option value="suppression">Email suppression</option>
               )}
@@ -1274,15 +1268,6 @@ export function SettingsPage() {
             )}
           </section>
 
-          {authSessionQuery.data?.user.role === "admin" && (
-            <section
-              className="panel settings-panel"
-              hidden={activeSection !== "organization"}
-            >
-              <OrganizationUsersPanel />
-            </section>
-          )}
-
           {isOrganizationAdmin && (
             <section
               className="panel settings-panel"
@@ -1426,7 +1411,6 @@ function isSettingsSection(value: string): value is SettingsSection {
     value === "gemini" ||
     value === "gmail" ||
     value === "crawler" ||
-    value === "organization" ||
     value === "suppression" ||
     value === "account"
   );
@@ -1780,124 +1764,3 @@ function GmailAccountCard({
   );
 }
 
-function OrganizationUsersPanel() {
-  const queryClient = useQueryClient();
-  const showToast = useToast();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "user">("user");
-  const usersQuery = useQuery({
-    queryKey: ["organization-users"],
-    queryFn: getOrganizationUsers,
-    retry: false,
-  });
-  const createUserMutation = useMutation({
-    mutationFn: createOrganizationUser,
-    onSuccess: async (_user, variables) => {
-      setEmail("");
-      setPassword("");
-      setRole("user");
-      await queryClient.invalidateQueries({ queryKey: ["organization-users"] });
-      showToast({
-        type: "success",
-        title: "Organization user added",
-        message: `${variables.email} can now access this organization.`,
-      });
-    },
-  });
-
-  return (
-    <>
-      <div>
-        <p className="eyebrow">ORGANIZATION</p>
-        <h2>Manage organization users</h2>
-        <p className="panel-subtitle">
-          Members share organization business records. Each member manages their
-          own provider API keys.
-        </p>
-      </div>
-      <form
-        className="settings-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          createUserMutation.mutate({ email: email.trim(), password, role });
-        }}
-      >
-        <label className="settings-field">
-          User email
-          <input
-            autoComplete="off"
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            type="email"
-            value={email}
-          />
-        </label>
-        <label className="settings-field">
-          Temporary password
-          <input
-            autoComplete="new-password"
-            minLength={12}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            type="password"
-            value={password}
-          />
-        </label>
-        <label className="settings-field">
-          Role
-          <select
-            onChange={(event) =>
-              setRole(event.target.value === "admin" ? "admin" : "user")
-            }
-            value={role}
-          >
-            <option value="user">Normal user</option>
-            <option value="admin">Admin</option>
-          </select>
-        </label>
-        <div className="settings-actions">
-          <button
-            className="button button-primary"
-            disabled={createUserMutation.isPending}
-            type="submit"
-          >
-            {createUserMutation.isPending ? "Adding…" : "Add organization user"}
-          </button>
-        </div>
-      </form>
-      {createUserMutation.isError && (
-        <p className="settings-feedback settings-feedback-error" role="alert">
-          Could not add user: {createUserMutation.error.message}
-        </p>
-      )}
-      {usersQuery.isError && (
-        <p className="settings-feedback settings-feedback-error" role="alert">
-          Could not load users: {usersQuery.error.message}
-        </p>
-      )}
-      {usersQuery.data && (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {usersQuery.data.users.map((user) => (
-                <tr key={user.id}>
-                  <td>{user.email}</td>
-                  <td>{user.role === "admin" ? "Admin" : "Normal user"}</td>
-                  <td>{new Date(user.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}

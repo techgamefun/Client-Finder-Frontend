@@ -131,6 +131,7 @@ export interface OverviewUserProgress {
   email: string;
   role: "admin" | "user";
   is_active: boolean;
+  searches_run: number;
   websites_discovered: number;
   companies_created: number;
   leads_created: number;
@@ -140,6 +141,23 @@ export interface OverviewUserProgress {
 
 export interface AdminOverviewResponse extends OverviewResponse {
   user_progress: OverviewUserProgress[];
+}
+
+export interface MemberActivitySeriesPoint {
+  date: string;
+  searches_run: number;
+  websites_discovered: number;
+  companies_created: number;
+  leads_created: number;
+  crawls_completed: number;
+  emails_sent: number;
+}
+
+export interface MemberActivityResponse {
+  member: OverviewUserProgress;
+  range: OverviewRange;
+  timezone: string;
+  series: MemberActivitySeriesPoint[];
 }
 
 export interface SearchKeyword {
@@ -1285,6 +1303,17 @@ export function getAdminOverview(
   });
   return request<AdminOverviewResponse>(
     `/overview/admin?${search.toString()}`,
+  );
+}
+
+export function getOrganizationMemberActivity(
+  memberId: string,
+  range: OverviewRange,
+  timezone: string,
+): Promise<MemberActivityResponse> {
+  const search = new URLSearchParams({ range, tz: timezone });
+  return request<MemberActivityResponse>(
+    `/overview/admin/users/${encodeURIComponent(memberId)}/activity?${search.toString()}`,
   );
 }
 
