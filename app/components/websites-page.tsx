@@ -12,6 +12,8 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import {
+  addExcludedDomain,
+  addExcludedDomainsBatch,
   addWebsitesToLeads,
   getWebsiteCorpusWords,
   getWebsites,
@@ -21,6 +23,7 @@ import {
   updateWebsitesStatus,
 } from "@/lib/api";
 import type {
+  ExcludedDomainInput,
   WebsiteRecord,
   WebsitePageType,
   WebsiteStatus,
@@ -47,6 +50,55 @@ const pageTypes: WebsitePageType[] = [
 ];
 const pageSizes = [10, 25, 50];
 const websiteStatuses: WebsiteStatus[] = ["new", "lead", "checked"];
+const EXCLUDED_DOMAIN_BATCH_SIZE = 1000;
+
+async function addExcludedDomainsInBatches(
+  websites: WebsiteRecord[],
+): Promise<{ createdCount: number; updatedCount: number; totalCount: number }> {
+  const seenDomains = new Set<string>();
+  const exclusions: ExcludedDomainInput[] = [];
+  for (const website of websites) {
+    const domain = website.domain.trim();
+    const normalizedDomain = domain.toLowerCase();
+    if (!normalizedDomain || seenDomains.has(normalizedDomain)) continue;
+    seenDomains.add(normalizedDomain);
+    exclusions.push({ domain, reason: "Manual Exclusion" });
+  }
+  if (exclusions.length === 0) {
+    throw new Error("No selected websites are available to exclude.");
+  }
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  for (
+    let start = 0;
+    start < exclusions.length;
+    start += EXCLUDED_DOMAIN_BATCH_SIZE
+  ) {
+    const batch = exclusions.slice(start, start + EXCLUDED_DOMAIN_BATCH_SIZE);
+    try {
+      const result = await addExcludedDomainsBatch(batch);
+      createdCount += result.created_count;
+      updatedCount += result.updated_count;
+    } catch (error) {
+      const processedCount = createdCount + updatedCount;
+      if (processedCount > 0) {
+        const detail =
+          error instanceof Error ? error.message : "The request failed.";
+        throw new Error(
+          `Excluded ${processedCount} of ${exclusions.length} domains before the next batch failed: ${detail}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  return {
+    createdCount,
+    updatedCount,
+    totalCount: exclusions.length,
+  };
+}
 
 type WebsiteSortKey =
   | "website"
@@ -332,6 +384,56 @@ export function WebsitesPage() {
         title: "Could not update website statuses",
         message: error.message,
       });
+    },
+  });
+  const excludeWebsiteMutation = useMutation({
+    mutationFn: (website: WebsiteRecord) =>
+      addExcludedDomain({
+        domain: website.domain,
+        reason: "Manual Exclusion",
+      }),
+    onSuccess: async (domain) => {
+      showToast({
+        type: "success",
+        title: "Domain excluded",
+        message: `${domain.domain} was added to Excluded domains. Queued indexing jobs for this domain will be skipped.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
+      ]);
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not exclude domain",
+        message: error.message,
+      });
+    },
+  });
+  const excludeSelectedWebsitesMutation = useMutation({
+    mutationFn: addExcludedDomainsInBatches,
+    onSuccess: async (result) => {
+      setSelectedWebsiteIds(new Set());
+      setBulkStatus("");
+      showToast({
+        type: "success",
+        title: "Selected domains excluded",
+        message: `Added ${result.createdCount} and updated ${result.updatedCount} exclusions (${result.totalCount} unique domains). Queued indexing jobs for these domains will be skipped.`,
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not exclude selected websites",
+        message: error.message,
+      });
+    },
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
+      ]);
     },
   });
   const reclassifyMutation = useMutation({
@@ -980,7 +1082,8 @@ export function WebsitesPage() {
                   aria-label="Status to apply to selected websites"
                   disabled={
                     batchStatusMutation.isPending ||
-                    addToLeadMutation.isPending
+                    addToLeadMutation.isPending ||
+                    excludeSelectedWebsitesMutation.isPending
                   }
                   onChange={(event) => {
                     const nextStatus = websiteStatuses.find(
@@ -1003,7 +1106,9 @@ export function WebsitesPage() {
                 disabled={
                   !bulkStatus ||
                   batchStatusMutation.isPending ||
-                  addToLeadMutation.isPending
+                  addToLeadMutation.isPending ||
+                  excludeSelectedWebsitesMutation.isPending ||
+                  excludeWebsiteMutation.isPending
                 }
                 onClick={changeSelectedWebsiteStatus}
                 type="button"
@@ -1014,7 +1119,10 @@ export function WebsitesPage() {
             <button
               className="button button-primary"
               disabled={
-                batchStatusMutation.isPending || addToLeadMutation.isPending
+                batchStatusMutation.isPending ||
+                addToLeadMutation.isPending ||
+                excludeSelectedWebsitesMutation.isPending ||
+                excludeWebsiteMutation.isPending
               }
               onClick={() =>
                 addToLeadMutation.mutate(Array.from(selectedWebsiteIds))
@@ -1026,9 +1134,33 @@ export function WebsitesPage() {
                 : "Add selected to Lead"}
             </button>
             <button
+              className="button button-secondary website-exclude-selected-button"
+              disabled={
+                batchStatusMutation.isPending ||
+                addToLeadMutation.isPending ||
+                excludeSelectedWebsitesMutation.isPending ||
+                excludeWebsiteMutation.isPending
+              }
+              onClick={() =>
+                excludeSelectedWebsitesMutation.mutate(
+                  websites.filter((website) =>
+                    selectedWebsiteIds.has(website.id),
+                  ),
+                )
+              }
+              type="button"
+            >
+              {excludeSelectedWebsitesMutation.isPending
+                ? "Excluding..."
+                : `Exclude selected (${selectedCount})`}
+            </button>
+            <button
               className="website-clear-selection"
               disabled={
-                batchStatusMutation.isPending || addToLeadMutation.isPending
+                batchStatusMutation.isPending ||
+                addToLeadMutation.isPending ||
+                excludeSelectedWebsitesMutation.isPending ||
+                excludeWebsiteMutation.isPending
               }
               onClick={() => {
                 setSelectedWebsiteIds(new Set());
@@ -1178,6 +1310,7 @@ export function WebsitesPage() {
                           disabled={
                             batchStatusMutation.isPending ||
                             addToLeadMutation.isPending ||
+                            excludeSelectedWebsitesMutation.isPending ||
                             filteredWebsites.length === 0
                           }
                           onChange={toggleFilteredSelection}
@@ -1267,7 +1400,8 @@ export function WebsitesPage() {
                             checked={selectedWebsiteIds.has(website.id)}
                             disabled={
                               batchStatusMutation.isPending ||
-                              addToLeadMutation.isPending
+                              addToLeadMutation.isPending ||
+                              excludeSelectedWebsitesMutation.isPending
                             }
                             onChange={() =>
                               toggleWebsiteSelection(website.id)
@@ -1345,6 +1479,26 @@ export function WebsitesPage() {
                           >
                             <span aria-hidden="true">↗</span>
                           </a>
+                          <button
+                            aria-label={`Exclude ${website.domain} from indexing`}
+                            className="button button-secondary website-exclude-row-button"
+                            disabled={
+                              excludeWebsiteMutation.isPending ||
+                              excludeSelectedWebsitesMutation.isPending ||
+                              addToLeadMutation.isPending ||
+                              batchStatusMutation.isPending
+                            }
+                            onClick={() =>
+                              excludeWebsiteMutation.mutate(website)
+                            }
+                            title={`Add ${website.domain} to Excluded domains`}
+                            type="button"
+                          >
+                            {excludeWebsiteMutation.isPending &&
+                            excludeWebsiteMutation.variables?.id === website.id
+                              ? "Excluding..."
+                              : "Exclude"}
+                          </button>
                         </span>
                       </td>
                       <td className="website-keywords-cell">

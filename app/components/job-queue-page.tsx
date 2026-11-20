@@ -5,8 +5,10 @@ import { useState } from "react";
 import {
   useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import {
+  addExcludedDomain,
   getApplicationSettings,
   getPageSpeedScanJobs,
   getWebsiteCrawlJobs,
@@ -93,6 +95,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const config = queueConfig[kind];
   const queueLabel = kind === "crawler" ? "indexing" : "PageSpeed";
   const showToast = useToast();
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
     "all",
   );
@@ -138,6 +141,31 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       showToast({
         type: "error",
         title: "Could not retry job",
+        message: error.message,
+      });
+    },
+  });
+  const excludeDomainMutation = useMutation({
+    mutationFn: (job: QueueJob) =>
+      addExcludedDomain({
+        domain: job.websiteUrl,
+        reason: "Manual Exclusion",
+      }),
+    onSuccess: async (domain) => {
+      showToast({
+        type: "success",
+        title: "Domain excluded",
+        message: `${domain.domain} was added to Excluded domains. Queued indexing jobs for this domain will be skipped.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
+      ]);
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not exclude domain",
         message: error.message,
       });
     },
@@ -295,6 +323,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                 disabled={
                   retryAllMutation.isPending ||
                   retryMutation.isPending ||
+                  excludeDomainMutation.isPending ||
                   !canRetryJobs
                 }
                 onClick={() => retryAllMutation.mutate(failedJobs)}
@@ -370,12 +399,31 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                     >
                       {formatJobStatus(job.status)}
                     </span>
+                    {kind === "crawler" && (
+                      <button
+                        className="button button-secondary queue-exclude-button"
+                        disabled={
+                          excludeDomainMutation.isPending ||
+                          retryMutation.isPending ||
+                          retryAllMutation.isPending
+                        }
+                        onClick={() => excludeDomainMutation.mutate(job)}
+                        title={`Add ${job.websiteUrl} to Excluded domains`}
+                        type="button"
+                      >
+                        {excludeDomainMutation.isPending &&
+                        excludeDomainMutation.variables?.id === job.id
+                          ? "Excluding..."
+                          : "Exclude domain"}
+                      </button>
+                    )}
                     {job.status === "failed" && (
                       <button
                         className="button button-secondary queue-retry-button"
                         disabled={
                           retryMutation.isPending ||
                           retryAllMutation.isPending ||
+                          excludeDomainMutation.isPending ||
                           !canRetryJobs
                         }
                         onClick={() => retryMutation.mutate(job.id)}

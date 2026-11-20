@@ -1896,6 +1896,12 @@ html[data-theme="dark"] .toast-error .toast-icon {
   font-size: 10px;
 }
 
+.queue-exclude-button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
 .pagespeed-job-card-heading strong {
   color: var(--foreground);
   font-size: 11px;
@@ -6913,6 +6919,13 @@ td {
   background: var(--line);
   color: var(--purple-dark);
   text-decoration: none;
+}
+
+.website-url-cell .website-exclude-row-button {
+  min-height: 24px;
+  flex: 0 0 auto;
+  padding: 0 7px;
+  font-size: 10px;
 }
 
 .website-source-cell span,
