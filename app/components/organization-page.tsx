@@ -9,7 +9,6 @@ import {
   getOrganizationUsers,
   type AuthSession,
 } from "@/lib/api";
-import { OverviewPage } from "./overview-page";
 
 export function OrganizationPage() {
   const sessionQuery = useQuery({
@@ -56,34 +55,32 @@ export function OrganizationPage() {
   }
 
   return (
-    <OverviewPage adminDashboard>
-      <div className="organization-page">
-        <OrganizationHero session={sessionQuery.data} />
-        {usersQuery.isError && (
-          <p className="alert alert-error" role="alert">
-            Could not load the member count: {usersQuery.error.message}
-          </p>
-        )}
-        <Link
-          aria-label={`View ${usersQuery.data?.users.length ?? "organization"} members`}
-          className="organization-member-count-card"
-          href="/organization/members"
-        >
-          <span className="organization-member-count-copy">
-            <span className="organization-member-count-label">Members</span>
-            <strong>
-              {usersQuery.isLoading
-                ? "…"
-                : usersQuery.data?.users.length ?? "—"}
-            </strong>
-          </span>
-          <span className="organization-member-count-action">
-            Manage members
-            <ArrowRight aria-hidden="true" size={17} />
-          </span>
-        </Link>
-      </div>
-    </OverviewPage>
+    <div className="organization-page">
+      <OrganizationHero session={sessionQuery.data} />
+      {usersQuery.isError && (
+        <p className="alert alert-error" role="alert">
+          Could not load the member count: {usersQuery.error.message}
+        </p>
+      )}
+      <Link
+        aria-label={`View ${usersQuery.data?.users.length ?? "organization"} members`}
+        className="organization-member-count-card"
+        href="/organization/members"
+      >
+        <span className="organization-member-count-copy">
+          <span className="organization-member-count-label">Members</span>
+          <strong>
+            {usersQuery.isLoading
+              ? "…"
+              : usersQuery.data?.users.length ?? "—"}
+          </strong>
+        </span>
+        <span className="organization-member-count-action">
+          Manage members
+          <ArrowRight aria-hidden="true" size={17} />
+        </span>
+      </Link>
+    </div>
   );
 }
 

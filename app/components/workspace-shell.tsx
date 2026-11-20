@@ -51,6 +51,7 @@ import {
   subscribeToTheme,
   type ThemePreference,
 } from "@/lib/theme";
+import { useUserPreferences } from "@/lib/user-preferences";
 import {
   navigationSections,
   type NavigationItem,
@@ -60,30 +61,6 @@ import { BrandMark } from "./brand-mark";
 import { useToast } from "./toast-provider";
 
 const noCompanies: Company[] = [];
-const sidebarPreferenceKey = "lead-intelligence-sidebar-collapsed";
-const sidebarPreferenceChangedEvent = "lead-intelligence-sidebar-changed";
-
-function subscribeToSidebarPreference(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  window.addEventListener(sidebarPreferenceChangedEvent, onChange);
-  return () => {
-    window.removeEventListener("storage", onChange);
-    window.removeEventListener(sidebarPreferenceChangedEvent, onChange);
-  };
-}
-
-function getSidebarCollapsedSnapshot() {
-  return window.localStorage.getItem(sidebarPreferenceKey) === "true";
-}
-
-function persistSidebarPreference(collapsed: boolean) {
-  window.localStorage.setItem(sidebarPreferenceKey, String(collapsed));
-  window.dispatchEvent(new Event(sidebarPreferenceChangedEvent));
-}
-
-function toggleSidebarPreference() {
-  persistSidebarPreference(!getSidebarCollapsedSnapshot());
-}
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -93,11 +70,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const showToast = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const sidebarCollapsed = useSyncExternalStore(
-    subscribeToSidebarPreference,
-    getSidebarCollapsedSnapshot,
-    () => false,
-  );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -111,14 +83,21 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     enabled: !isPublicNotFoundPage,
     retry: false,
   });
+  const userPreferences = useUserPreferences(
+    isPublicPage ? undefined : sessionQuery.data?.user.id,
+  );
+  const saveUserPreferences = userPreferences.save;
+  const sidebarCollapsed =
+    userPreferences.data?.sidebar_collapsed ?? false;
   const themePreference = useSyncExternalStore(
     subscribeToTheme,
-    getThemePreferenceSnapshot,
+    () =>
+      userPreferences.data?.theme ?? getThemePreferenceSnapshot(),
     (): ThemePreference => "system",
   );
   const isDarkMode = useSyncExternalStore(
     subscribeToTheme,
-    getThemeSnapshot,
+    () => getThemeSnapshot(themePreference),
     () => false,
   );
   const companiesQuery = useQuery({
@@ -178,14 +157,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         if (window.matchMedia("(max-width: 1023px)").matches) {
           setMobileMenuOpen((open) => !open);
         } else {
-          toggleSidebarPreference();
+          saveUserPreferences({
+            sidebar_collapsed: !sidebarCollapsed,
+          });
         }
       }
     }
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, []);
+  }, [saveUserPreferences, sidebarCollapsed]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -246,6 +227,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }, [isDarkMode]);
 
   useEffect(() => {
+    if (!userPreferences.isError) return;
+    showToast({
+      type: "error",
+      title: "Could not load preferences",
+      message: userPreferences.error.message,
+    });
+  }, [showToast, userPreferences.error, userPreferences.isError]);
+
+  useEffect(() => {
     if (
       isPublicAuthPage &&
       sessionQuery.data &&
@@ -254,7 +244,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     ) {
       router.replace(
         sessionQuery.data.user.role === "admin"
-          ? "/organization"
+          ? "/organization/dashboard"
           : "/overview",
       );
     }
@@ -280,7 +270,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     }
     return children;
   }
-  if (sessionQuery.isLoading || (!sessionQuery.data && !sessionQuery.isError)) {
+  if (
+    sessionQuery.isLoading ||
+    (!sessionQuery.data && !sessionQuery.isError) ||
+    (sessionQuery.data && userPreferences.isLoading)
+  ) {
     return <WorkspaceSessionLoading />;
   }
   if (!sessionQuery.data) {
@@ -343,7 +337,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             className="brand"
             href={
               sessionQuery.data.user.role === "admin"
-                ? "/organization"
+                ? "/organization/dashboard"
                 : "/overview"
             }
             title="ProspectLoop"
@@ -359,7 +353,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
             }
             className="sidebar-collapse-toggle"
-            onClick={() => persistSidebarPreference(!sidebarCollapsed)}
+            onClick={() =>
+              saveUserPreferences({
+                sidebar_collapsed: !sidebarCollapsed,
+              })
+            }
             title={`${sidebarCollapsed ? "Expand" : "Collapse"} sidebar (Ctrl/Cmd+B)`}
             type="button"
           >
@@ -404,7 +402,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           logoutPending={logoutMutation.isPending}
           onLogout={() => logoutMutation.mutate()}
           onNavigate={() => setMobileMenuOpen(false)}
-          onThemeChange={persistThemePreference}
+          onThemeChange={(preference) => {
+            persistThemePreference(preference);
+            saveUserPreferences({ theme: preference });
+          }}
           organizationLogoUrl={sessionQuery.data.organization_logo_url}
           organizationName={sessionQuery.data.organization_name}
           role={sessionQuery.data.user.role}
@@ -549,6 +550,18 @@ function getWorkspaceBreadcrumbs(
 ): WorkspaceBreadcrumb[] {
   const pathname = location.split("?")[0] ?? "/";
   const companyDetailMatch = pathname.match(/^\/company\/([^/]+)$/);
+  if (pathname === "/organization/dashboard") {
+    return [
+      { label: "Organization", href: "/organization" },
+      { label: "Dashboard" },
+    ];
+  }
+  if (pathname === "/admin") {
+    return [{ label: "Organization dashboard" }];
+  }
+  if (pathname === "/organization") {
+    return [{ label: "Organization" }];
+  }
   if (pathname === "/organization/settings") {
     return [
       { label: "Organization", href: "/organization" },
@@ -695,6 +708,7 @@ const workspaceRoutes = new Set([
   "/login",
   "/overview",
   "/organization",
+  "/organization/dashboard",
   "/organization/members",
   "/organization/settings",
   "/pagespeed-queue",

@@ -42,6 +42,13 @@ export const navigationSections: NavigationSection[] = [
       {
         id: "organization-dashboard",
         label: "Organization dashboard",
+        href: "/organization/dashboard",
+        icon: LayoutDashboard,
+        role: "admin",
+      },
+      {
+        id: "organization",
+        label: "Organization",
         href: "/organization",
         icon: Building2,
         role: "admin",

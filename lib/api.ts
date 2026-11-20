@@ -863,6 +863,56 @@ export function updatePushNotificationPreferences(
   });
 }
 
+export interface UserTavilySearchPreferences {
+  topic?: TavilyTopic | null;
+  search_depth?: TavilySearchDepth | null;
+  max_results?: 5 | 10 | 15 | 20 | null;
+  country?: string | null;
+  include_domains?: string[] | null;
+  include_domains_mode?: "restrict" | "prefer" | null;
+  exclude_domains?: string[] | null;
+  date_mode?: "relative" | "custom" | null;
+  time_range?: TavilyTimeRange | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  filter_by_published_date?: boolean | null;
+  min_score?: number | null;
+  include_answer?: boolean | null;
+  auto_parameters?: boolean | null;
+  auto_find_more?: boolean | null;
+}
+
+export interface UserPreferences {
+  theme: "light" | "dark" | "system";
+  sidebar_collapsed: boolean;
+  search: {
+    providers: DiscoveryProviderId[] | null;
+    tavily: UserTavilySearchPreferences | null;
+  };
+}
+
+export type UserPreferencesUpdate = {
+  theme?: UserPreferences["theme"];
+  sidebar_collapsed?: boolean;
+  search?: {
+    providers?: DiscoveryProviderId[] | null;
+    tavily?: UserTavilySearchPreferences | null;
+  };
+};
+
+export function getUserPreferences(): Promise<UserPreferences> {
+  return request<UserPreferences>("/preferences");
+}
+
+export function updateUserPreferences(
+  preferences: UserPreferencesUpdate,
+): Promise<UserPreferences> {
+  return request<UserPreferences>("/preferences", {
+    method: "PATCH",
+    body: JSON.stringify(preferences),
+  });
+}
+
 export function uploadProfilePhoto(file: File): Promise<{ url: string }> {
   const formData = new FormData();
   formData.append("file", file);

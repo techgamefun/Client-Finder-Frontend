@@ -18,6 +18,7 @@ export default function robots(): MetadataRoute.Robots {
         "/leads",
         "/login",
         "/overview",
+        "/organization/dashboard",
         "/pagespeed-queue",
         "/settings",
         "/signup",

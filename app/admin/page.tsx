@@ -10,5 +10,5 @@ export default async function AdminDashboard({
   const query = selectedRange
     ? `?range=${encodeURIComponent(selectedRange)}`
     : "";
-  redirect(`/organization${query}`);
+  redirect(`/organization/dashboard${query}`);
 }

@@ -22,8 +22,9 @@ export function getThemePreferenceSnapshot(): ThemePreference {
     : "system";
 }
 
-export function getThemeSnapshot() {
-  const preference = getThemePreferenceSnapshot();
+export function getThemeSnapshot(
+  preference: ThemePreference = getThemePreferenceSnapshot(),
+) {
   return (
     preference === "dark" ||
     (preference === "system" &&

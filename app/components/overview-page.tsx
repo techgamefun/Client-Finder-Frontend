@@ -12,12 +12,19 @@ import {
   Minus,
   RefreshCw,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   getAdminOverview,
   getApplicationSettings,
@@ -61,6 +68,26 @@ type OverviewDashboardData = OverviewResponse & {
   user_progress?: OverviewUserProgress[];
 };
 type OverviewQuery = UseQueryResult<OverviewDashboardData, Error>;
+
+type TeamActivityMetric =
+  | "searches_run"
+  | "websites_discovered"
+  | "companies_created"
+  | "leads_created"
+  | "crawls_completed"
+  | "emails_sent";
+
+const teamActivityMetrics: {
+  value: TeamActivityMetric;
+  label: string;
+}[] = [
+  { value: "leads_created", label: "Leads created" },
+  { value: "websites_discovered", label: "Websites discovered" },
+  { value: "searches_run", label: "Searches run" },
+  { value: "companies_created", label: "Companies created" },
+  { value: "crawls_completed", label: "Crawls completed" },
+  { value: "emails_sent", label: "Emails sent" },
+];
 
 export function OverviewPage({
   adminDashboard = false,
@@ -124,11 +151,11 @@ export function OverviewPage({
 
   useEffect(() => {
     if (!requestedRange) {
-      router.replace(`${adminDashboard ? "/organization" : ""}?range=30d`, {
+      router.replace(`${adminDashboard ? "/organization/dashboard" : ""}?range=30d`, {
         scroll: false,
       });
     } else if (!isOverviewRange(requestedRange)) {
-      router.replace(`${adminDashboard ? "/organization" : ""}?range=30d`, {
+      router.replace(`${adminDashboard ? "/organization/dashboard" : ""}?range=30d`, {
         scroll: false,
       });
     }
@@ -164,12 +191,75 @@ export function OverviewPage({
     const query = new URLSearchParams(searchParams.toString());
     query.set("range", nextRange);
     router.push(
-      `${adminDashboard ? "/organization" : "/"}?${query.toString()}`,
+      `${adminDashboard ? "/organization/dashboard" : "/"}?${query.toString()}`,
       {
         scroll: false,
       },
     );
   }
+
+  const heading = (
+    <div>
+      {adminDashboard && (
+        <p className="overview-dashboard-eyebrow">ORGANIZATION OVERVIEW</p>
+      )}
+      <h1>{adminDashboard ? "Organization dashboard" : "Overview"}</h1>
+      <p>
+        {adminDashboard
+          ? "Organization-wide performance and team progress"
+          : "Your pipeline performance and next steps"}
+        <span className="overview-updated">
+          {overviewQuery.dataUpdatedAt > 0 ? (
+            <>
+              Last updated{" "}
+              <time
+                dateTime={new Date(
+                  overviewQuery.dataUpdatedAt,
+                ).toISOString()}
+                title={formatAbsoluteDate(
+                  new Date(overviewQuery.dataUpdatedAt).toISOString(),
+                )}
+              >
+                {formatClockTime(overviewQuery.dataUpdatedAt)}
+              </time>
+            </>
+          ) : (
+            "Last updated —"
+          )}
+        </span>
+      </p>
+    </div>
+  );
+  const headerActions = (
+    <div className="overview-header-actions">
+      <label className="overview-range-control">
+        <select
+          aria-label="Overview time range"
+          onChange={(event) =>
+            changeRange(event.target.value as OverviewRange)
+          }
+          value={range}
+        >
+          {rangeOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {adminDashboard && overviewQuery.data?.onboarding && (
+        <OnboardingChecklist
+          compact
+          onboarding={overviewQuery.data.onboarding}
+        />
+      )}
+      {!adminDashboard && (
+        <Link className="button button-primary" href="/companies?add=1">
+          Add a company
+        </Link>
+      )}
+    </div>
+  );
 
   if (adminDashboard && sessionQuery.isLoading) {
     return <div aria-busy="true" className="overview-page-loading" />;
@@ -198,100 +288,58 @@ export function OverviewPage({
       className={`overview-redesign${adminDashboard ? " is-admin-dashboard" : ""}`}
     >
       <header className="overview-header">
-        <div>
-          <h1>{adminDashboard ? "Organization dashboard" : "Overview"}</h1>
-          <p>
-            {adminDashboard
-              ? "Organization-wide performance and team progress"
-              : "Your pipeline performance and next steps"}
-            <span className="overview-updated">
-              {overviewQuery.dataUpdatedAt > 0 ? (
-                <>
-                  Last updated{" "}
-                  <time
-                    dateTime={new Date(
-                      overviewQuery.dataUpdatedAt,
-                    ).toISOString()}
-                    title={formatAbsoluteDate(
-                      new Date(overviewQuery.dataUpdatedAt).toISOString(),
-                    )}
-                  >
-                    {formatClockTime(overviewQuery.dataUpdatedAt)}
-                  </time>
-                </>
-              ) : (
-                "Last updated —"
-              )}
-            </span>
-          </p>
-        </div>
-        <div className="overview-header-actions">
-          <label className="overview-range-control">
-            <select
-              aria-label="Overview time range"
-              onChange={(event) =>
-                changeRange(event.target.value as OverviewRange)
-              }
-              value={range}
-            >
-              {rangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Link className="button button-primary" href="/companies?add=1">
-            Add a company
-          </Link>
-        </div>
+        {heading}
+        {headerActions}
       </header>
 
       {children}
 
-      <section aria-label="Attention and onboarding">
-        {overviewQuery.isLoading ? (
-          <section aria-busy="true" className="overview-attention-skeleton">
-            <span className="overview-skeleton overview-skeleton-line" />
-          </section>
-        ) : overviewQuery.isError ? (
-          <WidgetError
-            error={overviewQuery.error}
-            onRetry={() => void overviewQuery.refetch()}
-            title="Attention"
-          />
-        ) : overviewQuery.data?.onboarding ? (
-          <OnboardingChecklist
-            onboarding={overviewQuery.data.onboarding}
-          />
-        ) : attention.length === 0 ? (
-          <p className="overview-all-clear">
-            <CheckCircle2 aria-hidden="true" size={18} />
-            All clear. Nothing needs attention right now.
-          </p>
-        ) : (
-          <section aria-labelledby="overview-attention-title" className="overview-attention">
-            <div className="overview-section-heading">
-              <h2 id="overview-attention-title">Needs attention</h2>
-            </div>
-            <ul className="overview-attention-list">
-              {attention.map((item) => (
-                <li key={item.id}>
-                  <Link href={item.href}>
-                    <span className="overview-attention-count">
-                      {formatCount(item.count)}
-                    </span>
-                    <span className="overview-attention-copy">
-                      {item.message}
-                    </span>
-                    <OverviewMetricInfo metricKey={item.metric_key} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </section>
+      {!(adminDashboard && overviewQuery.data?.onboarding) && (
+        <section aria-label="Attention and onboarding">
+          {overviewQuery.isLoading ? (
+            <section aria-busy="true" className="overview-attention-skeleton">
+              <span className="overview-skeleton overview-skeleton-line" />
+            </section>
+          ) : overviewQuery.isError ? (
+            <WidgetError
+              error={overviewQuery.error}
+              onRetry={() => void overviewQuery.refetch()}
+              title="Attention"
+            />
+          ) : overviewQuery.data?.onboarding ? (
+            <OnboardingChecklist onboarding={overviewQuery.data.onboarding} />
+          ) : attention.length === 0 ? (
+            <p className="overview-all-clear">
+              <CheckCircle2 aria-hidden="true" size={18} />
+              All clear. Nothing needs attention right now.
+            </p>
+          ) : (
+            <section
+              aria-labelledby="overview-attention-title"
+              className="overview-attention"
+            >
+              <div className="overview-section-heading">
+                <h2 id="overview-attention-title">Needs attention</h2>
+              </div>
+              <ul className="overview-attention-list">
+                {attention.map((item) => (
+                  <li key={item.id}>
+                    <Link href={item.href}>
+                      <span className="overview-attention-count">
+                        {formatCount(item.count)}
+                      </span>
+                      <span className="overview-attention-copy">
+                        {item.message}
+                      </span>
+                      <OverviewMetricInfo metricKey={item.metric_key} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </section>
+      )}
 
       <section aria-label="Pipeline performance" className="overview-kpi-grid">
         <MetricCard
@@ -335,108 +383,12 @@ export function OverviewPage({
         <JobsWidget query={overviewQuery} />
       </section>
 
-      <RecentLeadsWidget query={overviewQuery} />
       {adminDashboard && (
-        <UserProgressWidget
-          query={overviewQuery}
-          range={range}
-        />
+        <TeamActivityWidget query={overviewQuery} range={range} />
       )}
-    </div>
-  );
-}
 
-function UserProgressWidget({
-  query,
-  range,
-}: {
-  query: OverviewQuery;
-  range: OverviewRange;
-}) {
-  const users = query.data?.user_progress ?? [];
-  return (
-    <section
-      aria-labelledby="overview-user-progress-title"
-      className="overview-panel overview-user-progress-panel"
-    >
-      <div className="overview-section-heading">
-        <div>
-          <p className="overview-eyebrow">TEAM ACTIVITY · {range}</p>
-          <h2 id="overview-user-progress-title">Progress by user</h2>
-        </div>
-      </div>
-      <p className="overview-user-progress-definition">
-        Counts are for the selected period. Websites, companies, and jobs are
-        attributed to their creator; campaign emails to the campaign creator.
-        A lead requires a company and at least one contact created by that user.
-      </p>
-      {query.isLoading ? (
-        <div aria-busy="true" className="overview-table-skeleton">
-          <PanelSkeleton rows={5} />
-        </div>
-      ) : query.isError ? (
-        <WidgetError
-          error={query.error}
-          onRetry={() => void query.refetch()}
-          title="Progress by user"
-        />
-      ) : users.length === 0 ? (
-        <EmptyWidget
-          actionHref="/organization"
-          actionLabel="Manage organization"
-          message="There are no users in this organization yet."
-        />
-      ) : (
-        <div className="overview-table-scroll">
-          <table
-            aria-label="Organization user progress for selected period"
-            className="overview-user-progress-table"
-          >
-            <thead>
-              <tr>
-                <th scope="col">User</th>
-                <th scope="col">Role</th>
-                <th scope="col">
-                  Websites <OverviewMetricInfo metricKey="team_websites" />
-                </th>
-                <th scope="col">
-                  Companies <OverviewMetricInfo metricKey="team_companies" />
-                </th>
-                <th scope="col">
-                  Leads <OverviewMetricInfo metricKey="team_leads" />
-                </th>
-                <th scope="col">
-                  Index jobs <OverviewMetricInfo metricKey="team_crawls" />
-                </th>
-                <th scope="col">
-                  Emails <OverviewMetricInfo metricKey="team_emails" />
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.user_id}>
-                  <th scope="row">
-                    <span className="overview-team-user">{user.email}</span>
-                    <span
-                      className={`overview-team-user-status${user.is_active ? "" : " is-inactive"}`}
-                    >
-                      {user.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </th>
-                  <td>{user.role}</td>
-                  <td>{formatCount(user.websites_discovered)}</td>
-                  <td>{formatCount(user.companies_created)}</td>
-                  <td>{formatCount(user.leads_created)}</td>
-                  <td>{formatCount(user.crawls_completed)}</td>
-                  <td>{formatCount(user.emails_sent)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+      <RecentLeadsWidget query={overviewQuery} />
+    </div>
   );
 }
 
@@ -818,13 +770,28 @@ function TrendChart({
 
 function PipelineWidget({ query }: { query: OverviewQuery }) {
   const data = query.data;
-  const total = data?.status_breakdown.reduce((sum, item) => sum + item.count, 0) ?? 0;
+  const statusBreakdown = data?.status_breakdown ?? [];
+  const total = statusBreakdown.reduce((sum, item) => sum + item.count, 0);
+  const circumference = 2 * Math.PI * 42;
+  const statusSegments = statusBreakdown.map((item, index) => {
+    const length = total > 0 ? (item.count / total) * circumference : 0;
+    const precedingCount = statusBreakdown
+      .slice(0, index)
+      .reduce((sum, preceding) => sum + preceding.count, 0);
+    return {
+      ...item,
+      color: statusColors[index % statusColors.length],
+      dashLength: Math.max(0, length - 2),
+      dashOffset:
+        total > 0 ? (precedingCount / total) * circumference : 0,
+    };
+  });
   return (
     <article className="overview-panel overview-insight-panel">
       <div className="overview-section-heading">
         <div>
-          <p className="overview-eyebrow">PIPELINE</p>
-          <h2>Leads by status</h2>
+          <p className="overview-eyebrow">CURRENT PIPELINE</p>
+          <h2>Lead status mix</h2>
         </div>
         <OverviewMetricInfo metricKey="pipeline_status" />
       </div>
@@ -834,7 +801,7 @@ function PipelineWidget({ query }: { query: OverviewQuery }) {
         <WidgetError
           error={query.error}
           onRetry={() => void query.refetch()}
-          title="Pipeline status"
+          title="Lead status mix"
         />
       ) : total === 0 ? (
         <EmptyWidget
@@ -843,30 +810,58 @@ function PipelineWidget({ query }: { query: OverviewQuery }) {
           message="No companies with contacts are in Leads yet."
         />
       ) : (
-        <>
-          <div
-            aria-label={`${formatCount(total)} leads across ${data?.status_breakdown.length ?? 0} statuses`}
-            className="overview-status-bar"
+        <div className="overview-status-donut-layout">
+          <svg
+            aria-label={`Current pipeline status mix: ${formatCount(total)} leads across ${statusSegments.length} statuses. This is not limited to the selected date range.`}
+            className="overview-status-donut"
             role="img"
+            viewBox="0 0 120 120"
           >
-            {data?.status_breakdown.map((item, index) => (
-              <span
-                key={item.status}
-                style={{
-                  backgroundColor: statusColors[index % statusColors.length],
-                  width: `${item.percentage ?? 0}%`,
-                }}
-              />
+            <circle
+              className="overview-status-donut-track"
+              cx="60"
+              cy="60"
+              r="42"
+            />
+            {statusSegments.map((segment) => (
+              <circle
+                cx="60"
+                cy="60"
+                key={segment.status}
+                r="42"
+                stroke={segment.color}
+                strokeDasharray={`${segment.dashLength} ${circumference}`}
+                strokeDashoffset={-segment.dashOffset}
+                transform="rotate(-90 60 60)"
+              >
+                <title>
+                  {`${segment.status.replaceAll("_", " ")}: ${formatCount(segment.count)} (${formatPercentage(segment.percentage)})`}
+                </title>
+              </circle>
             ))}
-          </div>
+            <text
+              className="overview-status-donut-total"
+              textAnchor="middle"
+              x="60"
+              y="58"
+            >
+              {formatCount(total)}
+            </text>
+            <text
+              className="overview-status-donut-label"
+              textAnchor="middle"
+              x="60"
+              y="75"
+            >
+              LEADS
+            </text>
+          </svg>
           <ul className="overview-status-legend">
-            {data?.status_breakdown.map((item, index) => (
+            {statusSegments.map((item) => (
               <li key={item.status}>
                 <span
                   className="overview-status-swatch"
-                  style={{
-                    backgroundColor: statusColors[index % statusColors.length],
-                  }}
+                  style={{ backgroundColor: item.color }}
                 />
                 <span className="overview-status-name">
                   {item.status.replaceAll("_", " ")}
@@ -876,7 +871,10 @@ function PipelineWidget({ query }: { query: OverviewQuery }) {
               </li>
             ))}
           </ul>
-        </>
+          <p className="overview-status-donut-note">
+            Current pipeline mix; not limited to the selected date range.
+          </p>
+        </div>
       )}
     </article>
   );
@@ -904,6 +902,9 @@ function CoverageWidget({ query }: { query: OverviewQuery }) {
         </div>
         <OverviewMetricInfo metricKey="with_email" />
       </div>
+      <p className="overview-coverage-scope">
+        Company coverage is all-time; indexing success uses the selected period.
+      </p>
       {query.isLoading ? (
         <PanelSkeleton rows={5} />
       ) : query.isError ? (
@@ -920,18 +921,36 @@ function CoverageWidget({ query }: { query: OverviewQuery }) {
         />
       ) : (
         <ul className="overview-coverage-list">
-          {rows.map((row) => (
-            <li key={row.key}>
-              <span>{row.label}</span>
-              <span className="overview-coverage-denominator">
-                {row.metric?.total
-                  ? `${formatCount(row.metric.count)} of ${formatCount(row.metric.total)}`
-                  : "No completed indexing jobs"}
-              </span>
-              <strong>{formatPercentage(row.metric?.percentage ?? null)}</strong>
-              <OverviewMetricInfo metricKey={row.key} />
-            </li>
-          ))}
+          {rows.map((row) => {
+            const percentage = row.metric?.percentage ?? null;
+            const accessibleLabel =
+              percentage === null
+                ? `${row.label}: no completed indexing jobs`
+                : `${row.label}: ${formatPercentage(percentage)} coverage`;
+            return (
+              <li key={row.key}>
+                <div className="overview-coverage-heading">
+                  <span>{row.label}</span>
+                  <strong>{formatPercentage(percentage)}</strong>
+                  <OverviewMetricInfo metricKey={row.key} />
+                </div>
+                <div
+                  aria-label={accessibleLabel}
+                  className="overview-coverage-track"
+                  role="img"
+                >
+                  <span
+                    style={{ width: `${percentage ?? 0}%` }}
+                  />
+                </div>
+                <span className="overview-coverage-denominator">
+                  {row.metric?.total
+                    ? `${formatCount(row.metric.count)} of ${formatCount(row.metric.total)}`
+                    : "No completed indexing jobs"}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </article>
@@ -1013,6 +1032,115 @@ function JobsWidget({ query }: { query: OverviewQuery }) {
             </Link>
           )}
         </>
+      )}
+    </article>
+  );
+}
+
+function TeamActivityWidget({
+  query,
+  range,
+}: {
+  query: OverviewQuery;
+  range: OverviewRange;
+}) {
+  const [metric, setMetric] =
+    useState<TeamActivityMetric>("leads_created");
+  const users = query.data?.user_progress ?? [];
+  const selectedMetric =
+    teamActivityMetrics.find((option) => option.value === metric) ??
+    teamActivityMetrics[0];
+  const sortedUsers = [...users].sort(
+    (left, right) =>
+      right[metric] - left[metric] ||
+      left.email.localeCompare(right.email),
+  );
+  const maxValue = Math.max(0, ...sortedUsers.map((user) => user[metric]));
+
+  return (
+    <article className="overview-panel overview-team-activity-panel">
+      <div className="overview-section-heading">
+        <div>
+          <p className="overview-eyebrow">TEAM ACTIVITY · {range}</p>
+          <h2>Activity by member</h2>
+        </div>
+        <label className="overview-team-activity-control">
+          <span>Measure</span>
+          <select
+            aria-label="Team activity measure"
+            onChange={(event) =>
+              setMetric(event.target.value as TeamActivityMetric)
+            }
+            value={metric}
+          >
+            {teamActivityMetrics.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="overview-team-activity-description">
+        Counts for the selected period. Inactive members are included.
+      </p>
+      {query.isLoading ? (
+        <PanelSkeleton rows={5} />
+      ) : query.isError ? (
+        <WidgetError
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          title="Team activity"
+        />
+      ) : users.length === 0 ? (
+        <EmptyWidget
+          actionHref="/organization/members"
+          actionLabel="Manage members"
+          message="No organization members are available."
+        />
+      ) : maxValue === 0 ? (
+        <p className="overview-team-activity-empty">
+          No {selectedMetric.label.toLocaleLowerCase()} recorded in this period.
+        </p>
+      ) : (
+        <ol
+          aria-label={`${selectedMetric.label} by team member`}
+          className="overview-team-activity-list"
+        >
+          {sortedUsers.map((user) => {
+            const value = user[metric];
+            const width = (value / maxValue) * 100;
+            const isInactive = !user.is_active;
+            return (
+              <li key={user.user_id}>
+                <Link
+                  className="overview-team-activity-row"
+                  href={`/organization/members/${user.user_id}`}
+                >
+                  <span className="overview-team-activity-member">
+                    <span className="overview-team-user">{user.email}</span>
+                    <span
+                      className={`overview-team-user-status${isInactive ? " is-inactive" : ""}`}
+                    >
+                      {isInactive ? "Inactive" : "Active"}
+                    </span>
+                  </span>
+                  <span
+                    aria-label={`${user.email}: ${formatCount(value)} ${selectedMetric.label.toLocaleLowerCase()}`}
+                    className="overview-team-activity-track"
+                    role="img"
+                  >
+                    <span
+                      className={isInactive ? "is-inactive" : ""}
+                      style={{ width: `${width}%` }}
+                    />
+                  </span>
+                  <strong>{formatCount(value)}</strong>
+                </Link>
+              </li>
+            );
+          })}
+        </ol>
       )}
     </article>
   );
@@ -1165,38 +1293,102 @@ function RecentLeadsWidget({
 }
 
 function OnboardingChecklist({
+  compact = false,
   onboarding,
 }: {
+  compact?: boolean;
   onboarding: NonNullable<OverviewResponse["onboarding"]>;
 }) {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (isDialogOpen && !dialog.open) {
+      dialog.showModal();
+    } else if (!isDialogOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [isDialogOpen]);
+
   if (onboarding.steps.every((step) => step.completed)) return null;
+  const remainingSteps = onboarding.steps.filter(
+    (step) => !step.completed,
+  ).length;
   return (
-    <section aria-labelledby="overview-onboarding-title" className="overview-onboarding">
-      <div className="overview-section-heading">
-        <div>
-          <p className="overview-eyebrow">GET STARTED</p>
-          <h2 id="overview-onboarding-title">Set up your lead workspace</h2>
-          <p>Complete these steps to build your first working pipeline.</p>
-        </div>
-        <CheckCircle2 aria-hidden="true" className="overview-onboarding-icon" size={22} />
-      </div>
-      <ol className="overview-onboarding-list">
-        {onboarding.steps.map((step) => (
-          <li key={step.id}>
-            <Link href={step.href}>
-              {step.completed ? (
-                <CheckCircle2 aria-hidden="true" className="is-complete" size={20} />
-              ) : (
-                <Circle aria-hidden="true" size={20} />
-              )}
-              <span>{step.label}</span>
-              <span className="overview-onboarding-state">
-                {step.completed ? "Complete" : "Start"}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ol>
+    <section
+      aria-label="Get started checklist"
+      className={`overview-onboarding${compact ? " is-compact" : ""}`}
+    >
+      <button
+        aria-controls="overview-onboarding-dialog"
+        aria-haspopup="dialog"
+        className={`overview-onboarding-trigger${compact ? " is-compact" : ""}`}
+        onClick={() => setIsDialogOpen(true)}
+        type="button"
+      >
+        <span className="overview-onboarding-label">
+          <span className="overview-onboarding-count-badge">
+            {remainingSteps}
+          </span>
+          <span className="overview-onboarding-remaining">
+            {remainingSteps === 1 ? "step" : "steps"} remaining
+          </span>
+        </span>
+      </button>
+      <dialog
+        aria-labelledby="overview-onboarding-title"
+        className="overview-onboarding-dialog"
+        id="overview-onboarding-dialog"
+        onCancel={(event) => {
+          event.preventDefault();
+          setIsDialogOpen(false);
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setIsDialogOpen(false);
+          }
+        }}
+        ref={dialogRef}
+      >
+        <header className="overview-onboarding-dialog-header">
+          <div>
+            <p className="overview-eyebrow">GET STARTED</p>
+            <h2 id="overview-onboarding-title">Set up your lead workspace</h2>
+            <p>Complete these steps to build your first working pipeline.</p>
+          </div>
+          <button
+            aria-label="Close setup checklist"
+            className="icon-button"
+            onClick={() => setIsDialogOpen(false)}
+            type="button"
+          >
+            <X aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <ol className="overview-onboarding-list">
+          {onboarding.steps.map((step) => (
+            <li key={step.id}>
+              <Link href={step.href}>
+                {step.completed ? (
+                  <CheckCircle2
+                    aria-hidden="true"
+                    className="is-complete"
+                    size={20}
+                  />
+                ) : (
+                  <Circle aria-hidden="true" size={20} />
+                )}
+                <span>{step.label}</span>
+                <span className="overview-onboarding-state">
+                  {step.completed ? "Complete" : "Start"}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      </dialog>
     </section>
   );
 }

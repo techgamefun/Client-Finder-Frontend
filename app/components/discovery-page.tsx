@@ -8,15 +8,16 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   getApplicationSettings,
+  getAuthSession,
   getDiscoveryProviderJob,
   getSearchKeywordSuggestions,
   getWebsites,
   saveDiscoveryWebsites,
   searchCompanies,
-  updateApplicationSettings,
+  type UserTavilySearchPreferences,
 } from "@/lib/api";
 import type {
   DiscoveryProviderJob,
@@ -31,7 +32,7 @@ import type {
 } from "@/lib/api";
 import { TAVILY_COUNTRIES, TAVILY_DIRECTORY_BLOCKLIST } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
-import { useToast } from "./toast-provider";
+import { useUserPreferences } from "@/lib/user-preferences";
 
 const suggestedQueries = [
   "B2B SaaS companies in Austin",
@@ -39,34 +40,35 @@ const suggestedQueries = [
   "Commercial cleaning companies in Seattle",
 ];
 
+type DiscoveryFilterState = {
+  topic: TavilyTopic;
+  search_depth: TavilySearchDepth;
+  max_results: 5 | 10 | 15 | 20;
+  country: string;
+  include_domains: string[];
+  include_domains_mode: "restrict" | "prefer";
+  exclude_domains: string[];
+  date_mode: "relative" | "custom";
+  time_range: TavilyTimeRange | "";
+  start_date: string;
+  end_date: string;
+  filter_by_published_date: boolean;
+  min_score: number;
+  include_answer: boolean;
+  auto_parameters: boolean;
+  auto_find_more: boolean;
+};
+
 export function DiscoveryPage() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const [searchText, setSearchText] = useState("");
   const [saveResult, setSaveResult] =
     useState<DiscoveryWebsiteSaveResponse | null>(null);
   const [savedDomains, setSavedDomains] = useState<Set<string>>(new Set());
   const [preferenceError, setPreferenceError] = useState("");
-  const [searchDepthOverride, setSearchDepthOverride] =
-    useState<TavilySearchDepth | null>(null);
-  const [topic, setTopic] = useState<TavilyTopic>("general");
-  const [maxResults, setMaxResults] = useState(20);
-  const [countryOverride, setCountryOverride] = useState<string | null>(null);
-  const [includeDomains, setIncludeDomains] = useState<string[]>([]);
-  const [includeDomainsMode, setIncludeDomainsMode] =
-    useState<"restrict" | "prefer">("restrict");
-  const [excludeDomainsOverride, setExcludeDomainsOverride] = useState<
-    string[] | null
-  >(null);
-  const [dateMode, setDateMode] = useState<"relative" | "custom">("relative");
-  const [timeRange, setTimeRange] = useState<TavilyTimeRange | "">("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [filterByPublishedDate, setFilterByPublishedDate] = useState(false);
-  const [minScore, setMinScore] = useState(0);
-  const [includeAnswer, setIncludeAnswer] = useState(false);
-  const [autoParameters, setAutoParameters] = useState(false);
-  const [autoFindMore, setAutoFindMore] = useState(false);
+  const [filterOverrides, setFilterOverrides] =
+    useState<Partial<DiscoveryFilterState>>({});
+  const preferenceSaveAttempt = useRef<string | null>(null);
   const [lastSearchInput, setLastSearchInput] =
     useState<DiscoverySearchInput | null>(null);
   const [moreResults, setMoreResults] = useState<DiscoveryResponse["results"]>([]);
@@ -80,16 +82,137 @@ export function DiscoveryPage() {
     queryFn: getApplicationSettings,
     retry: false,
   });
-  const searchDepth =
-    searchDepthOverride ??
-    settingsQuery.data?.tavily_default_search_depth ??
-    "basic";
-  const country =
-    countryOverride ?? settingsQuery.data?.tavily_default_country ?? "";
-  const excludeDomains =
-    excludeDomainsOverride ??
-    settingsQuery.data?.tavily_default_exclude_domains ??
-    [];
+  const authSessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession,
+    retry: false,
+  });
+  const userPreferences = useUserPreferences(authSessionQuery.data?.user.id);
+  const saveUserPreferences = userPreferences.save;
+  const storedTavilyFilters = userPreferences.data?.search.tavily;
+  const filters = useMemo<DiscoveryFilterState>(
+    () => ({
+      topic:
+        filterOverrides.topic ?? storedTavilyFilters?.topic ?? "general",
+      search_depth:
+        filterOverrides.search_depth ??
+        storedTavilyFilters?.search_depth ??
+        settingsQuery.data?.tavily_default_search_depth ??
+        "basic",
+      max_results:
+        filterOverrides.max_results ?? storedTavilyFilters?.max_results ?? 20,
+      country:
+        filterOverrides.country ??
+        storedTavilyFilters?.country ??
+        settingsQuery.data?.tavily_default_country ??
+        "",
+      include_domains:
+        filterOverrides.include_domains ??
+        storedTavilyFilters?.include_domains ??
+        [],
+      include_domains_mode:
+        filterOverrides.include_domains_mode ??
+        storedTavilyFilters?.include_domains_mode ??
+        "restrict",
+      exclude_domains:
+        filterOverrides.exclude_domains ??
+        storedTavilyFilters?.exclude_domains ??
+        settingsQuery.data?.tavily_default_exclude_domains ??
+        [],
+      date_mode:
+        filterOverrides.date_mode ??
+        storedTavilyFilters?.date_mode ??
+        "relative",
+      time_range:
+        filterOverrides.time_range ??
+        storedTavilyFilters?.time_range ??
+        "",
+      start_date:
+        filterOverrides.start_date ??
+        storedTavilyFilters?.start_date ??
+        "",
+      end_date:
+        filterOverrides.end_date ??
+        storedTavilyFilters?.end_date ??
+        "",
+      filter_by_published_date:
+        filterOverrides.filter_by_published_date ??
+        storedTavilyFilters?.filter_by_published_date ??
+        false,
+      min_score:
+        filterOverrides.min_score ?? storedTavilyFilters?.min_score ?? 0,
+      include_answer:
+        filterOverrides.include_answer ??
+        storedTavilyFilters?.include_answer ??
+        false,
+      auto_parameters:
+        filterOverrides.auto_parameters ??
+        storedTavilyFilters?.auto_parameters ??
+        false,
+      auto_find_more:
+        filterOverrides.auto_find_more ??
+        storedTavilyFilters?.auto_find_more ??
+        false,
+    }),
+    [filterOverrides, settingsQuery.data, storedTavilyFilters],
+  );
+  const overriddenFilterKeys = Object.keys(
+    filterOverrides,
+  ) as (keyof DiscoveryFilterState)[];
+  const filterPreferencePatch = toStoredTavilyPreferences(
+    filters,
+    overriddenFilterKeys,
+  );
+  const serializedFilters = JSON.stringify(filterPreferencePatch);
+  const serializedSavedFilters = JSON.stringify(
+    Object.fromEntries(
+      overriddenFilterKeys.map((key) => [
+        key,
+        storedTavilyFilters?.[key] ?? null,
+      ]),
+    ),
+  );
+
+  useEffect(() => {
+    const userId = authSessionQuery.data?.user.id;
+    const attemptKey = `${userId ?? ""}:${serializedFilters}`;
+    if (
+      !userId ||
+      !settingsQuery.data ||
+      !userPreferences.data ||
+      overriddenFilterKeys.length === 0 ||
+      serializedFilters === serializedSavedFilters ||
+      preferenceSaveAttempt.current === attemptKey
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      preferenceSaveAttempt.current = attemptKey;
+      saveUserPreferences({
+        search: {
+          tavily: JSON.parse(serializedFilters) as UserTavilySearchPreferences,
+        },
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [
+    authSessionQuery.data?.user.id,
+    overriddenFilterKeys.length,
+    serializedFilters,
+    serializedSavedFilters,
+    settingsQuery.data,
+    userPreferences.data,
+    saveUserPreferences,
+  ]);
+
+  function updateFilter<Key extends keyof DiscoveryFilterState>(
+    key: Key,
+    value: DiscoveryFilterState[Key],
+  ) {
+    preferenceSaveAttempt.current = null;
+    setFilterOverrides((current) => ({ ...current, [key]: value }));
+  }
   const suggestionQuery = searchText.trim();
   const suggestionsQuery = useQuery({
     queryKey: ["discovery-keyword-suggestions", suggestionQuery],
@@ -160,20 +283,6 @@ export function DiscoveryPage() {
       }
     },
   });
-  const preferenceMutation = useMutation({
-    mutationFn: (selected: DiscoveryProviderId[]) =>
-      updateApplicationSettings({ selected_discovery_tools: selected }),
-    onSuccess: (settings) => {
-      setPreferenceError("");
-      queryClient.setQueryData(["application-settings"], settings);
-      showToast({
-        type: "success",
-        title: "Discovery preferences saved",
-        message: "Your selected search providers are ready to use.",
-      });
-    },
-    onError: (error: Error) => setPreferenceError(error.message),
-  });
   const saveMutation = useMutation({
     mutationFn: async (input: DiscoveryWebsiteSaveInput) => {
       const aggregate = createEmptySaveResponse(input.query);
@@ -219,7 +328,9 @@ export function DiscoveryPage() {
   });
   const searchData = searchMutation.data;
   const selectedProviders: DiscoveryProviderId[] =
-    settingsQuery.data?.selected_discovery_tools ?? ["tavily"];
+    userPreferences.data?.search.providers ??
+    settingsQuery.data?.selected_discovery_tools ??
+    ["tavily"];
   const configuredSelectedProviders = settingsQuery.data
     ? selectedProviders.filter((provider) =>
         provider === "tavily"
@@ -265,23 +376,36 @@ export function DiscoveryPage() {
     event.preventDefault();
     const request: DiscoverySearchInput = {
       query: searchText.trim(),
-      max_results: maxResults,
-      search_depth: searchDepth,
-      topic,
+      max_results: filters.max_results,
+      search_depth: filters.search_depth,
+      topic: filters.topic,
       chunks_per_source: 3,
-      ...(topic === "general" && country ? { country } : {}),
-      ...(includeDomains.length > 0
-        ? { include_domains: includeDomains, include_domains_mode: includeDomainsMode }
+      ...(filters.topic === "general" && filters.country
+        ? { country: filters.country }
         : {}),
-      ...(excludeDomains.length > 0 ? { exclude_domains: excludeDomains } : {}),
-      ...(dateMode === "relative" && timeRange ? { time_range: timeRange } : {}),
-      ...(dateMode === "custom" && startDate ? { start_date: startDate } : {}),
-      ...(dateMode === "custom" && endDate ? { end_date: endDate } : {}),
-      filter_by_published_date: filterByPublishedDate,
-      include_answer: includeAnswer ? "basic" : false,
+      ...(filters.include_domains.length > 0
+        ? {
+            include_domains: filters.include_domains,
+            include_domains_mode: filters.include_domains_mode,
+          }
+        : {}),
+      ...(filters.exclude_domains.length > 0
+        ? { exclude_domains: filters.exclude_domains }
+        : {}),
+      ...(filters.date_mode === "relative" && filters.time_range
+        ? { time_range: filters.time_range }
+        : {}),
+      ...(filters.date_mode === "custom" && filters.start_date
+        ? { start_date: filters.start_date }
+        : {}),
+      ...(filters.date_mode === "custom" && filters.end_date
+        ? { end_date: filters.end_date }
+        : {}),
+      filter_by_published_date: filters.filter_by_published_date,
+      include_answer: filters.include_answer ? "basic" : false,
       include_favicon: true,
-      auto_parameters: autoParameters,
-      min_score: minScore,
+      auto_parameters: filters.auto_parameters,
+      min_score: filters.min_score,
     };
     setSaveResult(null);
     setSavedDomains(new Set());
@@ -291,19 +415,23 @@ export function DiscoveryPage() {
     saveMutation.reset();
     findMoreMutation.reset();
     setLastSearchInput(request);
-    searchMutation.mutate({ input: request, autoFindMore });
+    searchMutation.mutate({
+      input: request,
+      autoFindMore: filters.auto_find_more,
+    });
   }
 
   function toggleDirectoryPreset() {
     const hasPreset = TAVILY_DIRECTORY_BLOCKLIST.every((domain) =>
-      excludeDomains.includes(domain),
+      filters.exclude_domains.includes(domain),
     );
-    setExcludeDomainsOverride(
+    updateFilter(
+      "exclude_domains",
       hasPreset
-        ? excludeDomains.filter(
+        ? filters.exclude_domains.filter(
             (domain) => !TAVILY_DIRECTORY_BLOCKLIST.includes(domain),
           )
-        : [...new Set([...excludeDomains, ...TAVILY_DIRECTORY_BLOCKLIST])].slice(
+        : [...new Set([...filters.exclude_domains, ...TAVILY_DIRECTORY_BLOCKLIST])].slice(
             0,
             150,
           ),
@@ -331,7 +459,7 @@ export function DiscoveryPage() {
       return;
     }
     setPreferenceError("");
-    preferenceMutation.mutate(selected);
+    saveUserPreferences({ search: { providers: [...new Set(selected)] } });
   }
 
   function toggleDiscoveryProvider(
@@ -398,7 +526,8 @@ export function DiscoveryPage() {
               saveMutation.isPending ||
               settingsQuery.isPending ||
               settingsQuery.isError ||
-              preferenceMutation.isPending ||
+              userPreferences.isPending ||
+              userPreferences.saveMutation.isPending ||
               configuredSelectedProviders.length === 0
             }
             type="submit"
@@ -411,11 +540,11 @@ export function DiscoveryPage() {
           <summary>
             <span>Advanced Search Filters</span>
             <span className="discovery-advanced-summary">
-              {topic === "general" ? "General" : topic}
+              {filters.topic === "general" ? "General" : filters.topic}
               {" · "}
-              {searchDepth}
+              {filters.search_depth}
               {" · "}
-              {maxResults} results
+              {filters.max_results} results
             </span>
             <span aria-hidden="true" className="discovery-source-summary-chevron">
               ▾
@@ -427,9 +556,9 @@ export function DiscoveryPage() {
                 Topic
                 <select
                   onChange={(event) =>
-                    setTopic(event.target.value as TavilyTopic)
+                    updateFilter("topic", event.target.value as TavilyTopic)
                   }
-                  value={topic}
+                  value={filters.topic}
                 >
                   <option value="general">General</option>
                   <option value="news">News</option>
@@ -440,11 +569,12 @@ export function DiscoveryPage() {
                 Search depth
                 <select
                   onChange={(event) =>
-                    setSearchDepthOverride(
+                    updateFilter(
+                      "search_depth",
                       event.target.value as TavilySearchDepth,
                     )
                   }
-                  value={searchDepth}
+                  value={filters.search_depth}
                 >
                   <option value="basic">Basic · 1 credit</option>
                   <option value="fast">Fast · 1 credit</option>
@@ -456,9 +586,12 @@ export function DiscoveryPage() {
                 Max results
                 <select
                   onChange={(event) =>
-                    setMaxResults(Number(event.target.value))
+                    updateFilter(
+                      "max_results",
+                      Number(event.target.value) as DiscoveryFilterState["max_results"],
+                    )
                   }
-                  value={maxResults}
+                  value={filters.max_results}
                 >
                   {[5, 10, 15, 20].map((count) => (
                     <option key={count} value={count}>
@@ -470,11 +603,11 @@ export function DiscoveryPage() {
               <label className="discovery-filter-field">
                 Target country
                 <select
-                  disabled={topic !== "general"}
+                  disabled={filters.topic !== "general"}
                   onChange={(event) =>
-                    setCountryOverride(event.target.value)
+                    updateFilter("country", event.target.value)
                   }
-                  value={country}
+                  value={filters.country}
                 >
                   <option value="">Any country</option>
                   {TAVILY_COUNTRIES.map(({ label, value }) => (
@@ -489,10 +622,10 @@ export function DiscoveryPage() {
             <div className="discovery-domain-filters">
               <div>
                 <DomainChipInput
-                  domains={includeDomains}
+                  domains={filters.include_domains}
                   label="Include domains"
                   maxDomains={300}
-                  onChange={setIncludeDomains}
+                  onChange={(domains) => updateFilter("include_domains", domains)}
                   placeholder="example.com or *.example.com"
                 />
                 <div
@@ -501,17 +634,17 @@ export function DiscoveryPage() {
                   role="group"
                 >
                   <button
-                    aria-pressed={includeDomainsMode === "restrict"}
-                    className={includeDomainsMode === "restrict" ? "is-active" : ""}
-                    onClick={() => setIncludeDomainsMode("restrict")}
+                    aria-pressed={filters.include_domains_mode === "restrict"}
+                    className={filters.include_domains_mode === "restrict" ? "is-active" : ""}
+                    onClick={() => updateFilter("include_domains_mode", "restrict")}
                     type="button"
                   >
                     Restrict
                   </button>
                   <button
-                    aria-pressed={includeDomainsMode === "prefer"}
-                    className={includeDomainsMode === "prefer" ? "is-active" : ""}
-                    onClick={() => setIncludeDomainsMode("prefer")}
+                    aria-pressed={filters.include_domains_mode === "prefer"}
+                    className={filters.include_domains_mode === "prefer" ? "is-active" : ""}
+                    onClick={() => updateFilter("include_domains_mode", "prefer")}
                     type="button"
                   >
                     Prefer
@@ -520,22 +653,22 @@ export function DiscoveryPage() {
               </div>
               <div>
                 <DomainChipInput
-                  domains={excludeDomains}
+                  domains={filters.exclude_domains}
                   label="Exclude domains"
                   maxDomains={150}
-                  onChange={setExcludeDomainsOverride}
+                  onChange={(domains) => updateFilter("exclude_domains", domains)}
                   placeholder="directory.example"
                 />
                 <button
                   aria-pressed={TAVILY_DIRECTORY_BLOCKLIST.every((domain) =>
-                    excludeDomains.includes(domain),
+                    filters.exclude_domains.includes(domain),
                   )}
                   className="discovery-preset-toggle"
                   onClick={toggleDirectoryPreset}
                   type="button"
                 >
                   {TAVILY_DIRECTORY_BLOCKLIST.every((domain) =>
-                    excludeDomains.includes(domain),
+                    filters.exclude_domains.includes(domain),
                   )
                     ? "Remove directory & social sites"
                     : "Exclude directories & social sites"}
@@ -552,31 +685,34 @@ export function DiscoveryPage() {
                   role="group"
                 >
                   <button
-                    aria-pressed={dateMode === "relative"}
-                    className={dateMode === "relative" ? "is-active" : ""}
-                    onClick={() => setDateMode("relative")}
+                    aria-pressed={filters.date_mode === "relative"}
+                    className={filters.date_mode === "relative" ? "is-active" : ""}
+                    onClick={() => updateFilter("date_mode", "relative")}
                     type="button"
                   >
                     Relative time
                   </button>
                   <button
-                    aria-pressed={dateMode === "custom"}
-                    className={dateMode === "custom" ? "is-active" : ""}
-                    onClick={() => setDateMode("custom")}
+                    aria-pressed={filters.date_mode === "custom"}
+                    className={filters.date_mode === "custom" ? "is-active" : ""}
+                    onClick={() => updateFilter("date_mode", "custom")}
                     type="button"
                   >
                     Custom dates
                   </button>
                 </div>
               </div>
-              {dateMode === "relative" ? (
+              {filters.date_mode === "relative" ? (
                 <label className="discovery-filter-field discovery-filter-date">
                   Time range
                   <select
                     onChange={(event) =>
-                      setTimeRange(event.target.value as TavilyTimeRange | "")
+                      updateFilter(
+                        "time_range",
+                        event.target.value as TavilyTimeRange | "",
+                      )
                     }
-                    value={timeRange}
+                    value={filters.time_range}
                   >
                     <option value="">Any time</option>
                     <option value="day">Past 24 hours</option>
@@ -590,40 +726,46 @@ export function DiscoveryPage() {
                   <label className="discovery-filter-field">
                     Start date
                     <input
-                      max={endDate || undefined}
-                      onChange={(event) => setStartDate(event.target.value)}
+                      max={filters.end_date || undefined}
+                      onChange={(event) =>
+                        updateFilter("start_date", event.target.value)
+                      }
                       type="date"
-                      value={startDate}
+                      value={filters.start_date}
                     />
                   </label>
                   <label className="discovery-filter-field">
                     End date
                     <input
-                      min={startDate || undefined}
-                      onChange={(event) => setEndDate(event.target.value)}
+                      min={filters.start_date || undefined}
+                      onChange={(event) =>
+                        updateFilter("end_date", event.target.value)
+                      }
                       type="date"
-                      value={endDate}
+                      value={filters.end_date}
                     />
                   </label>
                 </div>
               )}
               <label className="discovery-range-field">
                 <span>Minimum relevance score</span>
-                <strong>{minScore.toFixed(1)}</strong>
+                <strong>{filters.min_score.toFixed(1)}</strong>
                 <input
                   max={1}
                   min={0}
-                  onChange={(event) => setMinScore(Number(event.target.value))}
+                  onChange={(event) =>
+                    updateFilter("min_score", Number(event.target.value))
+                  }
                   step={0.1}
                   type="range"
-                  value={minScore}
+                  value={filters.min_score}
                 />
               </label>
               <label className="discovery-toggle-field">
                 <input
-                  checked={filterByPublishedDate}
+                  checked={filters.filter_by_published_date}
                   onChange={(event) =>
-                    setFilterByPublishedDate(event.target.checked)
+                    updateFilter("filter_by_published_date", event.target.checked)
                   }
                   type="checkbox"
                 />
@@ -634,30 +776,36 @@ export function DiscoveryPage() {
             <div className="discovery-search-toggles">
               <label className="discovery-toggle-field">
                 <input
-                  checked={includeAnswer}
-                  onChange={(event) => setIncludeAnswer(event.target.checked)}
+                  checked={filters.include_answer}
+                  onChange={(event) =>
+                    updateFilter("include_answer", event.target.checked)
+                  }
                   type="checkbox"
                 />
                 AI Market Summary
               </label>
               <label className="discovery-toggle-field">
                 <input
-                  checked={autoParameters}
-                  onChange={(event) => setAutoParameters(event.target.checked)}
+                  checked={filters.auto_parameters}
+                  onChange={(event) =>
+                    updateFilter("auto_parameters", event.target.checked)
+                  }
                   type="checkbox"
                 />
                 Auto-tune parameters
               </label>
               <label className="discovery-toggle-field discovery-auto-find-more">
                 <input
-                  checked={autoFindMore}
+                  checked={filters.auto_find_more}
                   disabled={
                     !settingsQuery.data?.tavily_configured ||
                     searchMutation.isPending ||
                     findMoreMutation.isPending ||
                     saveMutation.isPending
                   }
-                  onChange={(event) => setAutoFindMore(event.target.checked)}
+                  onChange={(event) =>
+                    updateFilter("auto_find_more", event.target.checked)
+                  }
                   type="checkbox"
                 />
                 <span>
@@ -688,7 +836,8 @@ export function DiscoveryPage() {
                 checked={selectedProviders.includes("tavily")}
                 disabled={
                   settingsQuery.isPending ||
-                  preferenceMutation.isPending ||
+                  userPreferences.isPending ||
+                  userPreferences.saveMutation.isPending ||
                   (!settingsQuery.data?.tavily_configured &&
                     !selectedProviders.includes("tavily"))
                 }
@@ -711,7 +860,8 @@ export function DiscoveryPage() {
                 checked={selectedProviders.includes("octoparse")}
                 disabled={
                   settingsQuery.isPending ||
-                  preferenceMutation.isPending ||
+                  userPreferences.isPending ||
+                  userPreferences.saveMutation.isPending ||
                   ((!settingsQuery.data?.octoparse_configured ||
                     !settingsQuery.data?.octoparse_template) &&
                     !selectedProviders.includes("octoparse"))
@@ -759,12 +909,16 @@ export function DiscoveryPage() {
           Could not load search settings: {settingsQuery.error.message}
         </div>
       )}
-      {(preferenceError || preferenceMutation.isError) && (
+      {(preferenceError || userPreferences.saveMutation.isError) && (
         <div className="alert alert-error discovery-alert" role="alert">
-          Could not save search sources:{" "}
           {preferenceError ||
-            preferenceMutation.error?.message ||
-            "Unexpected error."}
+            `Could not save your search preferences: ${userPreferences.saveMutation.error?.message ?? "Unknown error."}`}
+        </div>
+      )}
+      {userPreferences.isError && (
+        <div className="alert alert-error discovery-alert" role="alert">
+          Could not load your search preferences:{" "}
+          {userPreferences.error.message}
         </div>
       )}
       {settingsQuery.isSuccess &&
@@ -1031,6 +1185,25 @@ function getResultDomain(value: string) {
   } catch {
     return value;
   }
+}
+
+function toStoredTavilyPreferences(
+  filters: DiscoveryFilterState,
+  keys: (keyof DiscoveryFilterState)[],
+): UserTavilySearchPreferences {
+  const preferences: UserTavilySearchPreferences = {};
+  for (const key of keys) {
+    if (key === "time_range") {
+      preferences.time_range = filters.time_range || null;
+    } else if (key === "start_date") {
+      preferences.start_date = filters.start_date || null;
+    } else if (key === "end_date") {
+      preferences.end_date = filters.end_date || null;
+    } else {
+      Object.assign(preferences, { [key]: filters[key] });
+    }
+  }
+  return preferences;
 }
 
 function mergeUniqueResults(results: DiscoveryResponse["results"]) {

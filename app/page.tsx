@@ -23,7 +23,7 @@ export default function Home() {
   const showPublicActions = !sessionQuery.isLoading && !hasSession;
   const workspaceHref =
     sessionQuery.data?.user.role === "admin"
-      ? "/organization"
+      ? "/organization/dashboard"
       : "/overview";
 
   return (
