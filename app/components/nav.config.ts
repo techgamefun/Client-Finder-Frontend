@@ -1,5 +1,6 @@
 import {
   Building2,
+  CircleOff,
   Compass,
   FileText,
   Globe,
@@ -139,6 +140,12 @@ export const navigationSections: NavigationSection[] = [
         href: "/jobs",
         icon: Workflow,
         badgeKey: "jobs",
+      },
+      {
+        id: "excluded-domains",
+        label: "Excluded domains",
+        href: "/excluded-domains",
+        icon: CircleOff,
       },
     ],
   },

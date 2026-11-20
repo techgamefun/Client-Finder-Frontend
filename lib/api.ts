@@ -489,6 +489,17 @@ export interface ExcludedDomainInput {
   note?: string;
 }
 
+export interface ExcludedDomainBatchResult {
+  requested_count: number;
+  created_count: number;
+  updated_count: number;
+  duplicate_count: number;
+}
+
+export interface ExcludedDomainCount {
+  total_count: number;
+}
+
 export interface WebsiteRecord {
   id: string;
   website_url: string;
@@ -1791,13 +1802,29 @@ export function getWebsiteCrawlJobs(): Promise<WebsiteCrawlJobResponse[]> {
 export function getExcludedDomains(
   search = "",
   reason?: ExcludedDomainReason,
+  limit = 25,
+  offset = 0,
 ): Promise<ExcludedDomainRecord[]> {
-  const query = new URLSearchParams({ limit: "500" });
+  const query = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
   if (search.trim()) query.set("search", search.trim());
   if (reason) query.set("reason", reason);
   return request<ExcludedDomainRecord[]>(
     `/excluded-domains?${query.toString()}`,
   );
+}
+
+export function getExcludedDomainCount(
+  search = "",
+  reason?: ExcludedDomainReason,
+): Promise<ExcludedDomainCount> {
+  const query = new URLSearchParams();
+  if (search.trim()) query.set("search", search.trim());
+  if (reason) query.set("reason", reason);
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return request<ExcludedDomainCount>(`/excluded-domains/count${suffix}`);
 }
 
 export function addExcludedDomain(
@@ -1806,6 +1833,15 @@ export function addExcludedDomain(
   return request<ExcludedDomainRecord>("/excluded-domains", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function addExcludedDomainsBatch(
+  domains: ExcludedDomainInput[],
+): Promise<ExcludedDomainBatchResult> {
+  return request<ExcludedDomainBatchResult>("/excluded-domains/batch", {
+    method: "POST",
+    body: JSON.stringify({ domains }),
   });
 }
 

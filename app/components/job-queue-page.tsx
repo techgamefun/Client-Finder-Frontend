@@ -5,12 +5,8 @@ import { useState } from "react";
 import {
   useMutation,
   useQuery,
-  useQueryClient,
 } from "@tanstack/react-query";
 import {
-  addExcludedDomain,
-  deleteExcludedDomain,
-  getExcludedDomains,
   getApplicationSettings,
   getPageSpeedScanJobs,
   getWebsiteCrawlJobs,
@@ -18,8 +14,6 @@ import {
   retryPageSpeedScanJobs,
   retryWebsiteCrawlJob,
   retryWebsiteCrawlJobs,
-  type ExcludedDomainReason,
-  type ExcludedDomainRecord,
   type PageSpeedScanJob,
   type WebsiteCrawlJobResponse,
 } from "@/lib/api";
@@ -46,13 +40,6 @@ interface QueueJob {
   startedAt: string | null;
   completedAt: string | null;
 }
-
-const excludedDomainReasons: ExcludedDomainReason[] = [
-  "Big Tech / Social",
-  "Manual Exclusion",
-  "Unreachable",
-  "Blocked (403/429)",
-];
 
 const queueConfig = {
   crawler: {
@@ -106,24 +93,9 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const config = queueConfig[kind];
   const queueLabel = kind === "crawler" ? "indexing" : "PageSpeed";
   const showToast = useToast();
-  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
     "all",
   );
-  const [excludedSearch, setExcludedSearch] = useState("");
-  const [excludedReasonFilter, setExcludedReasonFilter] = useState<
-    ExcludedDomainReason | "all"
-  >("all");
-  const [newExcludedDomain, setNewExcludedDomain] = useState("");
-  const [newExcludedReason, setNewExcludedReason] =
-    useState<ExcludedDomainReason>("Manual Exclusion");
-  const [newExcludedNote, setNewExcludedNote] = useState("");
-  const [quickExcludeJobId, setQuickExcludeJobId] = useState<string | null>(
-    null,
-  );
-  const [quickExcludeReason, setQuickExcludeReason] =
-    useState<ExcludedDomainReason>("Manual Exclusion");
-  const [quickExcludeNote, setQuickExcludeNote] = useState("");
   const crawlerJobsQuery = useQuery({
     queryKey: ["crawler", "queue-jobs"],
     queryFn: getWebsiteCrawlJobs,
@@ -141,19 +113,6 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     queryFn: getApplicationSettings,
     enabled: kind === "pagespeed",
     retry: false,
-  });
-  const excludedDomainsQuery = useQuery({
-    queryKey: [
-      "excluded-domains",
-      excludedSearch.trim(),
-      excludedReasonFilter,
-    ],
-    queryFn: () =>
-      getExcludedDomains(
-        excludedSearch,
-        excludedReasonFilter === "all" ? undefined : excludedReasonFilter,
-      ),
-    enabled: kind === "crawler",
   });
   const jobsQuery = kind === "crawler" ? crawlerJobsQuery : pageSpeedJobsQuery;
   const canRetryJobs =
@@ -225,63 +184,6 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       showToast({
         type: "error",
         title: `Could not retry failed ${queueLabel} jobs`,
-        message: error.message,
-      });
-    },
-  });
-  const addExcludedMutation = useMutation({
-    mutationFn: addExcludedDomain,
-    onSuccess: async (domain) => {
-      setNewExcludedDomain("");
-      setNewExcludedNote("");
-      showToast({
-        type: "success",
-        title: "Domain excluded",
-        message: `${domain.domain} will be skipped by the indexing queue.`,
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
-        crawlerJobsQuery.refetch(),
-      ]);
-    },
-  });
-  const quickExcludeMutation = useMutation({
-    mutationFn: addExcludedDomain,
-    onSuccess: async (domain) => {
-      setQuickExcludeJobId(null);
-      setQuickExcludeNote("");
-      showToast({
-        type: "success",
-        title: "Domain excluded",
-        message: `${domain.domain} will be skipped by the indexing queue.`,
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
-        crawlerJobsQuery.refetch(),
-      ]);
-    },
-    onError: (error: Error) => {
-      showToast({
-        type: "error",
-        title: "Could not exclude domain",
-        message: error.message,
-      });
-    },
-  });
-  const removeExcludedMutation = useMutation({
-    mutationFn: deleteExcludedDomain,
-    onSuccess: async () => {
-      showToast({
-        type: "success",
-        title: "Domain re-enabled",
-        message: "New indexing jobs can now be created for this domain.",
-      });
-      await queryClient.invalidateQueries({ queryKey: ["excluded-domains"] });
-    },
-    onError: (error: Error) => {
-      showToast({
-        type: "error",
-        title: "Could not re-enable domain",
         message: error.message,
       });
     },
@@ -485,87 +387,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                           : "Retry"}
                       </button>
                     )}
-                    {kind === "crawler" &&
-                      (job.status === "queued" ||
-                        job.status === "failed") && (
-                        <button
-                          className="button button-secondary queue-exclude-button"
-                          disabled={quickExcludeMutation.isPending}
-                          onClick={() => {
-                            setQuickExcludeJobId((current) =>
-                              current === job.id ? null : job.id,
-                            );
-                            setQuickExcludeReason("Manual Exclusion");
-                            setQuickExcludeNote("");
-                          }}
-                          type="button"
-                        >
-                          Exclude domain
-                        </button>
-                      )}
                   </div>
                 </div>
-                {kind === "crawler" && quickExcludeJobId === job.id && (
-                  <form
-                    className="queue-exclude-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      quickExcludeMutation.mutate({
-                        domain: job.websiteUrl,
-                        reason: quickExcludeReason,
-                        note: quickExcludeNote,
-                      });
-                    }}
-                  >
-                    <label>
-                      <span>Reason</span>
-                      <select
-                        onChange={(event) => {
-                          const reason = excludedDomainReasons.find(
-                            (value) => value === event.target.value,
-                          );
-                          if (reason) setQuickExcludeReason(reason);
-                        }}
-                        value={quickExcludeReason}
-                      >
-                        {excludedDomainReasons.map((reason) => (
-                          <option key={reason} value={reason}>
-                            {reason}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Note (optional)</span>
-                      <input
-                        maxLength={4000}
-                        onChange={(event) =>
-                          setQuickExcludeNote(event.target.value)
-                        }
-                        placeholder="Add context for your team"
-                        value={quickExcludeNote}
-                      />
-                    </label>
-                    <div className="queue-exclude-form-actions">
-                      <button
-                        className="button button-primary"
-                        disabled={quickExcludeMutation.isPending}
-                        type="submit"
-                      >
-                        {quickExcludeMutation.isPending
-                          ? "Excluding…"
-                          : "Confirm exclusion"}
-                      </button>
-                      <button
-                        className="button button-secondary"
-                        onClick={() => setQuickExcludeJobId(null)}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
                 <dl className="pagespeed-job-times">
                   <div>
                     <dt>Queued</dt>
@@ -610,173 +433,6 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           </div>
         )}
       </section>
-      {kind === "crawler" && (
-        <section
-          aria-labelledby="excluded-domains-heading"
-          className="panel queue-panel excluded-domains-panel"
-        >
-          <div className="queue-panel-heading">
-            <div>
-              <h2 id="excluded-domains-heading">Excluded domains</h2>
-              <p className="panel-subtitle">
-                Excluded domains and their subdomains are skipped before
-                indexing.
-              </p>
-            </div>
-            <div className="excluded-domain-filters">
-              <label>
-                <span className="sr-only">Search excluded domains</span>
-                <input
-                  onChange={(event) => setExcludedSearch(event.target.value)}
-                  placeholder="Search domains or notes"
-                  type="search"
-                  value={excludedSearch}
-                />
-              </label>
-              <label>
-                <span className="sr-only">Filter by exclusion reason</span>
-                <select
-                  onChange={(event) => {
-                    const reason = excludedDomainReasons.find(
-                      (value) => value === event.target.value,
-                    );
-                    setExcludedReasonFilter(reason ?? "all");
-                  }}
-                  value={excludedReasonFilter}
-                >
-                  <option value="all">All reasons</option>
-                  {excludedDomainReasons.map((reason) => (
-                    <option key={reason} value={reason}>
-                      {reason}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <form
-            className="excluded-domain-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              addExcludedMutation.mutate({
-                domain: newExcludedDomain,
-                reason: newExcludedReason,
-                note: newExcludedNote,
-              });
-            }}
-          >
-            <label>
-              <span>Domain or URL</span>
-              <input
-                onChange={(event) => setNewExcludedDomain(event.target.value)}
-                placeholder="example.com"
-                required
-                value={newExcludedDomain}
-              />
-            </label>
-            <label>
-              <span>Reason</span>
-              <select
-                onChange={(event) => {
-                  const reason = excludedDomainReasons.find(
-                    (value) => value === event.target.value,
-                  );
-                  if (reason) setNewExcludedReason(reason);
-                }}
-                value={newExcludedReason}
-              >
-                {excludedDomainReasons.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {reason}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Note (optional)</span>
-              <input
-                maxLength={4000}
-                onChange={(event) => setNewExcludedNote(event.target.value)}
-                placeholder="Add context or last error"
-                value={newExcludedNote}
-              />
-            </label>
-            <button
-              className="button button-primary"
-              disabled={
-                addExcludedMutation.isPending || !newExcludedDomain.trim()
-              }
-              type="submit"
-            >
-              {addExcludedMutation.isPending ? "Adding…" : "Add domain"}
-            </button>
-          </form>
-
-          {addExcludedMutation.isError && (
-            <p className="alert alert-error" role="alert">
-              Could not add domain: {addExcludedMutation.error.message}
-            </p>
-          )}
-          {excludedDomainsQuery.isError && (
-            <p className="alert alert-error" role="alert">
-              Could not load excluded domains:{" "}
-              {excludedDomainsQuery.error.message}
-            </p>
-          )}
-          {excludedDomainsQuery.isLoading ? (
-            <p className="empty-copy">Loading excluded domains…</p>
-          ) : excludedDomainsQuery.data?.length ? (
-            <div className="excluded-domain-table-scroll">
-              <table className="excluded-domain-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Domain</th>
-                    <th scope="col">Reason</th>
-                    <th scope="col">Source</th>
-                    <th scope="col">Note / Last error</th>
-                    <th scope="col">Date added</th>
-                    <th scope="col">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {excludedDomainsQuery.data.map((domain) => (
-                    <tr key={domain.id}>
-                      <td className="excluded-domain-name">{domain.domain}</td>
-                      <td>
-                        <span className="excluded-domain-reason">
-                          {domain.reason}
-                        </span>
-                      </td>
-                      <td>{formatExcludedDomainSource(domain.source)}</td>
-                      <td className="excluded-domain-note">
-                        {domain.note || "—"}
-                      </td>
-                      <td>{formatTimestamp(domain.created_at)}</td>
-                      <td>
-                        <button
-                          className="button button-secondary excluded-domain-remove"
-                          disabled={removeExcludedMutation.isPending}
-                          onClick={() =>
-                            removeExcludedMutation.mutate(domain.id)
-                          }
-                          type="button"
-                        >
-                          Remove / Re-enable
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="empty-copy">
-              No excluded domains match these filters.
-            </p>
-          )}
-        </section>
-      )}
     </>
   );
 }
@@ -796,15 +452,3 @@ function isQueueJobStatus(value: string): value is QueueJobStatus {
   );
 }
 
-function formatExcludedDomainSource(
-  source: ExcludedDomainRecord["source"],
-): string {
-  switch (source) {
-    case "system_preset":
-      return "System preset";
-    case "auto_crawler":
-      return "Auto crawler";
-    case "user":
-      return "User";
-  }
-}

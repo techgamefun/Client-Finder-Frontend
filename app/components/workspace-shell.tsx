@@ -661,6 +661,7 @@ const workspaceRoutes = new Set([
   "/crawler",
   "/crawler/queue",
   "/discovery",
+  "/excluded-domains",
   "/gmail",
   "/companies",
   "/jobs",
