@@ -1,9 +1,12 @@
 import { Suspense } from "react";
 import { LeadsPage } from "../components/leads-page";
+import { PageLoading } from "../components/page-loading";
 
 export default function CompaniesRoute() {
   return (
-    <Suspense fallback={<div className="workspace-route-loading">Loading companies…</div>}>
+    <Suspense
+      fallback={<PageLoading label="Loading companies" variant="table" />}
+    >
       <LeadsPage view="companies" />
     </Suspense>
   );

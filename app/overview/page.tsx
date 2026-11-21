@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import { OverviewPage } from "../components/overview-page";
+import { PageLoading } from "../components/page-loading";
 
 export default function PersonalOverview() {
   return (
     <Suspense
-      fallback={<div aria-busy="true" className="overview-page-loading" />}
+      fallback={<PageLoading label="Loading overview" variant="dashboard" />}
     >
       <OverviewPage />
     </Suspense>

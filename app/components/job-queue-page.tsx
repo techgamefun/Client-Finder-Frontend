@@ -27,6 +27,7 @@ import {
 } from "@/lib/job-format";
 import { formatSiteType } from "@/lib/site-type";
 import { useToast } from "./toast-provider";
+import { TableLoading } from "./page-loading";
 
 type QueueKind = "crawler" | "pagespeed";
 
@@ -367,7 +368,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         </div>
 
         {jobsQuery.isLoading ? (
-          <p className="empty-copy">Loading queue…</p>
+          <TableLoading label={`Loading ${queueLabel} jobs`} rows={5} />
         ) : jobsQuery.isError && jobs.length === 0 ? (
           <p className="empty-copy">Queue jobs could not be loaded.</p>
         ) : jobs.length === 0 ? (

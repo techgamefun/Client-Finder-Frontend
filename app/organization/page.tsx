@@ -1,9 +1,12 @@
 import { Suspense } from "react";
 import { OrganizationPage } from "../components/organization-page";
+import { PageLoading } from "../components/page-loading";
 
 export default function OrganizationRoute() {
   return (
-    <Suspense fallback={<div aria-busy="true" className="overview-page-loading" />}>
+    <Suspense
+      fallback={<PageLoading label="Loading organization" variant="organization" />}
+    >
       <OrganizationPage />
     </Suspense>
   );

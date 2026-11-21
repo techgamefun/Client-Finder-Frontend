@@ -9,6 +9,7 @@ import {
   getOrganizationUsers,
   type AuthSession,
 } from "@/lib/api";
+import { PageLoading } from "./page-loading";
 
 export function OrganizationPage() {
   const sessionQuery = useQuery({
@@ -25,11 +26,7 @@ export function OrganizationPage() {
   });
 
   if (sessionQuery.isLoading) {
-    return (
-      <div className="workspace-route-loading" role="status">
-        Loading organization…
-      </div>
-    );
+    return <PageLoading label="Loading organization" variant="organization" />;
   }
   if (sessionQuery.isError) {
     return (
@@ -39,11 +36,7 @@ export function OrganizationPage() {
     );
   }
   if (!sessionQuery.data) {
-    return (
-      <div className="workspace-route-loading" role="status">
-        Loading organization…
-      </div>
-    );
+    return <PageLoading label="Loading organization" variant="organization" />;
   }
   if (!isAdmin) {
     return (

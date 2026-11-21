@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import { Providers } from "./providers";
-import { WorkspaceShell } from "./components/workspace-shell";
+import {
+  WorkspaceLoadingScreen,
+  WorkspaceShell,
+} from "./components/workspace-shell";
 import { SITE_NAME, SITE_ORIGIN } from "@/lib/site";
 import "./globals.css";
 
@@ -42,7 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body>
         <Providers>
-          <Suspense fallback={<main className="main-content" />}>
+          <Suspense fallback={<WorkspaceLoadingScreen />}>
             <WorkspaceShell>{children}</WorkspaceShell>
           </Suspense>
         </Providers>

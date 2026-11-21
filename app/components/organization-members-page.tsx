@@ -19,6 +19,7 @@ import {
   type OrganizationUser,
 } from "@/lib/api";
 import { formatTimestamp } from "@/lib/job-format";
+import { PageLoading, TableLoading } from "./page-loading";
 
 type MemberSortKey = "name" | "role" | "status" | "joined";
 type MemberSort = { key: MemberSortKey; direction: "ascending" | "descending" };
@@ -142,11 +143,7 @@ export function OrganizationMembersPage() {
   }
 
   if (sessionQuery.isLoading) {
-    return (
-      <div className="workspace-route-loading" role="status">
-        Loading members…
-      </div>
-    );
+    return <PageLoading label="Loading members" variant="table" />;
   }
   if (sessionQuery.isError) {
     return (
@@ -169,11 +166,15 @@ export function OrganizationMembersPage() {
       <header className="organization-members-page-heading">
         <h1>Members</h1>
         <span>
-          {usersQuery.data
-            ? `${usersQuery.data.users.length} ${
+          {usersQuery.isLoading ? (
+            <span aria-hidden="true" className="organization-member-count-skeleton" />
+          ) : usersQuery.data ? (
+            `${usersQuery.data.users.length} ${
                 usersQuery.data.users.length === 1 ? "member" : "members"
               }`
-            : "Loading…"}
+          ) : (
+            "Members"
+          )}
         </span>
       </header>
 
@@ -240,7 +241,7 @@ export function OrganizationMembersPage() {
         </div>
 
         {usersQuery.isLoading ? (
-          <p className="empty-copy">Loading members…</p>
+          <TableLoading label="Loading organization members" rows={5} />
         ) : usersQuery.isError ? (
           <p className="alert alert-error" role="alert">
             Could not load members: {usersQuery.error.message}

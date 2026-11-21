@@ -27,6 +27,7 @@ import {
 } from "@/lib/api";
 import type { Company, CompanyInput, CompanyUpdateInput } from "@/lib/api";
 import { CompanyName } from "./overview-page";
+import { TableLoading } from "./page-loading";
 
 const noCompanies: Company[] = [];
 const maxCampaignCompanies = 5_000;
@@ -706,9 +707,10 @@ export function LeadsPage({
             </button>
           </div>
         ) : companiesQuery.isLoading ? (
-          <div className="table-state">
-            Loading {isCompanyDatabaseView ? "companies" : "leads"}...
-          </div>
+          <TableLoading
+            label={`Loading ${isCompanyDatabaseView ? "companies" : "leads"}`}
+            rows={6}
+          />
         ) : filteredCompanies.length === 0 ? (
           <div className="table-state empty-state">
             <span className="empty-symbol">▤</span>

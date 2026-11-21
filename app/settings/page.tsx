@@ -1,9 +1,12 @@
 import { Suspense } from "react";
 import { SettingsPage } from "../components/settings-page";
+import { PageLoading } from "../components/page-loading";
 
 export default function SettingsRoute() {
   return (
-    <Suspense fallback={<div className="workspace-route-loading">Loading settings…</div>}>
+    <Suspense
+      fallback={<PageLoading label="Loading settings" variant="settings" />}
+    >
       <SettingsPage />
     </Suspense>
   );

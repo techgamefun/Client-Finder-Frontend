@@ -27,6 +27,7 @@ import type {
   PageSpeedAudit,
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
+import { PageLoading } from "./page-loading";
 import { useToast } from "./toast-provider";
 
 const leadStatuses = [
@@ -334,15 +335,7 @@ export function CompanyDetailPage({
   }, [companyId, queryClient, websiteCrawlJobQuery.data]);
 
   if (companyId !== null && companyQuery.isLoading) {
-    return (
-      <section className="company-detail-state" aria-live="polite">
-        <span className="detail-state-icon" aria-hidden="true">
-          ◷
-        </span>
-        <strong>Loading company record…</strong>
-        <span>Gathering company information and related research.</span>
-      </section>
-    );
+    return <PageLoading label="Loading company details" variant="detail" />;
   }
 
   if (companyId === null) {

@@ -38,6 +38,7 @@ import {
   type OverviewUserProgress,
 } from "@/lib/api";
 import { metrics, type OverviewMetricKey } from "@/lib/overview-metrics";
+import { PageLoading } from "./page-loading";
 
 const rangeOptions: { value: OverviewRange; label: string }[] = [
   { value: "7d", label: "Last 7 days" },
@@ -262,7 +263,9 @@ export function OverviewPage({
   );
 
   if (adminDashboard && sessionQuery.isLoading) {
-    return <div aria-busy="true" className="overview-page-loading" />;
+    return (
+      <PageLoading label="Loading organization dashboard" variant="dashboard" />
+    );
   }
   if (adminDashboard && sessionQuery.isError) {
     return (
@@ -281,6 +284,24 @@ export function OverviewPage({
     sessionQuery.data.user.role !== "admin"
   ) {
     return null;
+  }
+
+  if (overviewQuery.isError && !overviewQuery.data) {
+    return (
+      <div
+        className={`overview-redesign${adminDashboard ? " is-admin-dashboard" : ""}`}
+      >
+        <header className="overview-header">
+          {heading}
+          {headerActions}
+        </header>
+        <WidgetError
+          error={overviewQuery.error}
+          onRetry={() => void overviewQuery.refetch()}
+          title={adminDashboard ? "organization dashboard" : "overview"}
+        />
+      </div>
+    );
   }
 
   return (

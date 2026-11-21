@@ -32,6 +32,7 @@ import type {
 import { formatSiteType } from "@/lib/site-type";
 import { CrawlWebsiteDialog } from "./crawler-page";
 import { useToast } from "./toast-provider";
+import { TableLoading } from "./page-loading";
 
 const pageTypes: WebsitePageType[] = [
   "business_site",
@@ -1257,9 +1258,7 @@ export function WebsitesPage() {
             </button>
           </div>
         ) : websitesQuery.isLoading ? (
-          <div className="table-state" role="status">
-            Loading websites...
-          </div>
+          <TableLoading label="Loading websites" rows={6} />
         ) : filteredWebsites.length === 0 ? (
           <div className="empty-state table-state">
             <span className="empty-symbol" aria-hidden="true">↗</span>

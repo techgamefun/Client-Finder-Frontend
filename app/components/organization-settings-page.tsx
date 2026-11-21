@@ -11,6 +11,7 @@ import {
   type OrganizationImageAsset,
 } from "@/lib/api";
 import { ImageAssetEditor } from "./image-asset-editor";
+import { PageLoading } from "./page-loading";
 
 export function OrganizationSettingsPage() {
   const sessionQuery = useQuery({
@@ -21,9 +22,7 @@ export function OrganizationSettingsPage() {
 
   if (sessionQuery.isLoading) {
     return (
-      <div className="workspace-route-loading" role="status">
-        Loading organization settings…
-      </div>
+      <PageLoading label="Loading organization settings" variant="settings" />
     );
   }
   if (sessionQuery.isError) {
@@ -35,9 +34,7 @@ export function OrganizationSettingsPage() {
   }
   if (!sessionQuery.data) {
     return (
-      <div className="workspace-route-loading" role="status">
-        Loading organization settings…
-      </div>
+      <PageLoading label="Loading organization settings" variant="settings" />
     );
   }
   if (sessionQuery.data.user.role !== "admin") {

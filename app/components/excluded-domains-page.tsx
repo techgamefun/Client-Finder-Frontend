@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { parseCsvRecords } from "@/lib/csv";
 import { formatTimestamp } from "@/lib/job-format";
+import { TableLoading } from "./page-loading";
 import { useToast } from "./toast-provider";
 
 const excludedDomainReasons: ExcludedDomainReason[] = [
@@ -393,7 +394,7 @@ export function ExcludedDomainsPage() {
         )}
         {excludedDomainsQuery.isLoading ||
         excludedDomainCountQuery.isLoading ? (
-          <p className="empty-copy">Loading excluded domains…</p>
+          <TableLoading label="Loading excluded domains" rows={5} />
         ) : domains.length > 0 ? (
           <>
             <div className="excluded-domain-table-scroll">

@@ -58,6 +58,7 @@ import {
   type NavigationRole,
 } from "./nav.config";
 import { BrandMark } from "./brand-mark";
+import { PageLoading, type PageLoadingVariant } from "./page-loading";
 import { useToast } from "./toast-provider";
 
 const noCompanies: Company[] = [];
@@ -275,7 +276,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     (!sessionQuery.data && !sessionQuery.isError) ||
     (sessionQuery.data && userPreferences.isLoading)
   ) {
-    return <WorkspaceSessionLoading />;
+    return <WorkspaceLoadingScreen pathname={pathname} />;
   }
   if (!sessionQuery.data) {
     if (sessionIsUnauthorized) return null;
@@ -1513,19 +1514,21 @@ function PublicAuthChecking() {
   );
 }
 
-function WorkspaceSessionLoading() {
+export function WorkspaceLoadingScreen({
+  pathname = "/",
+}: {
+  pathname?: string;
+}) {
   const skeletonItems = navigationSections.flatMap((section) =>
     section.items.flatMap((item) => item.children ?? [item]),
   );
+  const loadingVariant = getPageLoadingVariant(pathname);
 
   return (
     <div
       aria-busy="true"
-      aria-label="Loading workspace"
       className="app-shell workspace-session-loading"
-      role="status"
     >
-      <span className="sr-only">Loading workspace</span>
       <aside aria-hidden="true" className="sidebar">
         <div className="sidebar-header">
           <div className="brand">
@@ -1559,47 +1562,83 @@ function WorkspaceSessionLoading() {
         </div>
       </aside>
       <main className="main-content">
+        <div aria-hidden="true" className="workspace-skeleton-topbar">
+          <span className="workspace-skeleton-mobile-action" />
+          <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
+          <span className="workspace-skeleton-block workspace-skeleton-mobile-action" />
+        </div>
         <div className="content-wrap">
-          <div className="workspace-skeleton-heading">
-            <div className="workspace-skeleton-heading-copy">
-              <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-2" />
-              <span className="workspace-skeleton-block workspace-skeleton-title" />
-              <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
-            </div>
-            <span className="workspace-skeleton-block workspace-skeleton-button" />
-          </div>
-          <div className="stats-grid workspace-skeleton-stats">
-            {Array.from({ length: 3 }, (_, index) => (
-              <div className="stat-card" key={index}>
-                <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-2" />
-                <span className="workspace-skeleton-block workspace-skeleton-value" />
-                <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
-              </div>
-            ))}
-          </div>
-          <div className="overview-grid workspace-skeleton-actions">
-            {Array.from({ length: 2 }, (_, index) => (
-              <div className="overview-action" key={index}>
-                <span className="workspace-skeleton-block workspace-skeleton-icon" />
-                <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
-              </div>
-            ))}
-          </div>
-          <section className="panel workspace-skeleton-table">
-            <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-2" />
-            <span className="workspace-skeleton-block workspace-skeleton-title skeleton-width-1" />
-            <div className="workspace-skeleton-table-rows">
-              {Array.from({ length: 4 }, (_, index) => (
-                <div className="workspace-skeleton-table-row" key={index}>
-                  <span className="workspace-skeleton-block workspace-skeleton-icon" />
-                  <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
-                  <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-2" />
-                </div>
-              ))}
-            </div>
-          </section>
+          <PageLoading
+            label={`Loading ${getPageLoadingLabel(pathname)}`}
+            variant={loadingVariant}
+          />
         </div>
       </main>
     </div>
   );
+}
+
+function getPageLoadingLabel(pathname: string) {
+  if (pathname === "/organization/dashboard" || pathname === "/admin") {
+    return "organization dashboard";
+  }
+  if (pathname.startsWith("/organization/members/")) return "member activity";
+  if (pathname === "/organization/members") return "organization members";
+  if (pathname === "/organization/settings") return "organization settings";
+  if (pathname === "/organization") return "organization";
+  if (pathname === "/overview") return "overview";
+  if (pathname.startsWith("/company/")) return "company details";
+  if (pathname.startsWith("/websites/")) return "website details";
+  if (pathname === "/websites") return "websites";
+  if (pathname === "/jobs" || pathname.includes("queue")) return "job queue";
+  if (pathname === "/settings") return "settings";
+  if (pathname === "/leads") return "leads";
+  if (pathname === "/companies") return "companies";
+  if (pathname === "/campaigns") return "campaigns";
+  if (pathname === "/gmail") return "Gmail";
+  if (pathname === "/discovery") return "discovery";
+  if (pathname === "/excluded-domains") return "excluded domains";
+  if (pathname === "/templates") return "email templates";
+  return "workspace";
+}
+
+function getPageLoadingVariant(pathname: string): PageLoadingVariant {
+  if (
+    pathname === "/organization/dashboard" ||
+    pathname === "/admin" ||
+    pathname === "/overview"
+  ) {
+    return "dashboard";
+  }
+  if (pathname === "/organization") return "organization";
+  if (
+    pathname === "/organization/settings" ||
+    pathname === "/settings"
+  ) {
+    return "settings";
+  }
+  if (/^\/organization\/members\/[^/]+$/.test(pathname)) return "activity";
+  if (
+    pathname.startsWith("/company/") ||
+    /^\/websites\/[^/]+$/.test(pathname)
+  ) {
+    return "detail";
+  }
+  if (
+    pathname === "/organization/members" ||
+    pathname === "/websites" ||
+    pathname === "/jobs" ||
+    pathname === "/crawler/queue" ||
+    pathname === "/pagespeed-queue" ||
+    pathname === "/leads" ||
+    pathname === "/companies" ||
+    pathname === "/campaigns" ||
+    pathname === "/gmail" ||
+    pathname === "/discovery" ||
+    pathname === "/excluded-domains" ||
+    pathname === "/templates"
+  ) {
+    return "table";
+  }
+  return "generic";
 }

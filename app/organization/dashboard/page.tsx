@@ -1,10 +1,16 @@
 import { Suspense } from "react";
 import { OverviewPage } from "../../components/overview-page";
+import { PageLoading } from "../../components/page-loading";
 
 export default function OrganizationDashboardRoute() {
   return (
     <Suspense
-      fallback={<div aria-busy="true" className="overview-page-loading" />}
+      fallback={
+        <PageLoading
+          label="Loading organization dashboard"
+          variant="dashboard"
+        />
+      }
     >
       <OverviewPage adminDashboard />
     </Suspense>

@@ -10,6 +10,7 @@ import {
   type MemberActivitySeriesPoint,
   type OverviewRange,
 } from "@/lib/api";
+import { PageLoading } from "./page-loading";
 
 const rangeOptions: { value: OverviewRange; label: string }[] = [
   { value: "7d", label: "7 days" },
@@ -75,11 +76,7 @@ export function MemberWorkflowPage() {
   });
 
   if (sessionQuery.isLoading) {
-    return (
-      <div className="workspace-route-loading" role="status">
-        Loading member activity…
-      </div>
-    );
+    return <PageLoading label="Loading member activity" variant="activity" />;
   }
   if (sessionQuery.isError) {
     return (
