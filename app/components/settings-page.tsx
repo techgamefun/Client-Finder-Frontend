@@ -15,6 +15,7 @@ import {
   getApplicationSettings,
   getAuthSession,
   getConnectedGmailAccounts,
+  getHypeStatUsage,
   getGoogleGmailAuthorizationUrl,
   getOctoparseTemplates,
   getOctoparseUsage,
@@ -26,6 +27,7 @@ import {
   uploadProfilePhoto,
   type AuthSession,
   type ConnectedGmailAccount,
+  type HypeStatUsage,
   type OctoparseTemplateConfiguration,
   type OctoparseTemplateOption,
   type OctoparseUsage,
@@ -168,6 +170,12 @@ export function SettingsPage() {
     enabled: settingsQuery.data !== undefined,
     retry: false,
   });
+  const hypestatUsageQuery = useQuery({
+    queryKey: ["hypestat-usage"],
+    queryFn: getHypeStatUsage,
+    enabled: settingsQuery.data?.hypestat_configured === true,
+    retry: false,
+  });
   const templateSearchMutation = useMutation({
     mutationFn: getOctoparseTemplates,
   });
@@ -211,6 +219,7 @@ export function SettingsPage() {
       setNotice("Settings saved.");
       queryClient.setQueryData(["application-settings"], settings);
       await queryClient.invalidateQueries({ queryKey: ["tavily-usage"] });
+      await queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] });
     },
   });
 
@@ -1028,6 +1037,25 @@ export function SettingsPage() {
                 {notice}
               </p>
             )}
+            {hypestatUsageQuery.isPending &&
+              settingsQuery.data.hypestat_configured && (
+                <p className="settings-feedback" role="status">
+                  Loading HypeStat usage…
+                </p>
+              )}
+            {hypestatUsageQuery.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not retrieve HypeStat usage:{" "}
+                {hypestatUsageQuery.error.message}
+              </p>
+            )}
+            {hypestatUsageQuery.data &&
+              settingsQuery.data.hypestat_configured && (
+                <HypeStatUsagePanel usage={hypestatUsageQuery.data} />
+              )}
             {!settingsQuery.data.hypestat_configured && (
               <p className="settings-feedback">
                 Add an API key to enable HypeStat lookups. The indexing-service
@@ -1368,6 +1396,50 @@ function TavilyUsagePanel({ usage }: { usage: TavilyUsage }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function HypeStatUsagePanel({ usage }: { usage: HypeStatUsage }) {
+  const { limits, used, resets_at: resetsAt } = usage.data;
+
+  return (
+    <div className="tavily-usage">
+      <article className="tavily-usage-card">
+        <span>Requests used today</span>
+        <strong>
+          {used.today.toLocaleString()} / {limits.requests_per_day.toLocaleString()}
+        </strong>
+        <progress
+          aria-label="HypeStat daily request usage"
+          max={Math.max(limits.requests_per_day, 1)}
+          value={Math.min(used.today, limits.requests_per_day)}
+        />
+        <small>
+          {usage.meta.requests_left_today.toLocaleString()} requests remaining
+        </small>
+      </article>
+      <article className="tavily-usage-card">
+        <span>Analyses used today</span>
+        <strong>
+          {used.analyses_today.toLocaleString()} /{" "}
+          {limits.analyses_per_day.toLocaleString()}
+        </strong>
+        <small>
+          {Math.max(limits.analyses_per_day - used.analyses_today, 0).toLocaleString()}{" "}
+          analyses remaining
+        </small>
+      </article>
+      <article className="tavily-usage-card">
+        <span>Requests this minute</span>
+        <strong>
+          {used.this_minute.toLocaleString()} /{" "}
+          {limits.requests_per_minute.toLocaleString()}
+        </strong>
+        <small>
+          Resets at {new Date(resetsAt).toLocaleString()}
+        </small>
+      </article>
     </div>
   );
 }

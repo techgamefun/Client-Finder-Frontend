@@ -319,11 +319,19 @@ export function DiscoveryPage() {
         ]),
       );
       setSaveProgress(null);
-      await queryClient.invalidateQueries({ queryKey: ["websites"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
+        result.hypestat_profiles_requested > 0
+          ? queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] })
+          : Promise.resolve(),
+      ]);
       setSaveResult(result);
     },
     onError: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["websites"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
+        queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] }),
+      ]);
     },
   });
   const searchData = searchMutation.data;

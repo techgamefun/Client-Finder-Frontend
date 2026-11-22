@@ -160,7 +160,12 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
   });
   const refetchHypeStat = useMutation({
     mutationFn: () => refetchWebsiteHypeStat(website.id),
-    onSuccess: invalidateWebsite,
+    onSuccess: async () => {
+      await Promise.all([
+        invalidateWebsite(),
+        queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] }),
+      ]);
+    },
   });
   const isCrawled = website.is_crawled || crawlStatus === "succeeded";
 

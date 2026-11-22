@@ -798,6 +798,25 @@ export interface TavilyUsage {
   } | null;
 }
 
+export interface HypeStatUsage {
+  data: {
+    limits: {
+      requests_per_minute: number;
+      requests_per_day: number;
+      analyses_per_day: number;
+    };
+    used: {
+      this_minute: number;
+      today: number;
+      analyses_today: number;
+    };
+    resets_at: string;
+  };
+  meta: {
+    requests_left_today: number;
+  };
+}
+
 export interface OctoparseUsage {
   period_start: string;
   tasks_started: number;
@@ -1614,6 +1633,10 @@ export function updateApplicationSettings(
 
 export function getTavilyUsage(): Promise<TavilyUsage> {
   return request<TavilyUsage>("/settings/tavily/usage");
+}
+
+export function getHypeStatUsage(): Promise<HypeStatUsage> {
+  return request<HypeStatUsage>("/settings/hypestat/usage");
 }
 
 export function getOctoparseUsage(): Promise<OctoparseUsage> {
