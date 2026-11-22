@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { Suspense } from "react";
 import { Providers } from "./providers";
+import { themeBootstrapScript } from "@/lib/theme";
 import {
   WorkspaceLoadingScreen,
   WorkspaceShell,
@@ -42,8 +44,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      suppressHydrationWarning
     >
       <body>
+        <Script id="theme-preference-bootstrap" strategy="beforeInteractive">
+          {themeBootstrapScript}
+        </Script>
         <Providers>
           <Suspense fallback={<WorkspaceLoadingScreen />}>
             <WorkspaceShell>{children}</WorkspaceShell>

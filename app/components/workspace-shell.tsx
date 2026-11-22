@@ -52,8 +52,6 @@ import {
 } from "@/lib/api";
 import {
   getThemePreferenceSnapshot,
-  getThemeSnapshot,
-  persistThemePreference,
   subscribeToTheme,
   type ThemePreference,
 } from "@/lib/theme";
@@ -110,14 +108,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     userPreferences.data?.sidebar_collapsed ?? false;
   const themePreference = useSyncExternalStore(
     subscribeToTheme,
-    () =>
-      userPreferences.data?.theme ?? getThemePreferenceSnapshot(),
+    getThemePreferenceSnapshot,
     (): ThemePreference => "system",
-  );
-  const isDarkMode = useSyncExternalStore(
-    subscribeToTheme,
-    () => getThemeSnapshot(themePreference),
-    () => false,
   );
   const companiesQuery = useQuery({
     queryKey: ["companies"],
@@ -267,11 +259,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       document.removeEventListener("keydown", handleDrawerKeyDown);
     };
   }, [mobileMenuOpen]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = isDarkMode ? "dark" : "light";
-    document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
-  }, [isDarkMode]);
 
   useEffect(() => {
     if (!userPreferences.isError) return;
@@ -455,7 +442,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           }
           onNavigate={() => setMobileMenuOpen(false)}
           onThemeChange={(preference) => {
-            persistThemePreference(preference);
             saveUserPreferences({ theme: preference });
           }}
           organizationLogoUrl={sessionQuery.data.organization_logo_url}

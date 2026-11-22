@@ -9,6 +9,7 @@ import {
   type UserPreferencesUpdate,
 } from "@/lib/api";
 import { useToast } from "@/app/components/toast-provider";
+import { persistThemePreference } from "@/lib/theme";
 
 type PreferenceSave = {
   userId: string;
@@ -199,6 +200,7 @@ function writeLocalPreferences(
   } catch (error) {
     console.error("Could not cache user preferences locally.", error);
   }
+  persistThemePreference(preferences.theme);
 }
 
 function writePendingLocalPreferences(
