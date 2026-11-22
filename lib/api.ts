@@ -846,11 +846,18 @@ export interface AuthSession {
     created_at: string;
     profile_photo_url: string | null;
   };
+  organizations: OrganizationOption[];
   organization_id: string;
   organization_name: string;
   organization_description: string | null;
   organization_logo_url: string | null;
   organization_banner_url: string | null;
+}
+
+export interface OrganizationOption {
+  id: string;
+  name: string;
+  role: "admin" | "user";
 }
 
 export interface OrganizationUser {
@@ -862,6 +869,22 @@ export interface OrganizationUser {
   is_active: boolean;
   created_at: string;
   profile_photo_url: string | null;
+}
+
+export interface OrganizationInvitation {
+  id?: string;
+  email: string;
+  role: "admin" | "user";
+  expires_at: string;
+  invitation_url?: string;
+  created_at?: string;
+}
+
+export interface OrganizationInvitationPreview {
+  organization_name: string;
+  email: string;
+  role: "admin" | "user";
+  expires_at: string;
 }
 
 export type OrganizationImageAsset = "logo" | "banner";
@@ -1327,16 +1350,55 @@ export function getOrganizationUsers(): Promise<{ users: OrganizationUser[] }> {
   return request<{ users: OrganizationUser[] }>("/auth/users");
 }
 
-export function createOrganizationUser(input: {
+export function getOrganizationInvitations(): Promise<OrganizationInvitation[]> {
+  return request<OrganizationInvitation[]>("/auth/invitations");
+}
+
+export function createOrganizationInvitation(input: {
   email: string;
-  password: string;
-  first_name: string;
-  last_name: string;
   role: "admin" | "user";
-}): Promise<OrganizationUser> {
-  return request<OrganizationUser>("/auth/users", {
+}): Promise<OrganizationInvitation> {
+  return request<OrganizationInvitation>("/auth/invitations", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function revokeOrganizationInvitation(invitationId: string): Promise<void> {
+  return request<void>(`/auth/invitations/${encodeURIComponent(invitationId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function getOrganizationInvitation(
+  token: string,
+): Promise<OrganizationInvitationPreview> {
+  return request<OrganizationInvitationPreview>(
+    `/auth/invitations/${encodeURIComponent(token)}`,
+  );
+}
+
+export function acceptOrganizationInvitation(
+  token: string,
+  input: {
+    password: string;
+    first_name?: string;
+    last_name?: string;
+  },
+): Promise<AuthSession> {
+  return request<AuthSession>(
+    `/auth/invitations/${encodeURIComponent(token)}/accept`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function selectOrganization(organizationId: string): Promise<AuthSession> {
+  return request<AuthSession>("/auth/select-organization", {
+    method: "POST",
+    body: JSON.stringify({ organization_id: organizationId }),
   });
 }
 

@@ -44,7 +44,9 @@ import {
   getWebsiteRegistryPage,
   getWebsiteCrawlJobSummary,
   logout,
+  selectOrganization,
   type Company,
+  type OrganizationOption,
   type WebsiteRegistryPageParams,
   websiteRegistryPageQueryKey,
 } from "@/lib/api";
@@ -157,6 +159,21 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       showToast({
         type: "error",
         title: "Could not sign out",
+        message: error.message,
+      });
+    },
+  });
+  const organizationMutation = useMutation({
+    mutationFn: selectOrganization,
+    onSuccess: async (session) => {
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      queryClient.setQueryData(["auth-session"], session);
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not switch organization",
         message: error.message,
       });
     },
@@ -427,9 +444,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </nav>
         <AccountMenu
           email={sessionQuery.data.user.email}
+          activeOrganizationId={sessionQuery.data.organization_id}
+          organizations={sessionQuery.data.organizations}
+          organizationSwitchPending={organizationMutation.isPending}
           profilePhotoUrl={sessionQuery.data.user.profile_photo_url}
           logoutPending={logoutMutation.isPending}
           onLogout={() => logoutMutation.mutate()}
+          onOrganizationChange={(organizationId) =>
+            organizationMutation.mutate(organizationId)
+          }
           onNavigate={() => setMobileMenuOpen(false)}
           onThemeChange={(preference) => {
             persistThemePreference(preference);
@@ -1323,24 +1346,32 @@ function isActiveRoute(location: string, href: string) {
 }
 
 function AccountMenu({
+  activeOrganizationId,
   email,
   logoutPending,
   onLogout,
+  onOrganizationChange,
   onNavigate,
   onThemeChange,
+  organizations,
   organizationLogoUrl,
   organizationName,
+  organizationSwitchPending,
   profilePhotoUrl,
   role,
   themePreference,
 }: {
+  activeOrganizationId: string;
   email: string;
   logoutPending: boolean;
   onLogout: () => void;
+  onOrganizationChange: (organizationId: string) => void;
   onNavigate: () => void;
   onThemeChange: (preference: ThemePreference) => void;
+  organizations: OrganizationOption[];
   organizationLogoUrl: string | null;
   organizationName: string;
+  organizationSwitchPending: boolean;
   profilePhotoUrl: string | null;
   role: NavigationRole;
   themePreference: ThemePreference;
@@ -1449,6 +1480,25 @@ function AccountMenu({
             <strong>{email}</strong>
             <span>{role === "admin" ? "Administrator" : "Member"}</span>
           </div>
+          {organizations.length > 1 && (
+            <label className="account-organization-switch">
+              <span>Organization</span>
+              <select
+                disabled={organizationSwitchPending}
+                onChange={(event) =>
+                  onOrganizationChange(event.target.value)
+                }
+                value={activeOrganizationId}
+              >
+                {organizations.map((organization) => (
+                  <option key={organization.id} value={organization.id}>
+                    {organization.name} ·{" "}
+                    {organization.role === "admin" ? "Admin" : "Member"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <fieldset className="account-theme-options">
             <legend>Theme</legend>
             <div className="account-theme-buttons">

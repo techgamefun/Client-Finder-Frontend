@@ -666,6 +666,25 @@ html[data-theme="dark"]::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
 }
 
+.account-organization-switch {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.account-organization-switch select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 9px;
+  color: var(--foreground);
+  font: inherit;
+}
+
 .account-theme-options {
   min-width: 0;
   margin: 0;
@@ -2764,6 +2783,54 @@ html[data-theme="dark"] .toast-error .toast-icon {
   margin: 0;
   color: var(--foreground);
   font-size: 16px;
+}
+
+.organization-pending-invitations {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.organization-pending-invitations .organization-section-heading p {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.organization-invitation-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.organization-invitation-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+
+.organization-invitation-list li > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.organization-invitation-list strong {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.organization-invitation-list small {
+  color: var(--text-secondary);
+  font-size: 11px;
 }
 
 .organization-section-heading .panel-subtitle {

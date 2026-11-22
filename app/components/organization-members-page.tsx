@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Plus, X } from "lucide-react";
+import { Copy, Plus, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -12,10 +12,13 @@ import {
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  createOrganizationUser,
+  createOrganizationInvitation,
+  getOrganizationInvitations,
   getAuthSession,
   getOrganizationUsers,
+  revokeOrganizationInvitation,
   updateOrganizationUserRole,
+  type OrganizationInvitation,
   type OrganizationUser,
 } from "@/lib/api";
 import { formatTimestamp } from "@/lib/job-format";
@@ -26,11 +29,11 @@ type MemberSort = { key: MemberSortKey; direction: "ascending" | "descending" };
 
 export function OrganizationMembersPage() {
   const queryClient = useQueryClient();
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
+  const [createdInvitation, setCreatedInvitation] =
+    useState<OrganizationInvitation | null>(null);
+  const [copyError, setCopyError] = useState("");
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -40,14 +43,14 @@ export function OrganizationMembersPage() {
     direction: "ascending",
   });
   const addMemberDialogRef = useRef<HTMLDialogElement>(null);
-  const firstNameInputRef = useRef<HTMLInputElement>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const dialog = addMemberDialogRef.current;
     if (!dialog) return;
     if (isAddMemberOpen && !dialog.open) {
       dialog.showModal();
-      firstNameInputRef.current?.focus();
+      emailInputRef.current?.focus();
     } else if (!isAddMemberOpen && dialog.open) {
       dialog.close();
     }
@@ -65,16 +68,30 @@ export function OrganizationMembersPage() {
     enabled: isAdmin,
     retry: false,
   });
+  const invitationsQuery = useQuery({
+    queryKey: ["organization-invitations"],
+    queryFn: getOrganizationInvitations,
+    enabled: isAdmin,
+    retry: false,
+  });
   const createMutation = useMutation({
-    mutationFn: createOrganizationUser,
-    onSuccess: async () => {
-      setFirstName("");
-      setLastName("");
+    mutationFn: createOrganizationInvitation,
+    onSuccess: async (invitation) => {
+      setCreatedInvitation(invitation);
+      setCopyError("");
       setEmail("");
-      setPassword("");
       setRole("user");
-      setIsAddMemberOpen(false);
-      await queryClient.invalidateQueries({ queryKey: ["organization-users"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["organization-invitations"],
+      });
+    },
+  });
+  const revokeMutation = useMutation({
+    mutationFn: revokeOrganizationInvitation,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["organization-invitations"],
+      });
     },
   });
   const roleMutation = useMutation({
@@ -130,11 +147,10 @@ export function OrganizationMembersPage() {
   function closeAddMemberDialog() {
     if (createMutation.isPending) return;
     setIsAddMemberOpen(false);
-    setFirstName("");
-    setLastName("");
     setEmail("");
-    setPassword("");
     setRole("user");
+    setCreatedInvitation(null);
+    setCopyError("");
     createMutation.reset();
   }
 
@@ -197,6 +213,8 @@ export function OrganizationMembersPage() {
             className="button button-primary organization-add-member-trigger"
             onClick={() => {
               createMutation.reset();
+              setCreatedInvitation(null);
+              setCopyError("");
               setIsAddMemberOpen(true);
             }}
             type="button"
@@ -239,6 +257,67 @@ export function OrganizationMembersPage() {
             </select>
           </label>
         </div>
+
+        <section
+          aria-labelledby="organization-pending-invitations-heading"
+          className="organization-pending-invitations"
+        >
+          <div className="organization-section-heading">
+            <div>
+              <h2 id="organization-pending-invitations-heading">
+                Pending invitations
+              </h2>
+              <p>Share each invitation link with the person you invited.</p>
+            </div>
+          </div>
+          {invitationsQuery.isLoading ? (
+            <p className="empty-copy">Loading invitations…</p>
+          ) : invitationsQuery.isError ? (
+            <p className="alert alert-error" role="alert">
+              Could not load invitations: {invitationsQuery.error.message}
+            </p>
+          ) : invitationsQuery.data?.length ? (
+            <ul className="organization-invitation-list">
+              {invitationsQuery.data.map((invitation) => (
+                <li key={invitation.id}>
+                  <span>
+                    <strong>{invitation.email}</strong>
+                    <small>
+                      {invitation.role === "admin" ? "Administrator" : "Member"}
+                      {" · Expires "}
+                      {formatTimestamp(invitation.expires_at)}
+                    </small>
+                  </span>
+                  <button
+                    className="button button-secondary"
+                    disabled={
+                      revokeMutation.isPending &&
+                      revokeMutation.variables === invitation.id
+                    }
+                    onClick={() => {
+                      if (invitation.id) {
+                        revokeMutation.mutate(invitation.id);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {revokeMutation.isPending &&
+                    revokeMutation.variables === invitation.id
+                      ? "Revoking…"
+                      : "Revoke"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty-copy">No pending invitations.</p>
+          )}
+          {revokeMutation.isError && (
+            <p className="alert alert-error" role="alert">
+              Could not revoke invitation: {revokeMutation.error.message}
+            </p>
+          )}
+        </section>
 
         {usersQuery.isLoading ? (
           <TableLoading label="Loading organization members" rows={5} />
@@ -327,9 +406,10 @@ export function OrganizationMembersPage() {
         <header className="organization-add-member-dialog-heading">
           <div>
             <p className="eyebrow">ORGANIZATION</p>
-            <h2 id="add-organization-member-heading">Add member</h2>
+            <h2 id="add-organization-member-heading">Invite member</h2>
             <p className="heading-copy">
-              Create an account and choose its initial access level.
+              Create a secure invitation link. The person can join with an
+              existing account or create one.
             </p>
           </div>
           <button
@@ -342,94 +422,112 @@ export function OrganizationMembersPage() {
             <X aria-hidden="true" size={18} />
           </button>
         </header>
-        <form
-          className="organization-member-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            createMutation.mutate({
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-              email: email.trim(),
-              password,
-              role,
-            });
-          }}
-        >
-          <label>
-            <span>First name</span>
-            <input
-              autoComplete="given-name"
-              onChange={(event) => setFirstName(event.target.value)}
-              ref={firstNameInputRef}
-              required
-              value={firstName}
-            />
-          </label>
-          <label>
-            <span>Last name</span>
-            <input
-              autoComplete="family-name"
-              onChange={(event) => setLastName(event.target.value)}
-              required
-              value={lastName}
-            />
-          </label>
-          <label>
-            <span>Email address</span>
-            <input
-              autoComplete="off"
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              type="email"
-              value={email}
-            />
-          </label>
-          <label>
-            <span>Temporary password</span>
-            <input
-              autoComplete="new-password"
-              minLength={12}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-          </label>
-          <label>
-            <span>Initial role</span>
-            <select
-              onChange={(event) =>
-                setRole(event.target.value === "admin" ? "admin" : "user")
-              }
-              value={role}
-            >
-              <option value="user">Member</option>
-              <option value="admin">Administrator</option>
-            </select>
-          </label>
-          {createMutation.isError && (
-            <p className="alert alert-error" role="alert">
-              Could not add member: {createMutation.error.message}
+        {createdInvitation?.invitation_url ? (
+          <div className="organization-member-form">
+            <p className="alert alert-success" role="status">
+              Invitation created for {createdInvitation.email}. Share this link
+              with them; it expires in seven days.
             </p>
-          )}
-          <div className="organization-add-member-dialog-actions">
-            <button
-              className="button button-secondary"
-              disabled={createMutation.isPending}
-              onClick={closeAddMemberDialog}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="button button-primary"
-              disabled={createMutation.isPending}
-              type="submit"
-            >
-              {createMutation.isPending ? "Adding…" : "Add member"}
-            </button>
+            <label>
+              <span>Invitation link</span>
+              <input
+                readOnly
+                onFocus={(event) => event.currentTarget.select()}
+                value={createdInvitation.invitation_url}
+              />
+            </label>
+            {copyError && (
+              <p className="alert alert-error" role="alert">
+                {copyError}
+              </p>
+            )}
+            <div className="organization-add-member-dialog-actions">
+              <button
+                className="button button-secondary"
+                onClick={closeAddMemberDialog}
+                type="button"
+              >
+                Close
+              </button>
+              <button
+                className="button button-primary"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(createdInvitation.invitation_url!)
+                    .then(() => setCopyError(""))
+                    .catch(() =>
+                      setCopyError(
+                        "Could not copy the link. Select it and copy it manually.",
+                      ),
+                    );
+                }}
+                type="button"
+              >
+                <Copy aria-hidden="true" size={16} />
+                Copy invitation link
+              </button>
+            </div>
           </div>
-        </form>
+        ) : (
+          <form
+            className="organization-member-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createMutation.mutate({
+                email: email.trim(),
+                role,
+              });
+            }}
+          >
+            <label>
+              <span>Email address</span>
+              <input
+                autoComplete="email"
+                onChange={(event) => setEmail(event.target.value)}
+                ref={emailInputRef}
+                required
+                type="email"
+                value={email}
+              />
+            </label>
+            <label>
+              <span>Organization role</span>
+              <select
+                onChange={(event) =>
+                  setRole(event.target.value === "admin" ? "admin" : "user")
+                }
+                value={role}
+              >
+                <option value="user">Member</option>
+                <option value="admin">Administrator</option>
+              </select>
+            </label>
+            {createMutation.isError && (
+              <p className="alert alert-error" role="alert">
+                Could not create invitation: {createMutation.error.message}
+              </p>
+            )}
+            <div className="organization-add-member-dialog-actions">
+              <button
+                className="button button-secondary"
+                disabled={createMutation.isPending}
+                onClick={closeAddMemberDialog}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="button button-primary"
+                disabled={createMutation.isPending}
+                type="submit"
+              >
+                {createMutation.isPending
+                  ? "Creating…"
+                  : "Create invitation"}
+              </button>
+            </div>
+          </form>
+        )}
       </dialog>
     </>
   );
