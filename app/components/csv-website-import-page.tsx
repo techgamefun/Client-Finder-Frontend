@@ -25,6 +25,7 @@ interface CsvWebsiteRow {
 
 interface CsvImportResult {
   queuedUrls: string[];
+  excluded: { websiteUrl: string; reason: string }[];
   failures: { websiteUrl: string; message: string }[];
 }
 
@@ -88,6 +89,10 @@ export function CsvWebsiteImportPage() {
         );
         return {
           queuedUrls: result.jobs.map((job) => job.website_url),
+          excluded: result.excluded.map((item) => ({
+            websiteUrl: item.website_url,
+            reason: item.reason,
+          })),
           failures: [],
         };
       } catch (error) {
@@ -95,6 +100,7 @@ export function CsvWebsiteImportPage() {
           error instanceof Error ? error.message : "Unexpected error.";
         return {
           queuedUrls: [],
+          excluded: [],
           failures: rows.map((row) => ({
             websiteUrl: row.websiteUrl,
             message,
@@ -103,14 +109,19 @@ export function CsvWebsiteImportPage() {
       }
     },
     onSuccess: async (result) => {
-      if (result.failures.length > 0) {
+      if (result.failures.length > 0 || result.excluded.length > 0) {
         showToast({
-          type: result.queuedUrls.length > 0 ? "warning" : "error",
+          type:
+            result.failures.length > 0 &&
+            result.queuedUrls.length === 0 &&
+            result.excluded.length === 0
+              ? "error"
+              : "warning",
           title:
-            result.queuedUrls.length > 0
+            result.queuedUrls.length > 0 || result.excluded.length > 0
               ? "Import partially completed"
               : "Import could not be queued",
-          message: `Queued ${result.queuedUrls.length} of ${result.queuedUrls.length + result.failures.length} websites. See the import summary for details.`,
+          message: `Queued ${result.queuedUrls.length}; excluded ${result.excluded.length}; failed ${result.failures.length}. See the import summary for details.`,
         });
       } else {
         showToast({
@@ -127,6 +138,11 @@ export function CsvWebsiteImportPage() {
       .map((websiteUrl) => getDomainKey(websiteUrl))
       .filter((domain): domain is string => domain !== null),
   );
+  const excludedByImport = new Map<string, string>();
+  for (const item of csvImportMutation.data?.excluded ?? []) {
+    const domain = getDomainKey(item.websiteUrl);
+    if (domain !== null) excludedByImport.set(domain, item.reason);
+  }
   const duplicateCheckLoading =
     isRefreshingDuplicates ||
     websitesQuery.isFetching ||
@@ -141,6 +157,7 @@ export function CsvWebsiteImportPage() {
         (row) =>
           !row.error &&
           row.domainKey !== null &&
+          !excludedByImport.has(row.domainKey) &&
           !websiteDomains.has(row.domainKey) &&
           !activeCrawlDomains.has(row.domainKey) &&
           !queuedByImport.has(row.domainKey),
@@ -164,11 +181,20 @@ export function CsvWebsiteImportPage() {
             queuedByImport.has(row.domainKey)),
       ).length
     : 0;
+  const csvExcludedCount = duplicateChecksReady
+    ? csvRows.filter(
+        (row) =>
+          !row.error &&
+          row.domainKey !== null &&
+          excludedByImport.has(row.domainKey),
+      ).length
+    : 0;
   const csvSkippedCount = duplicateChecksReady
     ? csvRows.length -
       importableRows.length -
       csvAlreadySavedCount -
-      csvAlreadyQueuedCount
+      csvAlreadyQueuedCount -
+      csvExcludedCount
     : 0;
   async function loadCsvFile(file: File | undefined) {
     if (
@@ -476,38 +502,46 @@ export function CsvWebsiteImportPage() {
                     const queuedInThisImport =
                       row.domainKey !== null &&
                       queuedByImport.has(row.domainKey);
+                    const exclusionReason =
+                      row.domainKey === null
+                        ? undefined
+                        : excludedByImport.get(row.domainKey);
                     const importFailure =
                       csvImportMutation.data?.failures.find(
                         (failure) => failure.websiteUrl === row.websiteUrl,
                       );
                     const status = row.error
                       ? "issue"
-                      : queuedInThisImport
-                        ? "queued"
-                        : importFailure
-                          ? "issue"
-                          : !duplicateChecksReady
-                            ? "checking"
-                            : alreadySaved
-                              ? "existing"
-                              : alreadyQueued
-                                ? "already-queued"
-                                : "ready";
+                      : exclusionReason
+                        ? "issue"
+                        : queuedInThisImport
+                          ? "queued"
+                          : importFailure
+                            ? "issue"
+                            : !duplicateChecksReady
+                              ? "checking"
+                              : alreadySaved
+                                ? "existing"
+                                : alreadyQueued
+                                  ? "already-queued"
+                                  : "ready";
                     const statusLabel = row.error
                       ? row.error
-                      : queuedInThisImport
-                        ? "Queued"
-                        : importFailure
-                          ? `Failed to queue: ${importFailure.message}`
-                          : !duplicateChecksReady
-                            ? duplicateCheckError
-                              ? "Duplicate check unavailable"
-                              : "Checking duplicates…"
-                            : alreadySaved
-                              ? "Already in website list"
-                              : alreadyQueued
-                                ? "Already queued or running"
-                                : "Ready";
+                      : exclusionReason
+                        ? `Excluded: ${exclusionReason}`
+                        : queuedInThisImport
+                          ? "Queued"
+                          : importFailure
+                            ? `Failed to queue: ${importFailure.message}`
+                            : !duplicateChecksReady
+                              ? duplicateCheckError
+                                ? "Duplicate check unavailable"
+                                : "Checking duplicates…"
+                              : alreadySaved
+                                ? "Already in website list"
+                                : alreadyQueued
+                                  ? "Already queued or running"
+                                  : "Ready";
 
                     return (
                       <tr key={`${row.rowNumber}-${row.websiteUrl}`}>

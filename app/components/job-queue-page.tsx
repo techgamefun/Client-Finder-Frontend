@@ -80,7 +80,7 @@ function normalizeCrawlerJob(job: WebsiteCrawlJobResponse): QueueJob {
     detail: "Website indexing",
     status: job.status,
     error: job.error,
-    skipReason: job.skip_reason,
+    skipReason: null,
     createdAt: job.created_at,
     startedAt: job.started_at,
     completedAt: job.completed_at,
@@ -202,7 +202,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       showToast({
         type: "success",
         title: "Domain excluded",
-        message: `${domain.domain} was added to Excluded domains. Queued indexing jobs for this domain will be skipped.`,
+        message: `${domain.domain} was excluded and its queued indexing jobs were removed.`,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
@@ -317,7 +317,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         <QueueStat label="Running" value={runningCount} />
         <QueueStat label="Finished" value={succeededCount} />
         <QueueStat label="Failed" value={failedCount} />
-        {kind !== "pagespeed" && (
+        {kind === "keywords" && (
           <QueueStat label="Skipped" value={skippedCount} />
         )}
       </section>
@@ -409,7 +409,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                 <option value="running">Running</option>
                 <option value="succeeded">Finished</option>
                 <option value="failed">Failed</option>
-                {kind !== "pagespeed" && (
+                {kind === "keywords" && (
                   <option value="skipped">Skipped</option>
                 )}
               </select>

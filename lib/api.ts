@@ -475,10 +475,9 @@ export interface PageClassificationSignals {
 export interface WebsiteCrawlJobResponse {
   id: string;
   website_url: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+  status: "queued" | "running" | "succeeded" | "failed";
   attempts: number;
   error: string | null;
-  skip_reason: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -489,20 +488,24 @@ export interface WebsiteCrawlJobResponse {
 export interface WebsiteCrawlBatchJobResponse {
   id: string;
   website_url: string;
-  status: "queued" | "skipped";
-  skip_reason: string | null;
+  status: "queued";
+}
+
+export interface WebsiteCrawlBatchExcludedResponse {
+  website_url: string;
+  reason: string;
 }
 
 export interface WebsiteCrawlBatchResponse {
   jobs: WebsiteCrawlBatchJobResponse[];
+  excluded: WebsiteCrawlBatchExcludedResponse[];
 }
 
 export interface WebsiteCrawlJobHistory {
   id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+  status: "queued" | "running" | "succeeded" | "failed";
   attempts: number;
   error: string | null;
-  skip_reason: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
