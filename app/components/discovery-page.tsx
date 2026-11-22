@@ -910,9 +910,9 @@ export function DiscoveryPage() {
         </div>
       )}
       {(preferenceError || userPreferences.saveMutation.isError) && (
-        <div className="alert alert-error discovery-alert" role="alert">
+        <div className="alert alert-warning discovery-alert" role="status">
           {preferenceError ||
-            `Could not save your search preferences: ${userPreferences.saveMutation.error?.message ?? "Unknown error."}`}
+            `Your search preferences are available locally, but cloud sync failed: ${userPreferences.saveMutation.error?.message ?? "Unknown error."}`}
         </div>
       )}
       {userPreferences.isError && (

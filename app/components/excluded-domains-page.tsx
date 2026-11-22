@@ -91,6 +91,7 @@ export function ExcludedDomainsPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
       ]);
     },
   });
@@ -106,6 +107,7 @@ export function ExcludedDomainsPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
       ]);
     },
   });
@@ -125,6 +127,7 @@ export function ExcludedDomainsPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
       ]);
     },
   });

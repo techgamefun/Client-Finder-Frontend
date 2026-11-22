@@ -161,6 +161,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
       ]);
     },
     onError: (error: Error) => {

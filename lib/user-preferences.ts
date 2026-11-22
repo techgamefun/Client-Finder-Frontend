@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getUserPreferences,
@@ -13,9 +13,13 @@ import { useToast } from "@/app/components/toast-provider";
 type PreferenceSave = {
   userId: string;
   patch: UserPreferencesUpdate;
+  revision: number;
+  isPendingSync?: boolean;
 };
 
 const preferenceSaveQueues = new Map<string, Promise<unknown>>();
+const pendingPreferenceSyncs = new Set<string>();
+const preferenceRevisions = new Map<string, number>();
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   theme: "system",
@@ -38,8 +42,21 @@ export function useUserPreferences(userId: string | undefined) {
   const query = useQuery({
     queryKey,
     queryFn: async () => {
+      if (userId) {
+        const pending = readPendingLocalPreferences(userId);
+        if (pending) {
+          return readLocalPreferences(userId) ?? pending;
+        }
+      }
+
       const preferences = await getUserPreferences();
-      if (userId) writeLocalPreferences(userId, preferences);
+      if (userId) {
+        const pending = readPendingLocalPreferences(userId);
+        if (pending) {
+          return readLocalPreferences(userId) ?? pending;
+        }
+        writeLocalPreferences(userId, preferences);
+      }
       return preferences;
     },
     initialData: userId ? () => readLocalPreferences(userId) : undefined,
@@ -50,55 +67,93 @@ export function useUserPreferences(userId: string | undefined) {
   const mutation = useMutation({
     mutationFn: ({ userId: saveUserId, patch }: PreferenceSave) =>
       saveUserPreferencesInOrder(saveUserId, patch),
-    onMutate: async ({ userId: saveUserId, patch }) => {
-      const key = userPreferencesQueryKey(saveUserId);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<UserPreferences>(key);
-      queryClient.setQueryData<UserPreferences>(
-        key,
-        mergeUserPreferences(previous ?? DEFAULT_USER_PREFERENCES, patch),
-      );
-      const optimistic = queryClient.getQueryData<UserPreferences>(key);
-      if (optimistic) writeLocalPreferences(saveUserId, optimistic);
-      return { key, previous };
-    },
-    onError: (error, _patch, rollback) => {
-      if (rollback) {
-        if (rollback.previous) {
-          queryClient.setQueryData(rollback.key, rollback.previous);
-          writeLocalPreferences(_patch.userId, rollback.previous);
-        } else {
-          queryClient.removeQueries({ queryKey: rollback.key, exact: true });
-          removeLocalPreferences(_patch.userId);
-        }
-      }
-      showToast({
-        type: "error",
-        title: "Could not save preferences",
-        message: error.message,
-      });
-    },
     onSuccess: (preferences, variables) => {
+      if (
+        preferenceRevisions.get(variables.userId) !== variables.revision
+      ) {
+        return;
+      }
       queryClient.setQueryData(
         userPreferencesQueryKey(variables.userId),
         preferences,
       );
       writeLocalPreferences(variables.userId, preferences);
+      clearPendingLocalPreferences(variables.userId);
+      preferenceRevisions.delete(variables.userId);
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "warning",
+        title: "Preferences saved on this device",
+        message: `Cloud sync failed: ${error.message}. Your changes are still available locally and will be retried when you're back online.`,
+      });
+    },
+    onSettled: (_data, _error, variables) => {
+      if (variables.isPendingSync) {
+        pendingPreferenceSyncs.delete(variables.userId);
+      }
     },
   });
   const mutate = mutation.mutate;
-  const save = useCallback(
-    (patch: UserPreferencesUpdate) => {
-      if (userId) mutate({ userId, patch });
+  const enqueueSave = useCallback(
+    (patch: UserPreferencesUpdate, isPendingSync = false) => {
+      if (!userId) return;
+      const revision = (preferenceRevisions.get(userId) ?? 0) + 1;
+      preferenceRevisions.set(userId, revision);
+      const key = userPreferencesQueryKey(userId);
+      const current =
+        queryClient.getQueryData<UserPreferences>(key) ??
+        readLocalPreferences(userId) ??
+        DEFAULT_USER_PREFERENCES;
+      const optimistic = mergeUserPreferences(current, patch);
+      const patchToSync = readPendingLocalPreferences(userId)
+        ? optimistic
+        : patch;
+      queryClient.setQueryData(key, optimistic);
+      writeLocalPreferences(userId, optimistic);
+      writePendingLocalPreferences(userId, optimistic);
+      mutate({
+        userId,
+        patch: patchToSync,
+        revision,
+        isPendingSync,
+      });
     },
-    [mutate, userId],
+    [mutate, queryClient, userId],
   );
+  const save = useCallback(
+    (patch: UserPreferencesUpdate) => enqueueSave(patch),
+    [enqueueSave],
+  );
+  const retryPendingSync = useCallback(() => {
+    if (!userId || pendingPreferenceSyncs.has(userId)) return;
+    if (preferenceSaveQueues.has(userId)) return;
+    const pending = readPendingLocalPreferences(userId);
+    if (!pending) return;
+    pendingPreferenceSyncs.add(userId);
+    enqueueSave(pending, true);
+  }, [enqueueSave, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    retryPendingSync();
+    window.addEventListener("online", retryPendingSync);
+    window.addEventListener("focus", retryPendingSync);
+    return () => {
+      window.removeEventListener("online", retryPendingSync);
+      window.removeEventListener("focus", retryPendingSync);
+    };
+  }, [retryPendingSync, userId]);
 
   return { ...query, save, saveMutation: mutation };
 }
 
 function localPreferencesKey(userId: string): string {
   return `${LOCAL_PREFERENCE_CACHE_PREFIX}:${userId}`;
+}
+
+function pendingLocalPreferencesKey(userId: string): string {
+  return `${LOCAL_PREFERENCE_CACHE_PREFIX}:pending:${userId}`;
 }
 
 function readLocalPreferences(userId: string): UserPreferences | undefined {
@@ -110,6 +165,23 @@ function readLocalPreferences(userId: string): UserPreferences | undefined {
     return isUserPreferences(value) ? value : undefined;
   } catch (error) {
     console.error("Could not read locally cached user preferences.", error);
+    return undefined;
+  }
+}
+
+function readPendingLocalPreferences(
+  userId: string,
+): UserPreferences | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const stored = window.localStorage.getItem(
+      pendingLocalPreferencesKey(userId),
+    );
+    if (!stored) return undefined;
+    const value: unknown = JSON.parse(stored);
+    return isUserPreferences(value) ? value : undefined;
+  } catch (error) {
+    console.error("Could not read pending user preference changes.", error);
     return undefined;
   }
 }
@@ -129,12 +201,27 @@ function writeLocalPreferences(
   }
 }
 
-function removeLocalPreferences(userId: string): void {
+function writePendingLocalPreferences(
+  userId: string,
+  preferences: UserPreferences,
+): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(localPreferencesKey(userId));
+    window.localStorage.setItem(
+      pendingLocalPreferencesKey(userId),
+      JSON.stringify(preferences),
+    );
   } catch (error) {
-    console.error("Could not clear locally cached user preferences.", error);
+    console.error("Could not cache pending user preference changes.", error);
+  }
+}
+
+function clearPendingLocalPreferences(userId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(pendingLocalPreferencesKey(userId));
+  } catch (error) {
+    console.error("Could not clear synced user preference changes.", error);
   }
 }
 
