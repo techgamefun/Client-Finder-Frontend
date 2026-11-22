@@ -2049,7 +2049,7 @@ html[data-theme="dark"] .toast-error .toast-icon {
 }
 
 .queue-stats-grid-crawler {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .jobs-tabs {
@@ -2096,6 +2096,34 @@ html[data-theme="dark"] .toast-error .toast-icon {
 .queue-stat-card > strong {
   color: var(--foreground);
   font-size: 22px;
+}
+
+.queue-stat-card-button {
+  width: 100%;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.queue-stat-card-button:hover {
+  border-color: var(--purple);
+  transform: translateY(-1px);
+}
+
+.queue-stat-card-button:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 2px;
+}
+
+.queue-stat-card-button.is-active {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 2px rgb(124 92 246 / 18%);
 }
 
 .queue-panel {

@@ -313,10 +313,57 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           kind === "crawler" ? "queue-stats-grid-crawler" : ""
         }`}
       >
-        <QueueStat label="Queued" value={queuedCount} />
-        <QueueStat label="Running" value={runningCount} />
-        <QueueStat label="Finished" value={succeededCount} />
-        <QueueStat label="Failed" value={failedCount} />
+        {kind === "crawler" ? (
+          <>
+            <QueueStat
+              active={statusFilter === "queued"}
+              label="Queued"
+              onClick={() =>
+                setStatusFilter((current) =>
+                  current === "queued" ? "all" : "queued",
+                )
+              }
+              value={queuedCount}
+            />
+            <QueueStat
+              active={statusFilter === "running"}
+              label="Running"
+              onClick={() =>
+                setStatusFilter((current) =>
+                  current === "running" ? "all" : "running",
+                )
+              }
+              value={runningCount}
+            />
+            <QueueStat
+              active={statusFilter === "succeeded"}
+              label="Finished"
+              onClick={() =>
+                setStatusFilter((current) =>
+                  current === "succeeded" ? "all" : "succeeded",
+                )
+              }
+              value={succeededCount}
+            />
+            <QueueStat
+              active={statusFilter === "failed"}
+              label="Failed"
+              onClick={() =>
+                setStatusFilter((current) =>
+                  current === "failed" ? "all" : "failed",
+                )
+              }
+              value={failedCount}
+            />
+          </>
+        ) : (
+          <>
+            <QueueStat label="Queued" value={queuedCount} />
+            <QueueStat label="Running" value={runningCount} />
+            <QueueStat label="Finished" value={succeededCount} />
+            <QueueStat label="Failed" value={failedCount} />
+          </>
+        )}
         {kind === "keywords" && (
           <QueueStat label="Skipped" value={skippedCount} />
         )}
@@ -389,31 +436,33 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                   : `Retry all (${failedCount})`}
               </button>
             )}
-            <label className="select-filter queue-status-filter">
-              <span className="sr-only">
-                Filter {queueLabel} jobs by status
-              </span>
-              <select
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setStatusFilter(
-                    value === "all" || isQueueJobStatus(value)
-                      ? value
-                      : "all",
-                  );
-                }}
-                value={statusFilter}
-              >
-                <option value="all">All statuses</option>
-                <option value="queued">Queued</option>
-                <option value="running">Running</option>
-                <option value="succeeded">Finished</option>
-                <option value="failed">Failed</option>
-                {kind === "keywords" && (
-                  <option value="skipped">Skipped</option>
-                )}
-              </select>
-            </label>
+            {kind !== "crawler" && (
+              <label className="select-filter queue-status-filter">
+                <span className="sr-only">
+                  Filter {queueLabel} jobs by status
+                </span>
+                <select
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStatusFilter(
+                      value === "all" || isQueueJobStatus(value)
+                        ? value
+                        : "all",
+                    );
+                  }}
+                  value={statusFilter}
+                >
+                  <option value="all">All statuses</option>
+                  <option value="queued">Queued</option>
+                  <option value="running">Running</option>
+                  <option value="succeeded">Finished</option>
+                  <option value="failed">Failed</option>
+                  {kind === "keywords" && (
+                    <option value="skipped">Skipped</option>
+                  )}
+                </select>
+              </label>
+            )}
           </div>
         </div>
 
@@ -536,7 +585,38 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   );
 }
 
-function QueueStat({ label, value }: { label: string; value: number }) {
+function QueueStat({
+  active = false,
+  label,
+  onClick,
+  value,
+}: {
+  active?: boolean;
+  label: string;
+  onClick?: () => void;
+  value: number;
+}) {
+  if (onClick) {
+    return (
+      <button
+        aria-label={`${label}: ${value}. ${
+          active
+            ? "Click to clear the status filter."
+            : "Click to filter the queue."
+        }`}
+        aria-pressed={active}
+        className={`stat-card queue-stat-card queue-stat-card-button${
+          active ? " is-active" : ""
+        }`}
+        onClick={onClick}
+        type="button"
+      >
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </button>
+    );
+  }
+
   return (
     <article className="stat-card queue-stat-card">
       <span>{label}</span>
