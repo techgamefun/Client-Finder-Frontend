@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { JobQueuePage } from "./job-queue-page";
 
-type JobQueueKind = "crawler" | "pagespeed";
+type JobQueueKind = "crawler" | "pagespeed" | "keywords";
 
 export function JobsPage({ kind }: { kind: JobQueueKind }) {
   return (
@@ -20,6 +20,13 @@ export function JobsPage({ kind }: { kind: JobQueueKind }) {
           href="/jobs?tab=pagespeed"
         >
           PageSpeed
+        </Link>
+        <Link
+          aria-current={kind === "keywords" ? "page" : undefined}
+          className={kind === "keywords" ? "is-active" : ""}
+          href="/jobs?tab=keywords"
+        >
+          Keywords
         </Link>
       </nav>
       <JobQueuePage kind={kind} />

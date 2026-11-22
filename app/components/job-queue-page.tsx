@@ -9,14 +9,18 @@ import {
 } from "@tanstack/react-query";
 import {
   addExcludedDomain,
+  getWebsiteCorpusAnalysisJobs,
   getApplicationSettings,
   getPageSpeedScanJobs,
   getWebsiteCrawlJobs,
+  retryWebsiteCorpusAnalysisJob,
+  retryWebsiteCorpusAnalysisJobs,
   retryPageSpeedScanJob,
   retryPageSpeedScanJobs,
   retryWebsiteCrawlJob,
   retryWebsiteCrawlJobs,
   type PageSpeedScanJob,
+  type WebsiteCorpusAnalysisJob,
   type WebsiteCrawlJobResponse,
 } from "@/lib/api";
 import {
@@ -29,7 +33,7 @@ import { formatSiteType } from "@/lib/site-type";
 import { useToast } from "./toast-provider";
 import { TableLoading } from "./page-loading";
 
-type QueueKind = "crawler" | "pagespeed";
+type QueueKind = "crawler" | "pagespeed" | "keywords";
 
 interface QueueJob {
   id: string;
@@ -56,6 +60,12 @@ const queueConfig = {
     description:
       "Track background PageSpeed scans, their progress, duration, and any failures.",
     label: "PAGESPEED INSIGHTS",
+  },
+  keywords: {
+    title: "Keyword generation queue",
+    description:
+      "Track background keyword analysis for newly crawled websites and retry failures.",
+    label: "WEBSITE KEYWORDS",
   },
 } satisfies Record<
   QueueKind,
@@ -92,9 +102,31 @@ function normalizePageSpeedJob(job: PageSpeedScanJob): QueueJob {
   };
 }
 
+function normalizeCorpusAnalysisJob(
+  job: WebsiteCorpusAnalysisJob,
+): QueueJob {
+  return {
+    id: job.id,
+    websiteUrl: job.website_url,
+    siteType: null,
+    detail: "Keyword generation",
+    status: job.status,
+    error: job.status === "failed" ? job.error : null,
+    skipReason: job.status === "skipped" ? job.error : null,
+    createdAt: job.created_at,
+    startedAt: job.started_at,
+    completedAt: job.completed_at,
+  };
+}
+
 export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const config = queueConfig[kind];
-  const queueLabel = kind === "crawler" ? "indexing" : "PageSpeed";
+  const queueLabel =
+    kind === "crawler"
+      ? "indexing"
+      : kind === "pagespeed"
+        ? "PageSpeed"
+        : "keyword generation";
   const showToast = useToast();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
@@ -112,13 +144,25 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     select: (jobs) => jobs.map(normalizePageSpeedJob),
     enabled: kind === "pagespeed",
   });
+  const corpusAnalysisJobsQuery = useQuery({
+    queryKey: ["website-corpus-analysis", "queue-jobs"],
+    queryFn: getWebsiteCorpusAnalysisJobs,
+    select: (jobs) => jobs.map(normalizeCorpusAnalysisJob),
+    enabled: kind === "keywords",
+    refetchInterval: kind === "keywords" ? 5_000 : false,
+  });
   const pageSpeedSettingsQuery = useQuery({
     queryKey: ["application-settings"],
     queryFn: getApplicationSettings,
     enabled: kind === "pagespeed",
     retry: false,
   });
-  const jobsQuery = kind === "crawler" ? crawlerJobsQuery : pageSpeedJobsQuery;
+  const jobsQuery =
+    kind === "crawler"
+      ? crawlerJobsQuery
+      : kind === "pagespeed"
+        ? pageSpeedJobsQuery
+        : corpusAnalysisJobsQuery;
   const canRetryJobs =
     kind !== "pagespeed" ||
     pageSpeedSettingsQuery.data?.pagespeed_configured === true;
@@ -126,6 +170,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     mutationFn: async (jobId: string) => {
       if (kind === "crawler") {
         await retryWebsiteCrawlJob(jobId);
+      } else if (kind === "keywords") {
+        await retryWebsiteCorpusAnalysisJob(jobId);
       } else {
         await retryPageSpeedScanJob(jobId);
       }
@@ -177,7 +223,11 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       const result =
         kind === "crawler"
           ? await retryWebsiteCrawlJobs(failedJobs.map((job) => job.id))
-          : await retryPageSpeedScanJobs(failedJobs.map((job) => job.id));
+          : kind === "pagespeed"
+            ? await retryPageSpeedScanJobs(failedJobs.map((job) => job.id))
+            : await retryWebsiteCorpusAnalysisJobs(
+                failedJobs.map((job) => job.id),
+              );
       const jobsById = new Map(failedJobs.map((job) => [job.id, job]));
 
       return {
@@ -188,7 +238,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             jobsById.get(failure.job_id)?.websiteUrl ?? failure.job_id,
           message: failure.message,
         })),
-        queueLabel: kind === "crawler" ? "indexing" : "PageSpeed",
+        queueLabel,
       };
     },
     onSuccess: async (result) => {
@@ -267,7 +317,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         <QueueStat label="Running" value={runningCount} />
         <QueueStat label="Finished" value={succeededCount} />
         <QueueStat label="Failed" value={failedCount} />
-        {kind === "crawler" && (
+        {kind !== "pagespeed" && (
           <QueueStat label="Skipped" value={skippedCount} />
         )}
       </section>
@@ -315,7 +365,9 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             <h2 id="queue-jobs-heading">Recent jobs</h2>
             <p className="panel-subtitle">
               Showing {visibleJobs.length} of the latest {jobs.length} jobs.
-              Job status updates are streamed in real time.
+              {kind === "keywords"
+                ? " Status refreshes automatically every five seconds."
+                : " Job status updates are streamed in real time."}
             </p>
           </div>
           <div className="queue-panel-controls">
@@ -329,9 +381,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                   !canRetryJobs
                 }
                 onClick={() => retryAllMutation.mutate(failedJobs)}
-                title={`Retry all ${failedCount} failed ${
-                  kind === "crawler" ? "indexing" : "PageSpeed"
-                } jobs in the recent jobs list`}
+                title={`Retry all ${failedCount} failed ${queueLabel} jobs in the recent jobs list`}
                 type="button"
               >
                 {retryAllMutation.isPending
@@ -341,8 +391,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             )}
             <label className="select-filter queue-status-filter">
               <span className="sr-only">
-                Filter {kind === "crawler" ? "indexing" : "PageSpeed"} jobs by
-                status
+                Filter {queueLabel} jobs by status
               </span>
               <select
                 onChange={(event) => {
@@ -360,7 +409,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                 <option value="running">Running</option>
                 <option value="succeeded">Finished</option>
                 <option value="failed">Failed</option>
-                {kind === "crawler" && (
+                {kind !== "pagespeed" && (
                   <option value="skipped">Skipped</option>
                 )}
               </select>
@@ -374,11 +423,11 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <p className="empty-copy">Queue jobs could not be loaded.</p>
         ) : jobs.length === 0 ? (
           <p className="empty-copy">
-            No {kind === "crawler" ? "indexing" : "PageSpeed"} jobs found.
+            No {queueLabel} jobs found.
           </p>
         ) : visibleJobs.length === 0 ? (
           <p className="empty-copy">
-            No indexing jobs match the selected status.
+            No {queueLabel} jobs match the selected status.
           </p>
         ) : (
           <div className="pagespeed-job-list">

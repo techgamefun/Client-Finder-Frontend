@@ -41,7 +41,8 @@ The **Companies** page is the master database and includes companies with or
 without contacts. The **Lead pipeline** is a qualified view that includes only
 companies with at least one contact. Adding a contact from a company profile
 refreshes the shared company data, so that company then appears in the Lead
-pipeline automatically.
+pipeline automatically. Both pages apply search, filters, and pagination on
+the backend and request only the current page of company records.
 
 The **Email templates** page lets organization admins create and manage shared
 HTML email templates. Members can render a database-backed preview for a

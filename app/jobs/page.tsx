@@ -6,5 +6,11 @@ type JobsRouteProps = {
 
 export default async function JobsRoute({ searchParams }: JobsRouteProps) {
   const { tab } = await searchParams;
-  return <JobsPage kind={tab === "pagespeed" ? "pagespeed" : "crawler"} />;
+  const kind =
+    tab === "pagespeed"
+      ? "pagespeed"
+      : tab === "keywords"
+        ? "keywords"
+        : "crawler";
+  return <JobsPage kind={kind} />;
 }

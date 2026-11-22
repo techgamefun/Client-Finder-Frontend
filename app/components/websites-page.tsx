@@ -429,17 +429,34 @@ export function WebsitesPage() {
   });
   const pageWebsites = websitesQuery.data?.items ?? [];
   const visibleWebsiteIds = pageWebsites.map((website) => website.id);
+  const visibleCrawlTimestamps = pageWebsites.map(
+    (website) => website.crawled_at,
+  );
   const corpusWordsQuery = useQuery({
-    queryKey: ["website-corpus-words", visibleWebsiteIds],
+    queryKey: [
+      "website-corpus-words",
+      visibleWebsiteIds,
+      visibleCrawlTimestamps,
+    ],
     queryFn: () => getWebsiteCorpusWords(visibleWebsiteIds),
     enabled: visibleWebsiteIds.length > 0,
     staleTime: 5 * 60_000,
     retry: false,
+    refetchInterval: (query) =>
+      (query.state.data?.pending_website_ids.length ?? 0) > 0
+        ? 5_000
+        : false,
   });
   const corpusWordsByWebsite = new Map(
     (corpusWordsQuery.data?.websites ?? []).map(
       (analysis) => [analysis.website_id, analysis] as const,
     ),
+  );
+  const pendingKeywordWebsiteIds = new Set(
+    corpusWordsQuery.data?.pending_website_ids ?? [],
+  );
+  const failedKeywordWebsiteIds = new Set(
+    corpusWordsQuery.data?.failed_website_ids ?? [],
   );
   const categories = facetsQuery.data?.categories ?? [];
   const discoverySources = facetsQuery.data?.discovery_sources ?? [];
@@ -1390,6 +1407,17 @@ export function WebsitesPage() {
                             <span className="website-row-keywords-empty">
                               Analyzing…
                             </span>
+                          ) : !corpusWordsByWebsite.has(website.id) ? (
+                            <Link
+                              className="website-row-keywords-empty"
+                              href="/jobs?tab=keywords"
+                            >
+                              {failedKeywordWebsiteIds.has(website.id)
+                                ? "Keyword generation failed · View queue"
+                                : pendingKeywordWebsiteIds.has(website.id)
+                                  ? "Generating keywords · View queue"
+                                  : "Keywords unavailable · View queue"}
+                            </Link>
                           ) : (corpusWordsByWebsite.get(website.id)?.words
                               .length ?? 0) > 0 ? (
                             corpusWordsByWebsite.get(website.id)?.words

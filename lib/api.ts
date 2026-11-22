@@ -31,6 +31,34 @@ export interface Company {
   pagespeed_scans: PageSpeedScanSummary[];
 }
 
+export interface CompanyPipelineFilters {
+  view: "companies" | "leads";
+  query: string;
+  status: string | null;
+  email_status: "all" | "contacted" | "not_contacted";
+  website: "all" | "with_website" | "without_website";
+  page: number;
+  page_size: 10 | 25 | 50;
+}
+
+export interface CompanyPipelineResponse {
+  items: Company[];
+  page: number;
+  page_count: number;
+  page_size: number;
+  total_count: number;
+  eligible_count: number;
+  company_count: number;
+  status_counts: Record<string, number>;
+  with_website_count: number;
+  contacted_count: number;
+}
+
+export interface CompanyPipelineSelectionResponse {
+  company_ids: string[];
+  total_count: number;
+}
+
 export interface CompanyNavigationSummary {
   leads_needing_review: number;
 }
@@ -239,6 +267,21 @@ export interface PageSpeedScanJob {
   website_url: string;
   strategy: "mobile" | "desktop";
   status: "queued" | "running" | "succeeded" | "failed";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface WebsiteCorpusAnalysisJob {
+  id: string;
+  website_id: string;
+  website_url: string;
+  domain: string;
+  source_crawled_at: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
   attempts: number;
   error: string | null;
   created_at: string;
@@ -653,6 +696,8 @@ export interface WebsiteCorpusAnalysis {
 
 export interface WebsiteCorpusWordsResponse {
   websites: WebsiteCorpusAnalysis[];
+  pending_website_ids: string[];
+  failed_website_ids: string[];
 }
 
 export interface WebsiteReclassificationBatchResult {
@@ -1580,17 +1625,51 @@ export function getOctoparseTemplates(
   );
 }
 
+function companyPipelineSearchParams(
+  filters: Omit<CompanyPipelineFilters, "page" | "page_size">,
+): URLSearchParams {
+  const search = new URLSearchParams({
+    view: filters.view,
+    email_status: filters.email_status,
+    website: filters.website,
+  });
+  if (filters.query) search.set("query", filters.query);
+  if (filters.status) search.set("status", filters.status);
+  return search;
+}
+
 export async function getCompanies(): Promise<Company[]> {
   const pageSize = 100;
   const companies: Company[] = [];
-
-  for (let offset = 0; ; offset += pageSize) {
+  let offset = 0;
+  while (true) {
     const page = await request<Company[]>(
       `/companies?limit=${pageSize}&offset=${offset}`,
     );
     companies.push(...page);
     if (page.length < pageSize) return companies;
+    offset += pageSize;
   }
+}
+
+export function getCompanyPipeline(
+  filters: CompanyPipelineFilters,
+): Promise<CompanyPipelineResponse> {
+  const search = companyPipelineSearchParams(filters);
+  search.set("page", String(filters.page));
+  search.set("page_size", String(filters.page_size));
+  return request<CompanyPipelineResponse>(
+    `/companies/pipeline?${search.toString()}`,
+  );
+}
+
+export function getCompanyPipelineSelection(
+  filters: Omit<CompanyPipelineFilters, "page" | "page_size">,
+): Promise<CompanyPipelineSelectionResponse> {
+  const search = companyPipelineSearchParams(filters);
+  return request<CompanyPipelineSelectionResponse>(
+    `/companies/pipeline/selection?${search.toString()}`,
+  );
 }
 
 export function getOverview(
@@ -2116,6 +2195,35 @@ export function getWebsiteCorpusWords(
   }
   return request<WebsiteCorpusWordsResponse>(
     `/websites/corpus-words?${search.toString()}`,
+  );
+}
+
+export function getWebsiteCorpusAnalysisJobs(): Promise<
+  WebsiteCorpusAnalysisJob[]
+> {
+  return request<WebsiteCorpusAnalysisJob[]>(
+    "/websites/corpus-words/jobs",
+  );
+}
+
+export function retryWebsiteCorpusAnalysisJob(
+  jobId: string,
+): Promise<WebsiteCorpusAnalysisJob> {
+  return request<WebsiteCorpusAnalysisJob>(
+    `/websites/corpus-words/jobs/${jobId}/retry`,
+    { method: "POST" },
+  );
+}
+
+export function retryWebsiteCorpusAnalysisJobs(
+  jobIds: string[],
+): Promise<BatchJobRetryResponse> {
+  return request<BatchJobRetryResponse>(
+    "/websites/corpus-words/jobs/retry-batch",
+    {
+      method: "POST",
+      body: JSON.stringify({ job_ids: jobIds }),
+    },
   );
 }
 

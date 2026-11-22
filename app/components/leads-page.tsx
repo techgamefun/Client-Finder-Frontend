@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Fragment,
   useEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -18,14 +17,20 @@ import {
   createCompany,
   deleteCompany,
   getAuthSession,
-  getCompanies,
+  getCompanyPipeline,
+  getCompanyPipelineSelection,
   getPageSpeedScan,
   getQueueEventsWebSocketUrl,
   PENDING_CAMPAIGN_AUDIENCE_KEY,
   updateCompany,
   updateLeadStatus,
 } from "@/lib/api";
-import type { Company, CompanyInput, CompanyUpdateInput } from "@/lib/api";
+import type {
+  Company,
+  CompanyInput,
+  CompanyPipelineFilters,
+  CompanyUpdateInput,
+} from "@/lib/api";
 import { CompanyName } from "./overview-page";
 import { TableLoading } from "./page-loading";
 
@@ -39,7 +44,7 @@ const leadStatuses = [
   "converted",
   "disqualified",
 ];
-const pageSizes = [10, 25, 50];
+const pageSizes = [10, 25, 50] as const;
 const pipelineQueryChangedEvent = "lead-pipeline-query-change";
 const emptyCompany: CompanyInput = {
   name: "",
@@ -50,6 +55,10 @@ const emptyCompany: CompanyInput = {
   state: "",
   software_need: "",
 };
+
+function isPageSize(value: number): value is (typeof pageSizes)[number] {
+  return value === 10 || value === 25 || value === 50;
+}
 
 function subscribeToPipelineQuery(onChange: () => void) {
   window.addEventListener("popstate", onChange);
@@ -123,9 +132,27 @@ export function LeadsPage({
       ? requestedPage
       : 1;
   const requestedPageSize = Number(pipelineParams.get("pageSize"));
-  const pageSize = pageSizes.includes(requestedPageSize)
+  const pageSize = isPageSize(requestedPageSize)
     ? requestedPageSize
     : 10;
+  const [debouncedCompanyFilter, setDebouncedCompanyFilter] =
+    useState(companyFilter);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setDebouncedCompanyFilter(companyFilter),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [companyFilter]);
+  const companyPipelineFilters: CompanyPipelineFilters = {
+    view: isCompanyDatabaseView ? "companies" : "leads",
+    query: debouncedCompanyFilter,
+    status: statusFilter === "all" ? null : statusFilter,
+    email_status: emailStatusFilter,
+    website: websiteFilter,
+    page: currentPage,
+    page_size: pageSize,
+  };
   const [companyForm, setCompanyForm] = useState<CompanyInput>(emptyCompany);
   const addCompanyDialogRef = useRef<HTMLDialogElement>(null);
   const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
@@ -147,8 +174,8 @@ export function LeadsPage({
   >([]);
   const [campaignAudienceError, setCampaignAudienceError] = useState("");
   const companiesQuery = useQuery({
-    queryKey: ["companies"],
-    queryFn: getCompanies,
+    queryKey: ["companies", "pipeline", companyPipelineFilters],
+    queryFn: () => getCompanyPipeline(companyPipelineFilters),
   });
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
@@ -226,6 +253,50 @@ export function LeadsPage({
       });
     },
   });
+  const filteredSelectionMutation = useMutation({
+    mutationFn: () =>
+      getCompanyPipelineSelection({
+        view: "leads",
+        query: debouncedCompanyFilter,
+        status: statusFilter === "all" ? null : statusFilter,
+        email_status: emailStatusFilter,
+        website: websiteFilter,
+      }),
+    onSuccess: (selection) => {
+      setCampaignAudienceError("");
+      if (selection.total_count > maxCampaignCompanies) {
+        setCampaignAudienceError(
+          `Select no more than ${maxCampaignCompanies.toLocaleString()} companies for one campaign.`,
+        );
+        return;
+      }
+      const allFilteredSelected =
+        selection.company_ids.length > 0 &&
+        selection.company_ids.every((id) =>
+          selectedLeadCompanyIdSet.has(id),
+        );
+      if (allFilteredSelected) {
+        const filteredIds = new Set(selection.company_ids);
+        setSelectedLeadCompanyIds((current) =>
+          current.filter((id) => !filteredIds.has(id)),
+        );
+        return;
+      }
+      const next = new Set([...selectedLeadCompanyIds, ...selection.company_ids]);
+      if (next.size > maxCampaignCompanies) {
+        setCampaignAudienceError(
+          `Select no more than ${maxCampaignCompanies.toLocaleString()} companies for one campaign.`,
+        );
+        return;
+      }
+      setSelectedLeadCompanyIds([...next]);
+    },
+    onError: (error: Error) => {
+      setCampaignAudienceError(
+        `Could not select filtered leads: ${error.message}`,
+      );
+    },
+  });
 
   useEffect(() => {
     if (isCompanyDatabaseView) return;
@@ -269,68 +340,18 @@ export function LeadsPage({
     };
   }, [isCompanyDatabaseView, queryClient]);
 
-  const allCompanies = companiesQuery.data ?? noCompanies;
-  const companies = useMemo(
-    () =>
-      isCompanyDatabaseView
-        ? allCompanies
-        : allCompanies.filter((company) => company.contacts.length > 0),
-    [allCompanies, isCompanyDatabaseView],
-  );
-  const filteredCompanies = useMemo(() => {
-    const term = companyFilter.trim().toLowerCase();
-    return companies.filter((company) => {
-      const hasWebsite = Boolean(company.website || company.domain);
-      const matchesWebsite =
-        websiteFilter === "all" ||
-        (websiteFilter === "with_website" && hasWebsite) ||
-        (websiteFilter === "without_website" && !hasWebsite);
-      const hasBeenContacted = company.last_email_sent_at !== null;
-      return (
-        (statusFilter === "all" || company.lead_status === statusFilter) &&
-        (emailStatusFilter === "all" ||
-          (emailStatusFilter === "contacted" && hasBeenContacted) ||
-          (emailStatusFilter === "not_contacted" && !hasBeenContacted)) &&
-        matchesWebsite &&
-        (!term ||
-          [
-            company.name,
-            company.domain,
-            company.industry,
-            company.city,
-            company.state,
-          ]
-            .filter(Boolean)
-            .some((value) => value?.toLowerCase().includes(term)))
-      );
-    });
-  }, [
-    companies,
-    companyFilter,
-    statusFilter,
-    emailStatusFilter,
-    websiteFilter,
-  ]);
-  const websiteCount = companies.filter(
-    (company) => company.website || company.domain,
-  ).length;
-  const contactedCompanyCount = companies.filter(
-    (company) => company.last_email_sent_at !== null,
-  ).length;
-  const pageCount = Math.max(1, Math.ceil(filteredCompanies.length / pageSize));
-  const visiblePage = Math.min(currentPage, pageCount);
-  const paginatedCompanies = useMemo(
-    () =>
-      filteredCompanies.slice(
-        (visiblePage - 1) * pageSize,
-        visiblePage * pageSize,
-      ),
-    [filteredCompanies, pageSize, visiblePage],
-  );
-  const selectedLeadCompanyIdSet = useMemo(
-    () => new Set(selectedLeadCompanyIds),
-    [selectedLeadCompanyIds],
-  );
+  const pipelineData = companiesQuery.data;
+  const companies = pipelineData?.items ?? noCompanies;
+  const filteredCount = pipelineData?.total_count ?? 0;
+  const eligibleCount = pipelineData?.eligible_count ?? 0;
+  const companyCount = pipelineData?.company_count ?? 0;
+  const statusCounts = pipelineData?.status_counts ?? {};
+  const websiteCount = pipelineData?.with_website_count ?? 0;
+  const contactedCompanyCount = pipelineData?.contacted_count ?? 0;
+  const pageCount = pipelineData?.page_count ?? 1;
+  const visiblePage = pipelineData?.page ?? currentPage;
+  const paginatedCompanies = companies;
+  const selectedLeadCompanyIdSet = new Set(selectedLeadCompanyIds);
   const allPageLeadsSelected =
     paginatedCompanies.length > 0 &&
     paginatedCompanies.every((company) =>
@@ -338,23 +359,31 @@ export function LeadsPage({
     );
   const isAdmin = sessionQuery.data?.user.role === "admin";
   const emptyStateTitle =
-    companies.length > 0
+    eligibleCount > 0
       ? isCompanyDatabaseView
         ? "No companies match your filters"
         : "No leads match your filters"
       : isCompanyDatabaseView
         ? "Your company database is empty"
-        : allCompanies.length > 0
+        : companyCount > 0
           ? "No leads yet"
           : "No companies yet";
   const emptyStateDescription =
-    companies.length > 0
+    eligibleCount > 0
       ? "Try a different search term or filter."
       : isCompanyDatabaseView
         ? "Discover companies or add one manually to build your database."
-        : allCompanies.length > 0
+        : companyCount > 0
           ? "Add a contact to a company in Companies. It will appear here automatically."
           : "Add or discover a company in Companies. Leads appear once a company has a contact.";
+
+  useEffect(() => {
+    if (!pipelineData || pipelineData.page === currentPage) return;
+    updatePipelineQuery({
+      page:
+        pipelineData.page === 1 ? null : String(pipelineData.page),
+    });
+  }, [currentPage, pipelineData]);
 
   function toggleLeadSelection(companyId: string) {
     setCampaignAudienceError("");
@@ -395,25 +424,7 @@ export function LeadsPage({
 
   function toggleFilteredLeadSelection() {
     setCampaignAudienceError("");
-    const filteredIds = filteredCompanies.map((company) => company.id);
-    const allFilteredSelected =
-      filteredIds.length > 0 &&
-      filteredIds.every((id) => selectedLeadCompanyIdSet.has(id));
-    if (allFilteredSelected) {
-      setSelectedLeadCompanyIds((current) =>
-        current.filter((id) => !filteredIds.includes(id)),
-      );
-      return;
-    }
-
-    const next = new Set([...selectedLeadCompanyIds, ...filteredIds]);
-    if (next.size > maxCampaignCompanies) {
-      setCampaignAudienceError(
-        `Select no more than ${maxCampaignCompanies.toLocaleString()} companies for one campaign.`,
-      );
-      return;
-    }
-    setSelectedLeadCompanyIds([...next]);
+    filteredSelectionMutation.mutate();
   }
 
   function clearLeadSelection() {
@@ -556,11 +567,9 @@ export function LeadsPage({
                   }
                   value={statusFilter}
                 >
-                  <option value="all">All statuses ({companies.length})</option>
+                  <option value="all">All statuses ({eligibleCount})</option>
                   {leadStatuses.map((leadStatus) => {
-                    const count = companies.filter(
-                      (company) => company.lead_status === leadStatus,
-                    ).length;
+                    const count = statusCounts[leadStatus] ?? 0;
                     return (
                       <option key={leadStatus} value={leadStatus}>
                         {leadStatus.replaceAll("_", " ")} ({count})
@@ -583,12 +592,12 @@ export function LeadsPage({
                   }
                   value={websiteFilter}
                 >
-                  <option value="all">All websites ({companies.length})</option>
+                  <option value="all">All websites ({eligibleCount})</option>
                   <option value="with_website">
                     With a website ({websiteCount})
                   </option>
                   <option value="without_website">
-                    Without a website ({companies.length - websiteCount})
+                    Without a website ({eligibleCount - websiteCount})
                   </option>
                 </select>
               </label>
@@ -608,13 +617,13 @@ export function LeadsPage({
                     value={emailStatusFilter}
                   >
                     <option value="all">
-                      All email status ({companies.length})
+                      All email status ({eligibleCount})
                     </option>
                     <option value="contacted">
                       Contacted ({contactedCompanyCount})
                     </option>
                     <option value="not_contacted">
-                      Not contacted ({companies.length - contactedCompanyCount})
+                      Not contacted ({eligibleCount - contactedCompanyCount})
                     </option>
                   </select>
                 </label>
@@ -643,20 +652,21 @@ export function LeadsPage({
                 <div className="lead-campaign-actions">
                   <button
                     className="button button-secondary"
-                    disabled={filteredCompanies.length === 0}
+                    disabled={
+                      filteredCount === 0 ||
+                      filteredSelectionMutation.isPending
+                    }
                     onClick={toggleFilteredLeadSelection}
                     type="button"
                   >
-                    {filteredCompanies.length > 0 &&
-                    filteredCompanies.every((company) =>
-                      selectedLeadCompanyIdSet.has(company.id),
-                    )
-                      ? "Clear filtered"
-                      : `Select filtered (${filteredCompanies.length.toLocaleString()})`}
+                    {filteredSelectionMutation.isPending
+                      ? "Selecting filtered..."
+                      : `Toggle filtered selection (${filteredCount.toLocaleString()})`}
                   </button>
                   {selectedLeadCompanyIds.length > 0 && (
                     <button
                       className="text-button"
+                      disabled={filteredSelectionMutation.isPending}
                       onClick={clearLeadSelection}
                       type="button"
                     >
@@ -711,16 +721,18 @@ export function LeadsPage({
             label={`Loading ${isCompanyDatabaseView ? "companies" : "leads"}`}
             rows={6}
           />
-        ) : filteredCompanies.length === 0 ? (
+        ) : filteredCount === 0 ? (
           <div className="table-state empty-state">
             <span className="empty-symbol">▤</span>
             <strong>{emptyStateTitle}</strong>
             <span>{emptyStateDescription}</span>
-            {!isCompanyDatabaseView && companies.length === 0 && (
+            {!isCompanyDatabaseView &&
+              eligibleCount === 0 &&
+              companyCount > 0 && (
               <Link className="text-link" href="/companies">
                 Go to Companies <span aria-hidden="true">→</span>
               </Link>
-            )}
+              )}
           </div>
         ) : (
           <>
@@ -741,6 +753,7 @@ export function LeadsPage({
                       <input
                         aria-label={`Select all ${paginatedCompanies.length} leads on this page`}
                         checked={allPageLeadsSelected}
+                        disabled={filteredSelectionMutation.isPending}
                         onChange={togglePageLeadSelection}
                         type="checkbox"
                       />
@@ -766,6 +779,7 @@ export function LeadsPage({
                           <input
                             aria-label={`Select ${company.name}`}
                             checked={selectedLeadCompanyIdSet.has(company.id)}
+                            disabled={filteredSelectionMutation.isPending}
                             onChange={() => toggleLeadSelection(company.id)}
                             type="checkbox"
                           />
@@ -1283,14 +1297,14 @@ export function LeadsPage({
             <div className="table-footer">
               <span>
                 Showing{" "}
-                {filteredCompanies.length === 0
+                {filteredCount === 0
                   ? 0
                   : (visiblePage - 1) * pageSize + 1}
-                –{Math.min(visiblePage * pageSize, filteredCompanies.length)} of{" "}
-                {filteredCompanies.length}{" "}
+                –{Math.min(visiblePage * pageSize, filteredCount)} of{" "}
+                {filteredCount}{" "}
                 {isCompanyDatabaseView ? "companies" : "leads"}
-                {filteredCompanies.length !== companies.length &&
-                  ` (from ${companies.length} total)`}
+                {filteredCount !== eligibleCount &&
+                  ` (from ${eligibleCount.toLocaleString()} total)`}
               </span>
               <div className="pagination-controls">
                 <label>
