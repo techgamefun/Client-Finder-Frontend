@@ -1039,6 +1039,7 @@ export interface ConnectedGmailAccount {
   id: string;
   email_address: string;
   google_account_id: string;
+  owner_user_id: string | null;
   token_updated_at: string;
   assigned_users: GmailAccountAssignee[];
 }
@@ -1504,16 +1505,12 @@ export function replyToGmailMessage(
   );
 }
 
-export function getGoogleGmailAuthorizationUrl(
-  orgId: string,
-  adminUserId: string,
-): string {
+export function getGoogleGmailAuthorizationUrl(orgId: string): string {
   const url = new URL(
     `${API_BASE_URL.replace(/\/+$/, "")}/auth/google/login`,
     window.location.origin,
   );
   url.searchParams.set("org_id", orgId);
-  url.searchParams.set("admin_user_id", adminUserId);
   return url.toString();
 }
 

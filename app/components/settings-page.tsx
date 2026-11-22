@@ -395,12 +395,18 @@ export function SettingsPage() {
 
       {gmailStatus && (
         <p
-          className={`settings-feedback${gmailStatus === "error" ? " settings-feedback-error" : ""}`}
-          role={gmailStatus === "error" ? "alert" : "status"}
+          className={`settings-feedback${gmailStatus === "error" || gmailStatus === "already-connected" ? " settings-feedback-error" : ""}`}
+          role={
+            gmailStatus === "error" || gmailStatus === "already-connected"
+              ? "alert"
+              : "status"
+          }
         >
           {gmailStatus === "connected"
             ? "Gmail account connected."
-            : "Google did not complete the Gmail connection. You can try again."}
+            : gmailStatus === "already-connected"
+              ? "That Gmail account is already connected. Its existing access was not changed."
+              : "Google did not complete the Gmail connection. You can try again."}
         </p>
       )}
 
@@ -1433,9 +1439,17 @@ function subscribeToLocationChanges(callback: () => void) {
   return () => window.removeEventListener("popstate", callback);
 }
 
-function getGmailCallbackStatus(): "connected" | "error" | null {
+function getGmailCallbackStatus():
+  | "connected"
+  | "error"
+  | "already-connected"
+  | null {
   const status = new URLSearchParams(window.location.search).get("gmail");
-  return status === "connected" || status === "error" ? status : null;
+  return status === "connected" ||
+    status === "error" ||
+    status === "already-connected"
+    ? status
+    : null;
 }
 
 function ChangePasswordPanel() {
@@ -1719,10 +1733,7 @@ function GmailAccountsPanel({ session }: { session: AuthSession }) {
 
   function connectGmailAccount() {
     window.location.assign(
-      getGoogleGmailAuthorizationUrl(
-        session.organization_id,
-        session.user.id,
-      ),
+      getGoogleGmailAuthorizationUrl(session.organization_id),
     );
   }
 
@@ -1734,7 +1745,8 @@ function GmailAccountsPanel({ session }: { session: AuthSession }) {
         <p className="panel-subtitle">
           Connect shared inboxes and assign each account to active organization
           users. Assigned users can use the approved Gmail read, modify, and
-          send permissions.
+          send permissions. Member-connected personal accounts stay with their
+          connector and cannot be reassigned.
         </p>
       </div>
       <div className="settings-actions">
@@ -1841,12 +1853,20 @@ function GmailAccountCard({
         (assignedUser) => assignedUser.user_id === user.id,
       ),
   );
+  const ownerEmail = users.find(
+      (user) => user.id === account.owner_user_id,
+  )?.email;
 
   return (
     <article className="gmail-account-card">
       <div className="settings-section-heading">
         <div>
           <h3>{account.email_address}</h3>
+          {account.owner_user_id && (
+            <p className="settings-feedback">
+              Personal Gmail{ownerEmail ? ` · owned by ${ownerEmail}` : ""}
+            </p>
+          )}
           <p className="settings-feedback">
             Refresh token updated{" "}
             {new Date(account.token_updated_at).toLocaleString()}
@@ -1868,56 +1888,60 @@ function GmailAccountCard({
                 key={assignedUser.assignment_id}
               >
                 <span>{assignedUser.email}</span>
-                <button
-                  aria-label={`Unassign Gmail from ${assignedUser.email}`}
-                  className="button button-secondary"
-                  disabled={removePending}
-                  onClick={() =>
-                    onRemoveAssignment(assignedUser.assignment_id)
-                  }
-                  type="button"
-                >
-                  Unassign
-                </button>
+                {!account.owner_user_id && (
+                  <button
+                    aria-label={`Unassign Gmail from ${assignedUser.email}`}
+                    className="button button-secondary"
+                    disabled={removePending}
+                    onClick={() =>
+                      onRemoveAssignment(assignedUser.assignment_id)
+                    }
+                    type="button"
+                  >
+                    Unassign
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </div>
-      <form
-        className="gmail-assignment-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (selectedUserId) onAssign(selectedUserId);
-        }}
-      >
-        <label className="settings-field">
-          Assign to an organization user
-          <select
-            disabled={availableUsers.length === 0 || assignPending}
-            onChange={(event) => onUserChange(event.target.value)}
-            value={selectedUserId}
-          >
-            <option value="">
-              {availableUsers.length === 0
-                ? "No unassigned active users"
-                : "Select a user"}
-            </option>
-            {availableUsers.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.email}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="button button-secondary"
-          disabled={!selectedUserId || assignPending}
-          type="submit"
+      {!account.owner_user_id && (
+        <form
+          className="gmail-assignment-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (selectedUserId) onAssign(selectedUserId);
+          }}
         >
-          {assignPending ? "Assigning…" : "Assign account"}
-        </button>
-      </form>
+          <label className="settings-field">
+            Assign to an organization user
+            <select
+              disabled={availableUsers.length === 0 || assignPending}
+              onChange={(event) => onUserChange(event.target.value)}
+              value={selectedUserId}
+            >
+              <option value="">
+                {availableUsers.length === 0
+                  ? "No unassigned active users"
+                  : "Select a user"}
+              </option>
+              {availableUsers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.email}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="button button-secondary"
+            disabled={!selectedUserId || assignPending}
+            type="submit"
+          >
+            {assignPending ? "Assigning…" : "Assign account"}
+          </button>
+        </form>
+      )}
     </article>
   );
 }

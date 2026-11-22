@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   composeGmailMessage,
+  getAuthSession,
   getAssignedGmailAccounts,
+  getGoogleGmailAuthorizationUrl,
   getGmailLabels,
   getGmailMessage,
   getGmailMessages,
@@ -19,6 +22,7 @@ export function GmailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const shouldOpenCompose = searchParams.get("compose") === "1";
+  const gmailStatus = searchParams.get("gmail");
   const queryClient = useQueryClient();
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedLabelId, setSelectedLabelId] = useState("INBOX");
@@ -36,6 +40,12 @@ export function GmailPage() {
   const [composeBody, setComposeBody] = useState("");
   const [composeSent, setComposeSent] = useState(false);
 
+  const sessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession,
+    retry: false,
+  });
+  const canConnectAccount = sessionQuery.data?.user.role === "user";
   const accountsQuery = useQuery({
     queryKey: ["gmail-assigned-accounts"],
     queryFn: getAssignedGmailAccounts,
@@ -226,6 +236,14 @@ export function GmailPage() {
     ) ?? [];
   const hasSelection = Boolean(selectedMessageId);
 
+  function connectGmailAccount() {
+    const session = sessionQuery.data;
+    if (!session || !canConnectAccount) return;
+    window.location.assign(
+      getGoogleGmailAuthorizationUrl(session.organization_id),
+    );
+  }
+
   return (
     <div className="gmail-page">
       <section className="gmail-page-heading">
@@ -233,41 +251,71 @@ export function GmailPage() {
           <p className="eyebrow">YOUR WORKSPACE / MESSAGES</p>
           <h1>Gmail</h1>
           <p className="heading-copy">
-            Read, organize, and send from your assigned Gmail accounts.
+            Read, organize, and send from your Gmail accounts.
           </p>
         </div>
-        {accounts.length > 0 && (
+        {(accounts.length > 0 || canConnectAccount) && (
           <div className="gmail-heading-actions">
-            <label className="gmail-account-picker">
-              <span className="gmail-account-picker-icon" aria-hidden="true">
-                <MailIcon />
-              </span>
-              <span className="gmail-account-picker-copy">
-                <span>CONNECTED ACCOUNT</span>
-                <select
-                  aria-label="Gmail account"
-                  onChange={(event) => selectAccount(event.target.value)}
-                  value={activeAccountId}
-                >
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.email_address}
-                    </option>
-                  ))}
-                </select>
-              </span>
-              <span className="gmail-account-chevron" aria-hidden="true">
-                <ChevronDownIcon />
-              </span>
-            </label>
+            {accounts.length > 0 && (
+              <label className="gmail-account-picker">
+                <span className="gmail-account-picker-icon" aria-hidden="true">
+                  <MailIcon />
+                </span>
+                <span className="gmail-account-picker-copy">
+                  <span>CONNECTED ACCOUNT</span>
+                  <select
+                    aria-label="Gmail account"
+                    onChange={(event) => selectAccount(event.target.value)}
+                    value={activeAccountId}
+                  >
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.email_address}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+                <span className="gmail-account-chevron" aria-hidden="true">
+                  <ChevronDownIcon />
+                </span>
+              </label>
+            )}
+            {canConnectAccount && (
+              <button
+                className="button button-secondary"
+                onClick={connectGmailAccount}
+                type="button"
+              >
+                {accounts.length === 0
+                  ? "Connect your Gmail account"
+                  : "Connect another Gmail account"}
+              </button>
+            )}
           </div>
         )}
       </section>
 
+      {gmailStatus === "connected" && (
+        <p className="gmail-compose-success" role="status">
+          Gmail connected and assigned to you.
+        </p>
+      )}
+      {gmailStatus === "already-connected" && (
+        <p className="gmail-inline-alert" role="alert">
+          This Gmail account is already connected on the platform. Its access
+          was not changed.
+        </p>
+      )}
+      {gmailStatus === "error" && (
+        <p className="gmail-inline-alert" role="alert">
+          Google did not complete the Gmail connection. You can try again.
+        </p>
+      )}
+
       {accountsQuery.isPending && (
         <div className="gmail-loading-state" role="status">
           <span className="gmail-spinner" aria-hidden="true" />
-          Loading your shared inbox…
+          Loading your Gmail accounts…
         </div>
       )}
 
@@ -299,9 +347,17 @@ export function GmailPage() {
             <span className="gmail-state-kicker">SHARED INBOX</span>
             <h2>Your inbox is ready when you are</h2>
             <p>
-              Ask your organization administrator to connect a Gmail account
-              and assign it to you.
+              Connect your Gmail account to give yourself access, or ask your
+              organization administrator to assign a shared inbox.
             </p>
+            {!canConnectAccount && sessionQuery.data?.user.role === "admin" && (
+              <Link
+                className="button button-secondary"
+                href="/settings?section=gmail"
+              >
+                Manage shared Gmail accounts
+              </Link>
+            )}
           </div>
         </div>
       )}
