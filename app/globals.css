@@ -2052,6 +2052,10 @@ html[data-theme="dark"] .toast-error .toast-icon {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.queue-stats-grid-keywords {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .jobs-tabs {
   display: flex;
   gap: 6px;
@@ -2146,6 +2150,23 @@ html[data-theme="dark"] .toast-error .toast-icon {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.queue-search-input {
+  width: min(280px, 100%);
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input-surface);
+  padding: 0 10px;
+  color: var(--foreground);
+  font: inherit;
+}
+
+.queue-pagination-controls {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  padding-top: 8px;
 }
 
 .excluded-domain-page-heading {

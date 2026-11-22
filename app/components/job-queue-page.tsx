@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useMutation,
   useQuery,
@@ -9,10 +9,10 @@ import {
 } from "@tanstack/react-query";
 import {
   addExcludedDomain,
-  getWebsiteCorpusAnalysisJobs,
+  getWebsiteCorpusAnalysisJobsPage,
   getApplicationSettings,
   getPageSpeedScanJobs,
-  getWebsiteCrawlJobs,
+  getWebsiteCrawlJobsPage,
   retryWebsiteCorpusAnalysisJob,
   retryWebsiteCorpusAnalysisJobs,
   retryPageSpeedScanJob,
@@ -20,6 +20,7 @@ import {
   retryWebsiteCrawlJob,
   retryWebsiteCrawlJobs,
   type PageSpeedScanJob,
+  type QueueJobsPageParams,
   type WebsiteCorpusAnalysisJob,
   type WebsiteCrawlJobResponse,
 } from "@/lib/api";
@@ -129,25 +130,67 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         : "keyword generation";
   const showToast = useToast();
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<"all" | QueueJobStatus>(
-    "all",
-  );
+  const [statusFilterState, setStatusFilterState] = useState<{
+    kind: QueueKind;
+    status: "all" | QueueJobStatus;
+  }>({ kind, status: "all" });
+  const statusFilter =
+    statusFilterState.kind === kind ? statusFilterState.status : "all";
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [pageState, setPageState] = useState({ kind, page: 1 });
+  const page = pageState.kind === kind ? pageState.page : 1;
+  const updatePage = (nextPage: number | ((current: number) => number)) => {
+    setPageState((current) => {
+      const currentPage = current.kind === kind ? current.page : 1;
+      return {
+        kind,
+        page:
+          typeof nextPage === "function"
+            ? nextPage(currentPage)
+            : nextPage,
+      };
+    });
+  };
+  const [pageSize, setPageSize] = useState(25);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(searchText.trim());
+      setPageState({ kind, page: 1 });
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [kind, searchText]);
+  const queueParams: QueueJobsPageParams = {
+    page,
+    page_size: pageSize,
+    search: debouncedSearch,
+    ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+  };
   const crawlerJobsQuery = useQuery({
-    queryKey: ["crawler", "queue-jobs"],
-    queryFn: getWebsiteCrawlJobs,
-    select: (jobs) => jobs.map(normalizeCrawlerJob),
+    queryKey: ["crawler", "queue-jobs", queueParams],
+    queryFn: () => getWebsiteCrawlJobsPage(queueParams),
+    select: (result) => ({
+      ...result,
+      items: result.items.map(normalizeCrawlerJob),
+    }),
     enabled: kind === "crawler",
   });
   const pageSpeedJobsQuery = useQuery({
-    queryKey: ["pagespeed", "queue-jobs"],
-    queryFn: getPageSpeedScanJobs,
-    select: (jobs) => jobs.map(normalizePageSpeedJob),
+    queryKey: ["pagespeed", "queue-jobs", queueParams],
+    queryFn: () => getPageSpeedScanJobs(queueParams),
+    select: (result) => ({
+      ...result,
+      items: result.items.map(normalizePageSpeedJob),
+    }),
     enabled: kind === "pagespeed",
   });
   const corpusAnalysisJobsQuery = useQuery({
-    queryKey: ["website-corpus-analysis", "queue-jobs"],
-    queryFn: getWebsiteCorpusAnalysisJobs,
-    select: (jobs) => jobs.map(normalizeCorpusAnalysisJob),
+    queryKey: ["website-corpus-analysis", "queue-jobs", queueParams],
+    queryFn: () => getWebsiteCorpusAnalysisJobsPage(queueParams),
+    select: (result) => ({
+      ...result,
+      items: result.items.map(normalizeCorpusAnalysisJob),
+    }),
     enabled: kind === "keywords",
     refetchInterval: kind === "keywords" ? 5_000 : false,
   });
@@ -268,19 +311,27 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       });
     },
   });
-  const jobs = jobsQuery.data ?? [];
-  const queuedCount = jobs.filter((job) => job.status === "queued").length;
-  const runningCount = jobs.filter((job) => job.status === "running").length;
-  const succeededCount = jobs.filter(
-    (job) => job.status === "succeeded",
-  ).length;
+  const jobs = jobsQuery.data?.items ?? [];
+  const statusCounts = jobsQuery.data?.status_counts ?? {};
+  const queuedCount = statusCounts.queued ?? 0;
+  const runningCount = statusCounts.running ?? 0;
+  const succeededCount = statusCounts.succeeded ?? 0;
   const failedJobs = jobs.filter((job) => job.status === "failed");
-  const failedCount = failedJobs.length;
-  const skippedCount = jobs.filter((job) => job.status === "skipped").length;
-  const visibleJobs =
-    statusFilter !== "all"
-      ? jobs.filter((job) => job.status === statusFilter)
-      : jobs;
+  const failedCount = statusCounts.failed ?? 0;
+  const skippedCount = statusCounts.skipped ?? 0;
+  const visibleJobs = jobs;
+  const totalCount = jobsQuery.data?.total_count ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+  const toggleStatusFilter = (status: QueueJobStatus) => {
+    updatePage(1);
+    setStatusFilterState((current) => ({
+      kind,
+      status:
+        (current.kind === kind ? current.status : "all") === status
+          ? "all"
+          : status,
+    }));
+  };
 
   return (
     <>
@@ -310,62 +361,44 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       <section
         aria-label="Queue summary"
         className={`queue-stats-grid ${
-          kind === "crawler" ? "queue-stats-grid-crawler" : ""
+          kind === "crawler"
+            ? "queue-stats-grid-crawler"
+            : kind === "keywords"
+              ? "queue-stats-grid-keywords"
+              : ""
         }`}
       >
-        {kind === "crawler" ? (
-          <>
-            <QueueStat
-              active={statusFilter === "queued"}
-              label="Queued"
-              onClick={() =>
-                setStatusFilter((current) =>
-                  current === "queued" ? "all" : "queued",
-                )
-              }
-              value={queuedCount}
-            />
-            <QueueStat
-              active={statusFilter === "running"}
-              label="Running"
-              onClick={() =>
-                setStatusFilter((current) =>
-                  current === "running" ? "all" : "running",
-                )
-              }
-              value={runningCount}
-            />
-            <QueueStat
-              active={statusFilter === "succeeded"}
-              label="Finished"
-              onClick={() =>
-                setStatusFilter((current) =>
-                  current === "succeeded" ? "all" : "succeeded",
-                )
-              }
-              value={succeededCount}
-            />
-            <QueueStat
-              active={statusFilter === "failed"}
-              label="Failed"
-              onClick={() =>
-                setStatusFilter((current) =>
-                  current === "failed" ? "all" : "failed",
-                )
-              }
-              value={failedCount}
-            />
-          </>
-        ) : (
-          <>
-            <QueueStat label="Queued" value={queuedCount} />
-            <QueueStat label="Running" value={runningCount} />
-            <QueueStat label="Finished" value={succeededCount} />
-            <QueueStat label="Failed" value={failedCount} />
-          </>
-        )}
+        <QueueStat
+          active={statusFilter === "queued"}
+          label="Queued"
+          onClick={() => toggleStatusFilter("queued")}
+          value={queuedCount}
+        />
+        <QueueStat
+          active={statusFilter === "running"}
+          label="Running"
+          onClick={() => toggleStatusFilter("running")}
+          value={runningCount}
+        />
+        <QueueStat
+          active={statusFilter === "succeeded"}
+          label="Finished"
+          onClick={() => toggleStatusFilter("succeeded")}
+          value={succeededCount}
+        />
+        <QueueStat
+          active={statusFilter === "failed"}
+          label="Failed"
+          onClick={() => toggleStatusFilter("failed")}
+          value={failedCount}
+        />
         {kind === "keywords" && (
-          <QueueStat label="Skipped" value={skippedCount} />
+          <QueueStat
+            active={statusFilter === "skipped"}
+            label="Skipped"
+            onClick={() => toggleStatusFilter("skipped")}
+            value={skippedCount}
+          />
         )}
       </section>
 
@@ -411,14 +444,23 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <div>
             <h2 id="queue-jobs-heading">Recent jobs</h2>
             <p className="panel-subtitle">
-              Showing {visibleJobs.length} of the latest {jobs.length} jobs.
+              Showing {jobs.length} of {totalCount} matching jobs.
               {kind === "keywords"
                 ? " Status refreshes automatically every five seconds."
                 : " Job status updates are streamed in real time."}
             </p>
           </div>
           <div className="queue-panel-controls">
-            {failedCount > 0 && (
+            <input
+              aria-label={`Search ${queueLabel} jobs`}
+              className="queue-search-input"
+              maxLength={300}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Search website URL"
+              type="search"
+              value={searchText}
+            />
+            {failedJobs.length > 0 && (
               <button
                 className="button button-secondary queue-retry-button"
                 disabled={
@@ -428,40 +470,13 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                   !canRetryJobs
                 }
                 onClick={() => retryAllMutation.mutate(failedJobs)}
-                title={`Retry all ${failedCount} failed ${queueLabel} jobs in the recent jobs list`}
+                title={`Retry all ${failedJobs.length} failed ${queueLabel} jobs on this page`}
                 type="button"
               >
                 {retryAllMutation.isPending
                   ? "Retrying all..."
-                  : `Retry all (${failedCount})`}
+                  : `Retry all on page (${failedJobs.length})`}
               </button>
-            )}
-            {kind !== "crawler" && (
-              <label className="select-filter queue-status-filter">
-                <span className="sr-only">
-                  Filter {queueLabel} jobs by status
-                </span>
-                <select
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setStatusFilter(
-                      value === "all" || isQueueJobStatus(value)
-                        ? value
-                        : "all",
-                    );
-                  }}
-                  value={statusFilter}
-                >
-                  <option value="all">All statuses</option>
-                  <option value="queued">Queued</option>
-                  <option value="running">Running</option>
-                  <option value="succeeded">Finished</option>
-                  <option value="failed">Failed</option>
-                  {kind === "keywords" && (
-                    <option value="skipped">Skipped</option>
-                  )}
-                </select>
-              </label>
             )}
           </div>
         </div>
@@ -475,9 +490,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             No {queueLabel} jobs found.
           </p>
         ) : visibleJobs.length === 0 ? (
-          <p className="empty-copy">
-            No {queueLabel} jobs match the selected status.
-          </p>
+          <p className="empty-copy">No {queueLabel} jobs match your filters.</p>
         ) : (
           <div className="pagespeed-job-list">
             {visibleJobs.map((job) => (
@@ -580,6 +593,47 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             ))}
           </div>
         )}
+        {!jobsQuery.isLoading && !jobsQuery.isError && totalCount > 0 && (
+          <div className="pagination-controls queue-pagination-controls">
+            <span>
+              Page {page} of {pageCount}
+            </span>
+            <label>
+              Per page
+              <select
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  updatePage(1);
+                }}
+                value={pageSize}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <button
+              className="pagination-button"
+              disabled={page <= 1 || jobsQuery.isFetching}
+              onClick={() =>
+                updatePage((current) => Math.max(1, current - 1))
+              }
+              type="button"
+            >
+              Previous
+            </button>
+            <button
+              className="pagination-button"
+              disabled={page >= pageCount || jobsQuery.isFetching}
+              onClick={() =>
+                updatePage((current) => Math.min(pageCount, current + 1))
+              }
+              type="button"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </section>
     </>
   );
@@ -622,12 +676,6 @@ function QueueStat({
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
-  );
-}
-
-function isQueueJobStatus(value: string): value is QueueJobStatus {
-  return ["queued", "running", "succeeded", "failed", "skipped"].includes(
-    value,
   );
 }
 

@@ -68,6 +68,31 @@ export interface JobQueueStatusSummary {
   failed_count: number;
 }
 
+export interface QueueJobsPage<T> {
+  items: T[];
+  total_count: number;
+  page: number;
+  page_size: number;
+  status_counts: Record<string, number>;
+}
+
+export interface QueueJobsPageParams {
+  search?: string;
+  status?: string;
+  page?: number;
+  page_size?: number;
+}
+
+function queueJobsQuery(params: QueueJobsPageParams): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      search.set(key, String(value));
+    }
+  }
+  return search.toString();
+}
+
 export type OverviewRange = "7d" | "30d" | "90d";
 
 export interface OverviewKpi {
@@ -2161,11 +2186,12 @@ export function getWebsiteCorpusWords(
   );
 }
 
-export function getWebsiteCorpusAnalysisJobs(): Promise<
-  WebsiteCorpusAnalysisJob[]
-> {
-  return request<WebsiteCorpusAnalysisJob[]>(
-    "/websites/corpus-words/jobs",
+export function getWebsiteCorpusAnalysisJobsPage(
+  params: QueueJobsPageParams = {},
+): Promise<QueueJobsPage<WebsiteCorpusAnalysisJob>> {
+  const query = queueJobsQuery(params);
+  return request<QueueJobsPage<WebsiteCorpusAnalysisJob>>(
+    `/websites/corpus-words/jobs${query ? `?${query}` : ""}`,
   );
 }
 
@@ -2215,7 +2241,16 @@ export function getWebsiteCrawlJob(
 }
 
 export function getWebsiteCrawlJobs(): Promise<WebsiteCrawlJobResponse[]> {
-  return request<WebsiteCrawlJobResponse[]>("/crawler/jobs?limit=100");
+  return getWebsiteCrawlJobsPage({ page_size: 100 }).then(({ items }) => items);
+}
+
+export function getWebsiteCrawlJobsPage(
+  params: QueueJobsPageParams = {},
+): Promise<QueueJobsPage<WebsiteCrawlJobResponse>> {
+  const query = queueJobsQuery(params);
+  return request<QueueJobsPage<WebsiteCrawlJobResponse>>(
+    `/crawler/jobs${query ? `?${query}` : ""}`,
+  );
 }
 
 export function getWebsiteCrawlJobSummary(): Promise<JobQueueStatusSummary> {
@@ -2305,8 +2340,13 @@ export function getWebsiteRegistryFacets(): Promise<WebsiteRegistryFacets> {
   return request<WebsiteRegistryFacets>("/websites/registry-facets");
 }
 
-export function getPageSpeedScanJobs(): Promise<PageSpeedScanJob[]> {
-  return request<PageSpeedScanJob[]>("/pagespeed/jobs?limit=100");
+export function getPageSpeedScanJobs(
+  params: QueueJobsPageParams = {},
+): Promise<QueueJobsPage<PageSpeedScanJob>> {
+  const query = queueJobsQuery(params);
+  return request<QueueJobsPage<PageSpeedScanJob>>(
+    `/pagespeed/jobs${query ? `?${query}` : ""}`,
+  );
 }
 
 export function getPageSpeedJobSummary(): Promise<JobQueueStatusSummary> {
