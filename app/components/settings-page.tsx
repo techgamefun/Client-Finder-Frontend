@@ -21,6 +21,7 @@ import {
   getOrganizationUsers,
   getTavilyUsage,
   removeGmailAssignment,
+  updateAccountProfile,
   updateApplicationSettings,
   uploadProfilePhoto,
   type AuthSession,
@@ -1293,11 +1294,11 @@ export function SettingsPage() {
           )}
 
           <section
-            className="panel settings-panel"
+            className="panel settings-panel settings-account-page"
             hidden={activeSection !== "account"}
           >
             {authSessionQuery.data && (
-              <ProfilePhotoPanel session={authSessionQuery.data} />
+              <AccountProfilePanel session={authSessionQuery.data} />
             )}
             <ChangePasswordPanel />
           </section>
@@ -1451,13 +1452,12 @@ function ChangePasswordPanel() {
   });
 
   return (
-    <>
+    <div className="settings-account-card settings-password-card">
       <div>
-        <p className="eyebrow">MY ACCOUNT</p>
-        <h2>Change password</h2>
+        <p className="eyebrow">SECURITY</p>
+        <h2>Password</h2>
         <p className="panel-subtitle">
-          Changing your password signs out other active sessions for this
-          account.
+          Update your password to protect this account.
         </p>
       </div>
       <form
@@ -1511,12 +1511,25 @@ function ChangePasswordPanel() {
           </button>
         </div>
       </form>
-    </>
+    </div>
   );
 }
 
-function ProfilePhotoPanel({ session }: { session: AuthSession }) {
+function AccountProfilePanel({ session }: { session: AuthSession }) {
   const queryClient = useQueryClient();
+  const [firstName, setFirstName] = useState(
+    session.user.first_name ?? "",
+  );
+  const [lastName, setLastName] = useState(
+    session.user.last_name ?? "",
+  );
+  const profileMutation = useMutation({
+    mutationFn: updateAccountProfile,
+    onSuccess: async (updatedSession) => {
+      queryClient.setQueryData(["auth-session"], updatedSession);
+      await queryClient.invalidateQueries({ queryKey: ["organization-users"] });
+    },
+  });
   const photoMutation = useMutation<
     { url: string } | void,
     Error,
@@ -1531,28 +1544,120 @@ function ProfilePhotoPanel({ session }: { session: AuthSession }) {
       ]);
     },
   });
+  const displayName =
+    [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") ||
+    session.user.email;
+  const fallback =
+    displayName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part.charAt(0))
+      .join("")
+      .toUpperCase() || "U";
 
   return (
-    <div className="settings-profile-photo">
-      <div>
-        <p className="eyebrow">MY ACCOUNT</p>
-        <h2>Profile photo</h2>
-        <p className="panel-subtitle">
-          Add a photo to personalize your account across the workspace.
-        </p>
+    <div className="settings-account-card settings-account-profile">
+      <div className="settings-account-profile-heading">
+        <div className="settings-account-person">
+          <div className="settings-account-avatar">
+            {session.user.profile_photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt={`${displayName} profile`}
+                src={session.user.profile_photo_url}
+              />
+            ) : (
+              <span aria-hidden="true">{fallback}</span>
+            )}
+          </div>
+          <div>
+            <p className="eyebrow">PROFILE</p>
+            <h2>{displayName}</h2>
+            <p className="settings-account-person-meta">
+              {session.organization_name} · {session.user.role === "admin" ? "Admin" : "Member"}
+            </p>
+          </div>
+        </div>
+        <span className="settings-account-email">{session.user.email}</span>
       </div>
-      <ImageAssetEditor
-        error={
-          photoMutation.isError ? photoMutation.error.message : undefined
-        }
-        fallback={session.user.email.slice(0, 1).toUpperCase()}
-        label="Your photo"
-        onRemove={() => photoMutation.mutate(null)}
-        onUpload={(file) => photoMutation.mutate(file)}
-        pending={photoMutation.isPending}
-        url={session.user.profile_photo_url}
-        variant="profile"
-      />
+      <div className="settings-profile-photo-row">
+        <div>
+          <h3>Profile photo</h3>
+          <p>Shown beside your name across ProspectLoop.</p>
+        </div>
+        <ImageAssetEditor
+          error={
+            photoMutation.isError ? photoMutation.error.message : undefined
+          }
+          fallback={fallback}
+          label="Profile photo"
+          onRemove={() => photoMutation.mutate(null)}
+          onUpload={(file) => photoMutation.mutate(file)}
+          pending={photoMutation.isPending}
+          url={session.user.profile_photo_url}
+          variant="profile"
+        />
+      </div>
+      <form
+        className="settings-form settings-account-name-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          profileMutation.mutate({
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+          });
+        }}
+      >
+        <div className="settings-form-grid settings-account-name-grid">
+          <label className="settings-field">
+            First name
+            <input
+              autoComplete="given-name"
+              disabled={profileMutation.isPending}
+              maxLength={100}
+              onChange={(event) => {
+                setFirstName(event.target.value);
+                profileMutation.reset();
+              }}
+              required
+              value={firstName}
+            />
+          </label>
+          <label className="settings-field">
+            Last name
+            <input
+              autoComplete="family-name"
+              disabled={profileMutation.isPending}
+              maxLength={100}
+              onChange={(event) => {
+                setLastName(event.target.value);
+                profileMutation.reset();
+              }}
+              required
+              value={lastName}
+            />
+          </label>
+        </div>
+        {profileMutation.isError && (
+          <p className="settings-feedback settings-feedback-error" role="alert">
+            Could not update personal details: {profileMutation.error.message}
+          </p>
+        )}
+        {profileMutation.isSuccess && (
+          <p className="settings-feedback" role="status">
+            Personal details updated.
+          </p>
+        )}
+        <div className="settings-actions">
+          <button
+            className="button button-primary"
+            disabled={profileMutation.isPending}
+            type="submit"
+          >
+            {profileMutation.isPending ? "Saving…" : "Save details"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

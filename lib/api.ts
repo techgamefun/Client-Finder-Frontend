@@ -31,6 +31,15 @@ export interface Company {
   pagespeed_scans: PageSpeedScanSummary[];
 }
 
+export interface CompanyNavigationSummary {
+  leads_needing_review: number;
+}
+
+export interface JobQueueStatusSummary {
+  running_count: number;
+  failed_count: number;
+}
+
 export type OverviewRange = "7d" | "30d" | "90d";
 
 export interface OverviewKpi {
@@ -552,6 +561,58 @@ export interface WebsiteRecord {
     domains: number;
   }[];
   hypestat_audience_countries: string[];
+}
+
+export type WebsiteRegistrySortKey =
+  | "website"
+  | "website_type"
+  | "site_topic"
+  | "language"
+  | "crawled_at"
+  | "hypestat_monthly_visits"
+  | "hypestat_referring_domains"
+  | "hypestat_global_rank"
+  | "hypestat_country"
+  | "hypestat_backlink_countries"
+  | "hypestat_audience_countries";
+
+export interface WebsiteRegistryPageParams {
+  limit: number;
+  offset: number;
+  search: string;
+  status?: WebsiteStatus;
+  page_type?: string;
+  category?: string;
+  discovery_source?: string;
+  minimum_monthly_visits?: number;
+  minimum_referring_domains?: number;
+  maximum_global_rank?: number;
+  hypestat_country?: string;
+  backlink_country?: string;
+  audience_country?: string;
+  sort_by?: WebsiteRegistrySortKey;
+  sort_direction?: "ascending" | "descending";
+}
+
+export function websiteRegistryPageQueryKey(
+  params: WebsiteRegistryPageParams,
+) {
+  return ["websites", "registry-page", params] as const;
+}
+
+export interface WebsiteRegistryPage {
+  items: WebsiteRecord[];
+  total_count: number;
+  indexed_count: number;
+  website_count: number;
+}
+
+export interface WebsiteRegistryFacets {
+  categories: string[];
+  discovery_sources: string[];
+  hypestat_countries: string[];
+  backlink_countries: string[];
+  audience_countries: string[];
 }
 
 export interface WebsiteDetailResponse {
@@ -1206,6 +1267,8 @@ export function bootstrapAdmin(input: {
   organization_name: string;
   email: string;
   password: string;
+  first_name: string;
+  last_name: string;
 }): Promise<AuthSession> {
   return request<AuthSession>("/auth/bootstrap", {
     method: "POST",
@@ -1217,6 +1280,8 @@ export function registerOrganization(input: {
   organization_name: string;
   email: string;
   password: string;
+  first_name: string;
+  last_name: string;
 }): Promise<AuthSession> {
   return request<AuthSession>("/auth/register-organization", {
     method: "POST",
@@ -1230,6 +1295,16 @@ export function login(input: {
 }): Promise<AuthSession> {
   return request<AuthSession>("/auth/login", {
     method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAccountProfile(input: {
+  first_name: string;
+  last_name: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>("/auth/me/profile", {
+    method: "PATCH",
     body: JSON.stringify(input),
   });
 }
@@ -1973,8 +2048,16 @@ export function refetchWebsiteHypeStat(
   );
 }
 
-export function getWebsiteCorpusWords(): Promise<WebsiteCorpusWordsResponse> {
-  return request<WebsiteCorpusWordsResponse>("/websites/corpus-words");
+export function getWebsiteCorpusWords(
+  websiteIds: string[],
+): Promise<WebsiteCorpusWordsResponse> {
+  const search = new URLSearchParams();
+  for (const websiteId of websiteIds) {
+    search.append("website_ids", websiteId);
+  }
+  return request<WebsiteCorpusWordsResponse>(
+    `/websites/corpus-words?${search.toString()}`,
+  );
 }
 
 export function crawlWebsite(
@@ -2003,6 +2086,10 @@ export function getWebsiteCrawlJob(
 
 export function getWebsiteCrawlJobs(): Promise<WebsiteCrawlJobResponse[]> {
   return request<WebsiteCrawlJobResponse[]>("/crawler/jobs?limit=100");
+}
+
+export function getWebsiteCrawlJobSummary(): Promise<JobQueueStatusSummary> {
+  return request<JobQueueStatusSummary>("/crawler/jobs/summary");
 }
 
 export function getExcludedDomains(
@@ -2070,8 +2157,34 @@ export async function getWebsites(): Promise<WebsiteRecord[]> {
   }
 }
 
+export function getWebsiteRegistryPage(
+  params: WebsiteRegistryPageParams,
+): Promise<WebsiteRegistryPage> {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  }
+  return request<WebsiteRegistryPage>(
+    `/websites/registry-page?${searchParams.toString()}`,
+  );
+}
+
+export function getWebsiteRegistryFacets(): Promise<WebsiteRegistryFacets> {
+  return request<WebsiteRegistryFacets>("/websites/registry-facets");
+}
+
 export function getPageSpeedScanJobs(): Promise<PageSpeedScanJob[]> {
   return request<PageSpeedScanJob[]>("/pagespeed/jobs?limit=100");
+}
+
+export function getPageSpeedJobSummary(): Promise<JobQueueStatusSummary> {
+  return request<JobQueueStatusSummary>("/pagespeed/jobs/summary");
+}
+
+export function getCompanyNavigationSummary(): Promise<CompanyNavigationSummary> {
+  return request<CompanyNavigationSummary>("/companies/navigation-summary");
 }
 
 export function retryWebsiteCrawlJob(

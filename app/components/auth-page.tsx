@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import {
   bootstrapAdmin,
   getBootstrapStatus,
   login,
   registerOrganization,
+  getAuthSession,
+  uploadProfilePhoto,
   type AuthSession,
 } from "@/lib/api";
 import { BrandMark } from "./brand-mark";
@@ -22,9 +24,14 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
     retry: false,
   });
   const [organizationName, setOrganizationName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
   const authMutation = useMutation({
     mutationFn: async () => {
       const input = {
@@ -35,20 +42,36 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
         return bootstrapAdmin({
           ...input,
           organization_name: organizationName.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
         });
       }
       if (initialMode === "signup") {
         return registerOrganization({
           ...input,
           organization_name: organizationName.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
         });
       }
       return login(input);
     },
     onSuccess: async (session: AuthSession) => {
-      queryClient.setQueryData(["auth-session"], session);
+      let completeSession = session;
+      if (
+        profilePhoto &&
+        (initialMode === "signup" || bootstrapQuery.data?.required)
+      ) {
+        try {
+          await uploadProfilePhoto(profilePhoto);
+          completeSession = await getAuthSession();
+        } catch {
+          // Account creation succeeded; a photo upload can be retried from settings.
+        }
+      }
+      queryClient.setQueryData(["auth-session"], completeSession);
       router.replace(
-        session.user.role === "admin"
+        completeSession.user.role === "admin"
           ? "/organization/dashboard"
           : "/overview",
       );
@@ -158,22 +181,98 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
               onSubmit={submit}
             >
               {isSignup && (
-                <label className="auth-field">
-                  <span>Organization name</span>
-                  <input
-                    autoComplete="organization"
-                    disabled={authMutation.isPending}
-                    maxLength={200}
-                    minLength={2}
-                    onChange={(event) => {
-                      setOrganizationName(event.target.value);
-                      authMutation.reset();
-                    }}
-                    placeholder="Acme Inc."
-                    required
-                    value={organizationName}
-                  />
-                </label>
+                <>
+                  <label className="auth-profile-photo-field">
+                    <span className="auth-profile-photo-preview">
+                      {profilePhotoPreview ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          alt="Profile preview"
+                          src={profilePhotoPreview}
+                        />
+                      ) : (
+                        <span aria-hidden="true">
+                          {(firstName.trim().charAt(0) ||
+                            lastName.trim().charAt(0) ||
+                            "U"
+                          ).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span className="auth-profile-photo-copy">
+                      <strong>Profile picture</strong>
+                      <small>Optional · JPG, PNG or WebP</small>
+                    </span>
+                    <span className="auth-profile-photo-button">
+                      Choose photo
+                    </span>
+                    <input
+                      accept="image/jpeg,image/png,image/webp"
+                      aria-label="Profile picture"
+                      disabled={authMutation.isPending}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                        const file = event.target.files?.[0] ?? null;
+                        if (profilePhotoPreview) {
+                          URL.revokeObjectURL(profilePhotoPreview);
+                        }
+                        setProfilePhoto(file);
+                        setProfilePhotoPreview(
+                          file ? URL.createObjectURL(file) : "",
+                        );
+                        authMutation.reset();
+                      }}
+                      type="file"
+                    />
+                  </label>
+                  <div className="auth-name-grid">
+                    <label className="auth-field">
+                      <span>First name</span>
+                      <input
+                        autoComplete="given-name"
+                        disabled={authMutation.isPending}
+                        maxLength={100}
+                        onChange={(event) => {
+                          setFirstName(event.target.value);
+                          authMutation.reset();
+                        }}
+                        placeholder="First name"
+                        required
+                        value={firstName}
+                      />
+                    </label>
+                    <label className="auth-field">
+                      <span>Last name</span>
+                      <input
+                        autoComplete="family-name"
+                        disabled={authMutation.isPending}
+                        maxLength={100}
+                        onChange={(event) => {
+                          setLastName(event.target.value);
+                          authMutation.reset();
+                        }}
+                        placeholder="Last name"
+                        required
+                        value={lastName}
+                      />
+                    </label>
+                  </div>
+                  <label className="auth-field">
+                    <span>Organization name</span>
+                    <input
+                      autoComplete="organization"
+                      disabled={authMutation.isPending}
+                      maxLength={200}
+                      minLength={2}
+                      onChange={(event) => {
+                        setOrganizationName(event.target.value);
+                        authMutation.reset();
+                      }}
+                      placeholder="Acme Inc."
+                      required
+                      value={organizationName}
+                    />
+                  </label>
+                </>
               )}
               <label className="auth-field">
                 <span>Work email</span>

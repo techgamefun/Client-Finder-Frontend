@@ -22,7 +22,10 @@ export function OrganizationSettingsPage() {
 
   if (sessionQuery.isLoading) {
     return (
-      <PageLoading label="Loading organization settings" variant="settings" />
+      <PageLoading
+        label="Loading organization settings"
+        variant="organization-settings"
+      />
     );
   }
   if (sessionQuery.isError) {
@@ -34,7 +37,10 @@ export function OrganizationSettingsPage() {
   }
   if (!sessionQuery.data) {
     return (
-      <PageLoading label="Loading organization settings" variant="settings" />
+      <PageLoading
+        label="Loading organization settings"
+        variant="organization-settings"
+      />
     );
   }
   if (sessionQuery.data.user.role !== "admin") {

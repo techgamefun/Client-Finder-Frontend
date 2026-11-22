@@ -5,7 +5,7 @@ import { PageLoading } from "../components/page-loading";
 export default function WebsitesRoute() {
   return (
     <Suspense
-      fallback={<PageLoading label="Loading websites" variant="table" />}
+      fallback={<PageLoading label="Loading websites" variant="websites" />}
     >
       <WebsitesPage />
     </Suspense>

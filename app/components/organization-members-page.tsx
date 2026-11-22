@@ -143,7 +143,7 @@ export function OrganizationMembersPage() {
   }
 
   if (sessionQuery.isLoading) {
-    return <PageLoading label="Loading members" variant="table" />;
+    return <PageLoading label="Loading members" variant="members" />;
   }
   if (sessionQuery.isError) {
     return (

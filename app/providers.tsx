@@ -56,6 +56,7 @@ function QueueEventsListener() {
         kind === "crawler"
           ? [
               ["crawler", "queue-jobs"],
+              ["crawler", "queue-summary"],
               ["website-crawl-job"],
               ["company-website-crawl"],
               ["website-detail"],
@@ -66,6 +67,7 @@ function QueueEventsListener() {
             ]
           : [
               ["pagespeed", "queue-jobs"],
+              ["pagespeed", "queue-summary"],
               ["company"],
               ["website-detail"],
               ["overview"],

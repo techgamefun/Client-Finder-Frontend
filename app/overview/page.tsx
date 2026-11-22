@@ -5,7 +5,7 @@ import { PageLoading } from "../components/page-loading";
 export default function PersonalOverview() {
   return (
     <Suspense
-      fallback={<PageLoading label="Loading overview" variant="dashboard" />}
+      fallback={<PageLoading label="Loading overview" variant="overview" />}
     >
       <OverviewPage />
     </Suspense>

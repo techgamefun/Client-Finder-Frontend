@@ -5,7 +5,7 @@ import { PageLoading } from "../components/page-loading";
 export default function CompaniesRoute() {
   return (
     <Suspense
-      fallback={<PageLoading label="Loading companies" variant="table" />}
+      fallback={<PageLoading label="Loading companies" variant="companies" />}
     >
       <LeadsPage view="companies" />
     </Suspense>

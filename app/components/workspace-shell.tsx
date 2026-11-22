@@ -38,11 +38,15 @@ import {
 import {
   ApiError,
   getAuthSession,
+  getCompanyNavigationSummary,
   getCompanies,
-  getPageSpeedScanJobs,
-  getWebsiteCrawlJobs,
+  getPageSpeedJobSummary,
+  getWebsiteRegistryPage,
+  getWebsiteCrawlJobSummary,
   logout,
   type Company,
+  type WebsiteRegistryPageParams,
+  websiteRegistryPageQueryKey,
 } from "@/lib/api";
 import {
   getThemePreferenceSnapshot,
@@ -62,6 +66,11 @@ import { PageLoading, type PageLoadingVariant } from "./page-loading";
 import { useToast } from "./toast-provider";
 
 const noCompanies: Company[] = [];
+const initialWebsiteRegistryParams: WebsiteRegistryPageParams = {
+  limit: 25,
+  offset: 0,
+  search: "",
+};
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -87,6 +96,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const userPreferences = useUserPreferences(
     isPublicPage ? undefined : sessionQuery.data?.user.id,
   );
+  useQuery({
+    queryKey: websiteRegistryPageQueryKey(initialWebsiteRegistryParams),
+    queryFn: () => getWebsiteRegistryPage(initialWebsiteRegistryParams),
+    enabled: pathname === "/websites",
+    staleTime: 60_000,
+    retry: false,
+  });
   const saveUserPreferences = userPreferences.save;
   const sidebarCollapsed =
     userPreferences.data?.sidebar_collapsed ?? false;
@@ -104,17 +120,32 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const companiesQuery = useQuery({
     queryKey: ["companies"],
     queryFn: getCompanies,
-    enabled: !isPublicPage && sessionQuery.data !== undefined,
+    enabled:
+      !isPublicPage &&
+      commandPaletteOpen &&
+      sessionQuery.data !== undefined,
+    staleTime: 120_000,
   });
-  const crawlerJobsQuery = useQuery({
-    queryKey: ["crawler", "queue-jobs"],
-    queryFn: getWebsiteCrawlJobs,
+  const companyNavigationSummaryQuery = useQuery({
+    queryKey: ["companies", "navigation-summary"],
+    queryFn: getCompanyNavigationSummary,
     enabled: !isPublicPage && sessionQuery.data !== undefined,
+    staleTime: 60_000,
+    retry: false,
   });
-  const pageSpeedJobsQuery = useQuery({
-    queryKey: ["pagespeed", "queue-jobs"],
-    queryFn: getPageSpeedScanJobs,
+  const crawlerJobSummaryQuery = useQuery({
+    queryKey: ["crawler", "queue-summary"],
+    queryFn: getWebsiteCrawlJobSummary,
     enabled: !isPublicPage && sessionQuery.data !== undefined,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const pageSpeedJobSummaryQuery = useQuery({
+    queryKey: ["pagespeed", "queue-summary"],
+    queryFn: getPageSpeedJobSummary,
+    enabled: !isPublicPage && sessionQuery.data !== undefined,
+    staleTime: 60_000,
+    retry: false,
   });
   const logoutMutation = useMutation({
     mutationFn: logout,
@@ -131,16 +162,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     },
   });
   const companies = companiesQuery.data ?? noCompanies;
-  const leadsNeedingReview = companies.filter(
-    (company) =>
-      company.contacts.length > 0 && company.lead_status === "needs_review",
-  ).length;
-  const jobs = [
-    ...(crawlerJobsQuery.data ?? []),
-    ...(pageSpeedJobsQuery.data ?? []),
-  ];
-  const runningJobs = jobs.filter((job) => job.status === "running").length;
-  const failedJobs = jobs.filter((job) => job.status === "failed").length;
+  const leadsNeedingReview =
+    companyNavigationSummaryQuery.data?.leads_needing_review ?? 0;
+  const runningJobs =
+    (crawlerJobSummaryQuery.data?.running_count ?? 0) +
+    (pageSpeedJobSummaryQuery.data?.running_count ?? 0);
+  const failedJobs =
+    (crawlerJobSummaryQuery.data?.failed_count ?? 0) +
+    (pageSpeedJobSummaryQuery.data?.failed_count ?? 0);
   const sessionIsUnauthorized =
     sessionQuery.error instanceof ApiError && sessionQuery.error.status === 401;
 
@@ -273,8 +302,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }
   if (
     sessionQuery.isLoading ||
-    (!sessionQuery.data && !sessionQuery.isError) ||
-    (sessionQuery.data && userPreferences.isLoading)
+    (!sessionQuery.data && !sessionQuery.isError)
   ) {
     return <WorkspaceLoadingScreen pathname={pathname} />;
   }
@@ -1519,10 +1547,46 @@ export function WorkspaceLoadingScreen({
 }: {
   pathname?: string;
 }) {
-  const skeletonItems = navigationSections.flatMap((section) =>
-    section.items.flatMap((item) => item.children ?? [item]),
-  );
   const loadingVariant = getPageLoadingVariant(pathname);
+  const isMailRoute =
+    pathname === "/gmail" ||
+    pathname === "/templates" ||
+    pathname === "/campaigns";
+  const primarySections = navigationSections.filter((section) => !section.bottom);
+  const bottomSections = navigationSections.filter((section) => section.bottom);
+
+  function renderLoadingNavigation(section: (typeof navigationSections)[number]) {
+    const items = section.items.flatMap((item) =>
+      item.children && isMailRoute ? [item, ...item.children] : [item],
+    );
+    return (
+      <li className="nav-section" key={section.id}>
+        {section.label && <div className="sidebar-label">{section.label}</div>}
+        <ul className="nav-section-items">
+          {items.map((item) => {
+            const Icon = item.icon;
+            const isActive = isActiveRoute(pathname, item.href);
+            return (
+              <li key={item.id}>
+                <span
+                  aria-current={isActive ? "page" : undefined}
+                  className={`nav-link${isActive ? " active" : ""}`}
+                >
+                  <Icon
+                    aria-hidden="true"
+                    className="nav-icon"
+                    size={18}
+                    strokeWidth={2}
+                  />
+                  <span className="nav-link-label">{item.label}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </li>
+    );
+  }
 
   return (
     <div
@@ -1541,22 +1605,33 @@ export function WorkspaceLoadingScreen({
           <span className="workspace-skeleton-mobile-action" />
           <span className="workspace-skeleton-mobile-action" />
         </div>
-        <nav
-          aria-label="Primary"
-          className="sidebar-navigation workspace-skeleton-nav"
-        >
+        <nav aria-label="Primary" className="sidebar-navigation">
           <ul className="nav-sections">
-            {skeletonItems.map((item, index) => (
-              <li className="workspace-skeleton-nav-row" key={item.id}>
-                <span className="workspace-skeleton-block workspace-skeleton-icon" />
-                <span
-                  className={`workspace-skeleton-block workspace-skeleton-nav-label skeleton-width-${index % 3}`}
-                />
-              </li>
-            ))}
+            {primarySections.map(renderLoadingNavigation)}
           </ul>
+          {bottomSections.map((section) => (
+            <ul className="nav-bottom" key={section.id}>
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <li key={item.id}>
+                    <span className="nav-link">
+                      <Icon
+                        aria-hidden="true"
+                        className="nav-icon"
+                        size={18}
+                        strokeWidth={2}
+                      />
+                      <span className="nav-link-label">{item.label}</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ))}
         </nav>
         <div className="workspace-skeleton-account">
+          <span className="workspace-skeleton-block workspace-skeleton-account-avatar" />
           <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
           <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-2" />
         </div>
@@ -1567,7 +1642,13 @@ export function WorkspaceLoadingScreen({
           <span className="workspace-skeleton-block workspace-skeleton-line skeleton-width-1" />
           <span className="workspace-skeleton-block workspace-skeleton-mobile-action" />
         </div>
-        <div className="content-wrap">
+        <div
+          className={
+            pathname === "/websites"
+              ? "content-wrap is-websites-page"
+              : "content-wrap"
+          }
+        >
           <PageLoading
             label={`Loading ${getPageLoadingLabel(pathname)}`}
             variant={loadingVariant}
@@ -1605,18 +1686,19 @@ function getPageLoadingLabel(pathname: string) {
 function getPageLoadingVariant(pathname: string): PageLoadingVariant {
   if (
     pathname === "/organization/dashboard" ||
-    pathname === "/admin" ||
-    pathname === "/overview"
+    pathname === "/admin"
   ) {
     return "dashboard";
   }
+  if (pathname === "/overview") return "overview";
   if (pathname === "/organization") return "organization";
-  if (
-    pathname === "/organization/settings" ||
-    pathname === "/settings"
-  ) {
+  if (pathname === "/organization/settings") {
+    return "organization-settings";
+  }
+  if (pathname === "/settings") {
     return "settings";
   }
+  if (pathname === "/organization/members") return "members";
   if (/^\/organization\/members\/[^/]+$/.test(pathname)) return "activity";
   if (
     pathname.startsWith("/company/") ||
@@ -1625,13 +1707,9 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
     return "detail";
   }
   if (
-    pathname === "/organization/members" ||
-    pathname === "/websites" ||
     pathname === "/jobs" ||
     pathname === "/crawler/queue" ||
     pathname === "/pagespeed-queue" ||
-    pathname === "/leads" ||
-    pathname === "/companies" ||
     pathname === "/campaigns" ||
     pathname === "/gmail" ||
     pathname === "/discovery" ||
@@ -1640,5 +1718,8 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
   ) {
     return "table";
   }
+  if (pathname === "/websites") return "websites";
+  if (pathname === "/leads") return "leads";
+  if (pathname === "/companies") return "companies";
   return "generic";
 }
