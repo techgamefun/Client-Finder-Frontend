@@ -233,31 +233,9 @@ export interface PageSpeedScanInput {
   strategy: "mobile" | "desktop";
 }
 
-export interface PageSpeedAudit {
-  title?: string;
-  description?: string;
-  score: number | null;
-  scoreDisplayMode?: string;
-  displayValue?: string;
-}
-
 export interface BatchJobRetryResponse {
   retried_job_ids: string[];
   failures: { job_id: string; message: string }[];
-}
-
-export interface PageSpeedScanReport extends PageSpeedScanSummary {
-  report: {
-    analysisUTCTimestamp?: string | null;
-    loadingExperience?: Record<string, unknown> | null;
-    originLoadingExperience?: Record<string, unknown> | null;
-    lighthouseResult: {
-      finalUrl?: string;
-      fetchTime?: string;
-      lighthouseVersion?: string;
-      audits?: Record<string, PageSpeedAudit>;
-    };
-  };
 }
 
 export interface PageSpeedScanJob {
@@ -1965,24 +1943,6 @@ export function deleteCompanyContact(
 
 export function getCompany(companyId: string): Promise<Company> {
   return request<Company>(`/companies/${companyId}`);
-}
-
-export function getPageSpeedScan(
-  companyId: string,
-  scanId: string,
-): Promise<PageSpeedScanReport> {
-  return request<PageSpeedScanReport>(
-    `/companies/${companyId}/pagespeed-scans/${scanId}`,
-  );
-}
-
-export function getWebsitePageSpeedScan(
-  websiteId: string,
-  scanId: string,
-): Promise<PageSpeedScanReport> {
-  return request<PageSpeedScanReport>(
-    `/websites/${encodeURIComponent(websiteId)}/pagespeed-scans/${encodeURIComponent(scanId)}`,
-  );
 }
 
 export function getPageSpeedScanJob(

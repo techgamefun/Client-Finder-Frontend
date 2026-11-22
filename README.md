@@ -27,8 +27,8 @@ The dashboard supports complete company records, status changes, company
 editing and deletion, manual creation, web discovery, and saving discovery
 results to the backend pipeline. Saving discovery results also requests
 mobile and desktop PageSpeed Insights scans across four Lighthouse categories.
-The Lead pipeline shows scan history and loads detailed audit reports on
-demand.
+The Lead pipeline shows scan history and only the four category scores; raw
+Lighthouse audit reports are not retained.
 
 Company detail pages include a **Contacts** tab for adding, editing, and
 removing company contacts. Contact changes are saved through the

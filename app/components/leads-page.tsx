@@ -19,7 +19,6 @@ import {
   getAuthSession,
   getCompanyPipeline,
   getCompanyPipelineSelection,
-  getPageSpeedScan,
   getQueueEventsWebSocketUrl,
   PENDING_CAMPAIGN_AUDIENCE_KEY,
   updateCompany,
@@ -156,9 +155,6 @@ export function LeadsPage({
   const [companyForm, setCompanyForm] = useState<CompanyInput>(emptyCompany);
   const addCompanyDialogRef = useRef<HTMLDialogElement>(null);
   const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
-  const [expandedPageSpeedScanId, setExpandedPageSpeedScanId] = useState<
-    string | null
-  >(null);
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
 
@@ -182,21 +178,6 @@ export function LeadsPage({
     queryFn: getAuthSession,
     enabled: !isCompanyDatabaseView,
     retry: false,
-  });
-  const pageSpeedScanQuery = useQuery({
-    queryKey: [
-      "pagespeed-scan",
-      expandedCompanyId,
-      expandedPageSpeedScanId,
-    ],
-    queryFn: () => {
-      if (expandedCompanyId === null || expandedPageSpeedScanId === null) {
-        throw new Error("Select a PageSpeed scan to view its report.");
-      }
-      return getPageSpeedScan(expandedCompanyId, expandedPageSpeedScanId);
-    },
-    enabled:
-      expandedCompanyId !== null && expandedPageSpeedScanId !== null,
   });
   const createMutation = useMutation({
     mutationFn: createCompany,
@@ -1127,22 +1108,10 @@ export function LeadsPage({
                               <>
                                 <RecordCollection
                                   title={`PageSpeed scans (${company.pagespeed_scans.length})`}
-                                  empty="No PageSpeed reports have been saved."
+                                  empty="No PageSpeed scans have been saved."
                                   hasItems={company.pagespeed_scans.length > 0}
                                 >
-                                  {company.pagespeed_scans.map((scan) => {
-                                    const isExpanded =
-                                      expandedPageSpeedScanId === scan.id;
-                                    const report =
-                                      isExpanded &&
-                                      pageSpeedScanQuery.data?.id === scan.id
-                                        ? pageSpeedScanQuery.data.report
-                                        : null;
-                                    const audits = Object.entries(
-                                      report?.lighthouseResult.audits ?? {},
-                                    );
-
-                                    return (
+                                  {company.pagespeed_scans.map((scan) => (
                                       <article
                                         className="record-item"
                                         key={scan.id}
@@ -1184,73 +1153,8 @@ export function LeadsPage({
                                             </span>
                                           ))}
                                         </div>
-                                        <button
-                                          className="text-button"
-                                          onClick={() =>
-                                            setExpandedPageSpeedScanId(
-                                              (current) =>
-                                                current === scan.id
-                                                  ? null
-                                                  : scan.id,
-                                            )
-                                          }
-                                          type="button"
-                                        >
-                                          {isExpanded
-                                            ? "Hide detailed audits"
-                                            : "View detailed audits"}
-                                        </button>
-                                        {isExpanded &&
-                                          pageSpeedScanQuery.isPending && (
-                                            <p className="record-empty">
-                                              Loading Lighthouse audit details…
-                                            </p>
-                                          )}
-                                        {isExpanded &&
-                                          pageSpeedScanQuery.isError && (
-                                            <p
-                                              className="record-mutation-error"
-                                              role="alert"
-                                            >
-                                              {pageSpeedScanQuery.error.message}
-                                            </p>
-                                          )}
-                                        {report && (
-                                          <div className="pagespeed-audits">
-                                            <strong>
-                                              Lighthouse version{" "}
-                                              {report.lighthouseResult
-                                                .lighthouseVersion ??
-                                                "not provided"}
-                                            </strong>
-                                            {audits.map(([id, audit]) => (
-                                              <div
-                                                className="pagespeed-audit"
-                                                key={id}
-                                              >
-                                                <strong>
-                                                  {audit.title ?? id}
-                                                  {audit.score === null
-                                                    ? " · informational"
-                                                    : ` · ${Math.round(
-                                                        audit.score * 100,
-                                                      )}/100`}
-                                                </strong>
-                                                {audit.displayValue && (
-                                                  <span>
-                                                    {audit.displayValue}
-                                                  </span>
-                                                )}
-                                                {audit.description && (
-                                                  <p>{audit.description}</p>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
                                       </article>
-                                    );
-                                  })}
+                                    ))}
                                 </RecordCollection>
                                 <RecordCollection
                                   title={`Contacts (${company.contacts.length})`}

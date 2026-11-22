@@ -13,7 +13,6 @@ import {
   getCompany,
   getCompanyContacts,
   getCompanyWebsiteCrawl,
-  getPageSpeedScan,
   getWebsiteCrawlJob,
   updateCompanyContact,
   updateCompany,
@@ -24,7 +23,6 @@ import type {
   CompanyUpdateInput,
   Contact,
   ContactInput,
-  PageSpeedAudit,
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
 import { PageLoading } from "./page-loading";
@@ -84,7 +82,6 @@ export function CompanyDetailPage({
     "mobile" | "desktop"
   >("mobile");
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
-  const [expandedScanId, setExpandedScanId] = useState<string | null>(null);
   const companyId = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(
     companyIdParam,
   )
@@ -141,16 +138,6 @@ export function CompanyDetailPage({
     onSuccess: (job) => {
       setWebsiteCrawlJobId(job.id);
     },
-  });
-  const scanQuery = useQuery({
-    queryKey: ["pagespeed-scan", companyId, expandedScanId],
-    queryFn: () => {
-      if (expandedScanId === null || companyId === null) {
-        throw new Error("Select a PageSpeed scan to view its report.");
-      }
-      return getPageSpeedScan(companyId, expandedScanId);
-    },
-    enabled: expandedScanId !== null && companyId !== null,
   });
   const pageSpeedMutation = useMutation({
     mutationFn: (strategy: "mobile" | "desktop") => {
@@ -482,11 +469,6 @@ export function CompanyDetailPage({
   }
 
   const location = [company.city, company.state].filter(Boolean).join(", ");
-  const expandedReport =
-    expandedScanId !== null && scanQuery.data?.id === expandedScanId
-      ? scanQuery.data.report
-      : null;
-  const audits = Object.entries(expandedReport?.lighthouseResult.audits ?? {});
   const crawl =
     websiteCrawlJobQuery.data?.status === "succeeded"
       ? websiteCrawlJobQuery.data.result
@@ -1274,7 +1256,7 @@ export function CompanyDetailPage({
             subtitle="Website performance and quality"
             icon="◷"
             count={company.pagespeed_scans.length}
-            empty="No PageSpeed reports are available yet."
+            empty="No PageSpeed scans are available yet."
             beforeContent={
               <>
                 <div className="pagespeed-scan-controls">
@@ -1328,7 +1310,6 @@ export function CompanyDetailPage({
             }
           >
             {company.pagespeed_scans.map((scan) => {
-              const isExpanded = expandedScanId === scan.id;
               return (
                 <article className="pagespeed-card" key={scan.id}>
                   <div className="pagespeed-card-heading">
@@ -1358,45 +1339,6 @@ export function CompanyDetailPage({
                       );
                     })}
                   </div>
-                  <button
-                    className="text-button pagespeed-toggle"
-                    onClick={() =>
-                      setExpandedScanId(isExpanded ? null : scan.id)
-                    }
-                    type="button"
-                  >
-                    {isExpanded
-                      ? "Hide detailed audits"
-                      : "View detailed audits"}
-                    <span aria-hidden="true">{isExpanded ? " ↑" : " ↓"}</span>
-                  </button>
-                  {isExpanded && scanQuery.isPending && (
-                    <p className="record-empty">
-                      Loading Lighthouse audit details…
-                    </p>
-                  )}
-                  {isExpanded && scanQuery.isError && (
-                    <p className="pagespeed-error" role="alert">
-                      {scanQuery.error.message}
-                    </p>
-                  )}
-                  {isExpanded && expandedReport && (
-                    <div className="pagespeed-audits">
-                      <p>
-                        Lighthouse{" "}
-                        {expandedReport.lighthouseResult.lighthouseVersion ??
-                          "version unavailable"}
-                      </p>
-                      {audits.map(([id, audit]) => (
-                        <AuditItem audit={audit} key={id} />
-                      ))}
-                      {audits.length === 0 && (
-                        <p className="record-empty">
-                          No detailed Lighthouse audits were included.
-                        </p>
-                      )}
-                    </div>
-                  )}
                 </article>
               );
             })}
@@ -1592,16 +1534,6 @@ function RecordSection({
       {beforeContent}
       {count === 0 ? <p className="detail-empty">{empty}</p> : children}
     </section>
-  );
-}
-
-function AuditItem({ audit }: { audit: PageSpeedAudit }) {
-  return (
-    <div className="pagespeed-audit">
-      <strong>{audit.title ?? "Unnamed audit"}</strong>
-      {audit.description && <p>{audit.description}</p>}
-      {audit.displayValue && <span>{audit.displayValue}</span>}
-    </div>
   );
 }
 
