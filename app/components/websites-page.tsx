@@ -360,7 +360,7 @@ export function WebsitesPage() {
       showToast({
         type: "success",
         title: "Domain excluded",
-        message: `${domain.domain} was excluded and its queued indexing jobs were removed.`,
+        message: `${domain.domain} was excluded and its queued and failed indexing jobs were removed.`,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
@@ -384,7 +384,7 @@ export function WebsitesPage() {
       showToast({
         type: "success",
         title: "Selected domains excluded",
-        message: `Added ${result.createdCount} and updated ${result.updatedCount} exclusions (${result.totalCount} unique domains). Matching queued indexing jobs were removed.`,
+        message: `Added ${result.createdCount} and updated ${result.updatedCount} exclusions (${result.totalCount} unique domains). Matching queued and failed indexing jobs were removed.`,
       });
     },
     onError: (error: Error) => {

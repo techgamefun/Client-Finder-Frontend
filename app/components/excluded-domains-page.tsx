@@ -86,7 +86,7 @@ export function ExcludedDomainsPage() {
       showToast({
         type: "success",
         title: "Domain excluded",
-        message: `${domain.domain} was excluded and its queued indexing jobs were removed.`,
+        message: `${domain.domain} was excluded and its queued and failed indexing jobs were removed.`,
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
