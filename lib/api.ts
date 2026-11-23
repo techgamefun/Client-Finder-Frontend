@@ -427,6 +427,15 @@ export interface DiscoveryResult {
   published_date: string | null;
 }
 
+export interface DiscoveryDomainRatingResult {
+  domain: string;
+  status: "succeeded" | "failed";
+  domain_rating: number | null;
+  license_url: string | null;
+  fetched_at: string | null;
+  error: string | null;
+}
+
 export interface DiscoveryResponse {
   query: string;
   results: DiscoveryResult[];
@@ -494,7 +503,46 @@ export interface WebsiteCrawlResponse {
   emails: string[];
   phones: string[];
   social_links: string[];
+  source: "crawler" | "manual";
   crawled_at: string;
+}
+
+export interface ManualWebsiteCrawlCompletionInput {
+  site_type: string;
+  website_topics: string[];
+  language: string | null;
+  home_page_url: string | null;
+  home_content: string | null;
+  about_page_url: string | null;
+  about_content: string | null;
+  blog_page_url: string | null;
+  blog_content: string | null;
+  service_page_url: string | null;
+  service_content: string | null;
+  contact_page_url: string | null;
+  contact_content: string | null;
+  goals_page_url: string | null;
+  goals_content: string | null;
+  emails: string[];
+  phones: string[];
+  social_links: string[];
+}
+
+export type ManualEnrichmentStatus =
+  | "queued"
+  | "already_available"
+  | "already_queued"
+  | "not_configured"
+  | "disabled";
+
+export interface ManualWebsiteCrawlCompletionResponse {
+  job_id: string;
+  website_id: string;
+  crawl_id: string;
+  status: "manual";
+  ahrefs_domain_rating: ManualEnrichmentStatus;
+  hypestat: ManualEnrichmentStatus;
+  pagespeed: ManualEnrichmentStatus;
 }
 
 export interface CrawlPageClassification {
@@ -533,7 +581,7 @@ export interface PageClassificationSignals {
 export interface WebsiteCrawlJobResponse {
   id: string;
   website_url: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "manual";
   attempts: number;
   error: string | null;
   created_at: string;
@@ -561,7 +609,7 @@ export interface WebsiteCrawlBatchResponse {
 
 export interface WebsiteCrawlJobHistory {
   id: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "manual";
   attempts: number;
   error: string | null;
   created_at: string;
@@ -2275,6 +2323,15 @@ export function searchCompanies(
   });
 }
 
+export function getDiscoveryDomainRatings(
+  domains: string[],
+): Promise<DiscoveryDomainRatingResult[]> {
+  return request<DiscoveryDomainRatingResult[]>("/discovery/domain-ratings", {
+    method: "POST",
+    body: JSON.stringify({ domains }),
+  });
+}
+
 export function getDiscoveryProviderJob(
   jobId: string,
 ): Promise<DiscoveryProviderJob> {
@@ -2687,6 +2744,19 @@ export function retryWebsiteCrawlJob(
   return request<WebsiteCrawlJobResponse>(
     `/crawler/jobs/${jobId}/retry`,
     { method: "POST" },
+  );
+}
+
+export function completeWebsiteCrawlJobManually(
+  jobId: string,
+  input: ManualWebsiteCrawlCompletionInput,
+): Promise<ManualWebsiteCrawlCompletionResponse> {
+  return request<ManualWebsiteCrawlCompletionResponse>(
+    `/crawler/jobs/${jobId}/manual-completion`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
   );
 }
 

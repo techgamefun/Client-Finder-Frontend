@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   getApplicationSettings,
   getAuthSession,
+  getDiscoveryDomainRatings,
   getDiscoveryProviderJob,
   getSearchKeywordSuggestions,
   getWebsites,
@@ -40,6 +41,13 @@ const suggestedQueries = [
   "Commercial cleaning companies in Seattle",
 ];
 
+type DiscoveryDomainRatingState = {
+  status: "loading" | "succeeded" | "failed";
+  domain_rating: number | null;
+  license_url: string | null;
+  error: string | null;
+};
+
 type DiscoveryFilterState = {
   topic: TavilyTopic;
   search_depth: TavilySearchDepth;
@@ -65,10 +73,17 @@ export function DiscoveryPage() {
   const [saveResult, setSaveResult] =
     useState<DiscoveryWebsiteSaveResponse | null>(null);
   const [savedDomains, setSavedDomains] = useState<Set<string>>(new Set());
+  const [discoveryDomainRatings, setDiscoveryDomainRatings] = useState<
+    Record<string, DiscoveryDomainRatingState>
+  >({});
+  const [minimumDomainRating, setMinimumDomainRating] = useState("");
+  const [maximumDomainRating, setMaximumDomainRating] = useState("");
   const [preferenceError, setPreferenceError] = useState("");
   const [filterOverrides, setFilterOverrides] =
     useState<Partial<DiscoveryFilterState>>({});
   const preferenceSaveAttempt = useRef<string | null>(null);
+  const requestedAhrefsDomains = useRef(new Set<string>());
+  const ahrefsSearchId = useRef<string | null>(null);
   const [lastSearchInput, setLastSearchInput] =
     useState<DiscoverySearchInput | null>(null);
   const [moreResults, setMoreResults] = useState<DiscoveryResponse["results"]>([]);
@@ -366,9 +381,151 @@ export function DiscoveryPage() {
     ),
     ...moreResults,
   ]);
+  const discoveryRatingDomainKey = combinedResults
+    .map((result) => getResultDomain(result.url))
+    .join("\n");
+  useEffect(() => {
+    const searchId = searchData?.search_id;
+    if (!searchId) return;
+    if (ahrefsSearchId.current !== searchId) {
+      ahrefsSearchId.current = searchId;
+      requestedAhrefsDomains.current.clear();
+      setDiscoveryDomainRatings({});
+    }
+
+    const domains = [
+      ...new Set(discoveryRatingDomainKey.split("\n").filter(Boolean)),
+    ];
+    const pendingDomains = domains.filter(
+      (domain) => !requestedAhrefsDomains.current.has(domain),
+    );
+    if (pendingDomains.length === 0) return;
+
+    pendingDomains.forEach((domain) =>
+      requestedAhrefsDomains.current.add(domain),
+    );
+    setDiscoveryDomainRatings((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        pendingDomains.map((domain) => [
+          domain,
+          {
+            status: "loading",
+            domain_rating: null,
+            license_url: null,
+            error: null,
+          },
+        ]),
+      ),
+    }));
+
+    const fetchRatings = async () => {
+      for (let offset = 0; offset < pendingDomains.length; offset += 20) {
+        const batch = pendingDomains.slice(offset, offset + 20);
+        try {
+          const results = await getDiscoveryDomainRatings(batch);
+          if (ahrefsSearchId.current !== searchId) return;
+          setDiscoveryDomainRatings((current) => ({
+            ...current,
+            ...Object.fromEntries(
+              results.map((result) => [
+                result.domain,
+                {
+                  status: result.status,
+                  domain_rating: result.domain_rating,
+                  license_url: result.license_url,
+                  error: result.error,
+                } satisfies DiscoveryDomainRatingState,
+              ]),
+            ),
+          }));
+        } catch (error) {
+          if (ahrefsSearchId.current !== searchId) return;
+          const detail =
+            error instanceof Error
+              ? error.message
+              : "Could not load Ahrefs Domain Rating.";
+          setDiscoveryDomainRatings((current) => ({
+            ...current,
+            ...Object.fromEntries(
+              batch.map((domain) => [
+                domain,
+                {
+                  status: "failed",
+                  domain_rating: null,
+                  license_url: null,
+                  error: detail,
+                } satisfies DiscoveryDomainRatingState,
+              ]),
+            ),
+          }));
+        }
+      }
+    };
+
+    void fetchRatings();
+  }, [discoveryRatingDomainKey, searchData?.search_id]);
+
   const unsavedResults = combinedResults.filter(
     (result) => !savedDomains.has(getResultDomain(result.url)),
   );
+  const hasDomainRatingFilter =
+    minimumDomainRating !== "" || maximumDomainRating !== "";
+  const minimumRating =
+    minimumDomainRating === "" ? null : Number(minimumDomainRating);
+  const maximumRating =
+    maximumDomainRating === "" ? null : Number(maximumDomainRating);
+  const domainRatingRangeError =
+    (minimumRating !== null &&
+      (!Number.isFinite(minimumRating) ||
+        minimumRating < 0 ||
+        minimumRating > 100)) ||
+    (maximumRating !== null &&
+      (!Number.isFinite(maximumRating) ||
+        maximumRating < 0 ||
+        maximumRating > 100)) ||
+    (minimumRating !== null &&
+      maximumRating !== null &&
+      minimumRating > maximumRating);
+  function matchesDomainRatingFilter(domain: string) {
+    if (!hasDomainRatingFilter) return true;
+    if (domainRatingRangeError) return false;
+    const rating = discoveryDomainRatings[domain];
+    if (
+      rating?.status !== "succeeded" ||
+      rating.domain_rating === null
+    ) {
+      return false;
+    }
+    return (
+      (minimumRating === null || rating.domain_rating >= minimumRating) &&
+      (maximumRating === null || rating.domain_rating <= maximumRating)
+    );
+  }
+  const eligibleUnsavedResults = unsavedResults.filter((result) =>
+    matchesDomainRatingFilter(getResultDomain(result.url)),
+  );
+  const pendingDomainRatingCount = hasDomainRatingFilter
+    ? unsavedResults.filter((result) => {
+        const rating =
+          discoveryDomainRatings[getResultDomain(result.url)];
+        return !rating || rating.status === "loading";
+      }).length
+    : 0;
+  const waitingForFilteredDomainRatings = pendingDomainRatingCount > 0;
+  function getBulkSaveLabel() {
+    if (saveMutation.isPending) {
+      return `Adding ${saveProgress?.completed ?? 0} of ${saveProgress?.total ?? unsavedResults.length}...`;
+    }
+    if (unsavedResults.length === 0) return "All added";
+    if (domainRatingRangeError) return "Fix DR range";
+    if (waitingForFilteredDomainRatings) return "Waiting for DR";
+    if (eligibleUnsavedResults.length === 0) return "No matching sites";
+    if (hasDomainRatingFilter) {
+      return `Add ${eligibleUnsavedResults.length} matching to registry`;
+    }
+    return `Add ${eligibleUnsavedResults.length} to registry`;
+  }
   const providerJobsPending = discoveryProviderJobQueries.some(
     (query) => query.data?.status === "running",
   );
@@ -417,6 +574,9 @@ export function DiscoveryPage() {
     };
     setSaveResult(null);
     setSavedDomains(new Set());
+    setDiscoveryDomainRatings({});
+    requestedAhrefsDomains.current.clear();
+    ahrefsSearchId.current = null;
     setSaveProgress(null);
     setMoreResults([]);
     setAdditionalCredits(0);
@@ -1028,6 +1188,12 @@ export function DiscoveryPage() {
           aria-busy={providerJobsPending || findMoreMutation.isPending}
           className="results-section"
         >
+          {settingsQuery.data && !settingsQuery.data.ahrefs_configured && (
+            <div className="alert alert-warning discovery-alert" role="status">
+              Add an Ahrefs API key in{" "}
+              <Link href="/settings">Settings</Link> to fetch Domain Ratings.
+            </div>
+          )}
           {searchData.answer && (
             <details className="discovery-answer-card">
               <summary>AI Market Summary</summary>
@@ -1054,14 +1220,16 @@ export function DiscoveryPage() {
                 className="button button-secondary discovery-save-button"
                 disabled={
                   saveMutation.isPending ||
-                  unsavedResults.length === 0 ||
+                  eligibleUnsavedResults.length === 0 ||
+                  Boolean(domainRatingRangeError) ||
+                  waitingForFilteredDomainRatings ||
                   providerJobsPending
                 }
                 onClick={() =>
                   handleSave({
                     query: searchData.query,
-                    max_results: Math.min(unsavedResults.length, 100),
-                    results: unsavedResults.map(({ url, provider }) => ({
+                    max_results: Math.min(eligibleUnsavedResults.length, 100),
+                    results: eligibleUnsavedResults.map(({ url, provider }) => ({
                       url,
                       provider,
                     })),
@@ -1070,14 +1238,71 @@ export function DiscoveryPage() {
                 }
                 type="button"
               >
-                {saveMutation.isPending
-                  ? `Adding ${saveProgress?.completed ?? 0} of ${saveProgress?.total ?? unsavedResults.length}...`
-                  : unsavedResults.length === 0
-                    ? "All added"
-                    : `Add ${unsavedResults.length} to registry`}
+                {getBulkSaveLabel()}
               </button>
             )}
           </div>
+
+          <div className="discovery-dr-filter">
+            <div className="discovery-dr-filter-copy">
+              <strong>Filter registry additions by DR</strong>
+              <span>Only matching results will be added.</span>
+            </div>
+            <label>
+              Min
+              <input
+                aria-label="Minimum Ahrefs Domain Rating"
+                max={100}
+                min={0}
+                onChange={(event) =>
+                  setMinimumDomainRating(event.target.value)
+                }
+                placeholder="0"
+                step={0.1}
+                type="number"
+                value={minimumDomainRating}
+              />
+            </label>
+            <span className="discovery-dr-filter-separator">to</span>
+            <label>
+              Max
+              <input
+                aria-label="Maximum Ahrefs Domain Rating"
+                max={100}
+                min={0}
+                onChange={(event) =>
+                  setMaximumDomainRating(event.target.value)
+                }
+                placeholder="100"
+                step={0.1}
+                type="number"
+                value={maximumDomainRating}
+              />
+            </label>
+            <span className="discovery-dr-filter-count">
+              {eligibleUnsavedResults.length} eligible
+              {pendingDomainRatingCount > 0 &&
+                ` · ${pendingDomainRatingCount} pending`}
+            </span>
+            {hasDomainRatingFilter && (
+              <button
+                className="discovery-dr-filter-reset"
+                onClick={() => {
+                  setMinimumDomainRating("");
+                  setMaximumDomainRating("");
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {domainRatingRangeError && (
+            <p className="discovery-dr-filter-error" role="alert">
+              Enter a DR range between 0 and 100, with the minimum no greater
+              than the maximum.
+            </p>
+          )}
 
           {combinedResults.length === 0 && providerJobsPending ? (
             <p className="empty-copy">Waiting for Octoparse results...</p>
@@ -1087,80 +1312,127 @@ export function DiscoveryPage() {
             </p>
           ) : (
             <div className="discovery-results">
-              {combinedResults.map((result) => (
-                <article
-                  className="discovery-result"
-                  key={`${result.provider}-${result.url}`}
-                >
-                  <div className="discovery-result-site">
-                    <span aria-hidden="true" className="discovery-result-favicon">
-                      <span className="discovery-result-favicon-fallback">
-                        {getResultDomain(result.url).charAt(0).toUpperCase()}
-                      </span>
-                      <Image
-                        alt=""
-                        className="discovery-result-favicon-image"
-                        height={16}
-                        onError={(event) => {
-                          event.currentTarget.style.visibility = "hidden";
-                        }}
-                        src={result.favicon ?? `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(result.url)}&sz=64`}
-                        unoptimized
-                        width={16}
-                      />
-                    </span>
-                    <span>
-                      <strong>{getResultDomain(result.url)}</strong>
-                      <small>{result.url}</small>
-                    </span>
-                    <span className="discovery-result-score">
-                      {Math.round(result.score * 100)}% match
-                    </span>
-                  </div>
-                  <a
-                    className="discovery-result-title"
-                    href={result.url}
-                    rel="noreferrer"
-                    target="_blank"
+              {combinedResults.map((result) => {
+                const domain = getResultDomain(result.url);
+                const rating = discoveryDomainRatings[domain];
+                const outsideDomainRatingRange =
+                  hasDomainRatingFilter &&
+                  !matchesDomainRatingFilter(domain);
+                return (
+                  <article
+                    className="discovery-result"
+                    key={`${result.provider}-${result.url}`}
                   >
-                    {result.title}
-                  </a>
-                  {result.published_date && (
-                    <span className="discovery-result-published">
-                      Published {formatPublishedDate(result.published_date)}
-                    </span>
-                  )}
-                  <p>{result.content}</p>
-                  <div className="discovery-result-footer">
-                    <span className="discovery-result-source">
-                      {result.provider === "tavily" ? "Tavily" : "Octoparse"}
-                    </span>
-                    <button
-                      className="discovery-result-add"
-                      disabled={
-                        savedDomains.has(getResultDomain(result.url)) ||
-                        saveMutation.isPending ||
-                        providerJobsPending
-                      }
-                      onClick={() =>
-                        handleSave({
-                          query: searchData.query,
-                          max_results: 1,
-                          results: [{ url: result.url, provider: result.provider }],
-                          search_id: searchData.search_id,
-                        })
-                      }
-                      type="button"
+                    <div className="discovery-result-site">
+                      <span aria-hidden="true" className="discovery-result-favicon">
+                        <span className="discovery-result-favicon-fallback">
+                          {domain.charAt(0).toUpperCase()}
+                        </span>
+                        <Image
+                          alt=""
+                          className="discovery-result-favicon-image"
+                          height={16}
+                          onError={(event) => {
+                            event.currentTarget.style.visibility = "hidden";
+                          }}
+                          src={result.favicon ?? `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(result.url)}&sz=64`}
+                          unoptimized
+                          width={16}
+                        />
+                      </span>
+                      <span>
+                        <strong>{domain}</strong>
+                        <small>{result.url}</small>
+                      </span>
+                      <span className="discovery-result-score">
+                        {Math.round(result.score * 100)}% match
+                      </span>
+                      <span
+                        aria-label={
+                          rating?.status === "succeeded" &&
+                          rating.domain_rating !== null
+                            ? `Ahrefs Domain Rating ${rating.domain_rating}`
+                            : rating?.error ?? "Loading Ahrefs Domain Rating"
+                        }
+                        className={`discovery-result-dr discovery-result-dr-${rating?.status ?? "loading"}`}
+                        title={rating?.error ?? "Ahrefs Domain Rating"}
+                      >
+                        <span>DR</span>
+                        <strong>
+                          {rating?.status === "succeeded" &&
+                          rating.domain_rating !== null
+                            ? rating.domain_rating.toFixed(1)
+                            : rating?.status === "failed"
+                              ? "—"
+                              : "…"}
+                        </strong>
+                      </span>
+                    </div>
+                    <a
+                      className="discovery-result-title"
+                      href={result.url}
+                      rel="noreferrer"
+                      target="_blank"
                     >
-                      {savedDomains.has(getResultDomain(result.url))
-                        ? "Added"
-                        : saveMutation.isPending
-                          ? "Adding..."
-                          : "Add to registry"}
-                    </button>
-                  </div>
-                </article>
-              ))}
+                      {result.title}
+                    </a>
+                    {result.published_date && (
+                      <span className="discovery-result-published">
+                        Published {formatPublishedDate(result.published_date)}
+                      </span>
+                    )}
+                    <p>{result.content}</p>
+                    <div className="discovery-result-footer">
+                      <span className="discovery-result-source">
+                        {result.provider === "tavily" ? "Tavily" : "Octoparse"}
+                      </span>
+                      <button
+                        className="discovery-result-add"
+                        disabled={
+                          savedDomains.has(domain) ||
+                          saveMutation.isPending ||
+                          providerJobsPending ||
+                          outsideDomainRatingRange
+                        }
+                        title={
+                          outsideDomainRatingRange
+                            ? domainRatingRangeError
+                              ? "Correct the DR range to add websites."
+                                : !rating || rating.status === "loading"
+                                ? "Waiting for this DR before adding."
+                                : rating?.status === "failed"
+                                  ? "This result has no available DR."
+                                  : "This DR is outside the selected range."
+                            : undefined
+                        }
+                        onClick={() =>
+                          handleSave({
+                            query: searchData.query,
+                            max_results: 1,
+                            results: [{ url: result.url, provider: result.provider }],
+                            search_id: searchData.search_id,
+                          })
+                        }
+                        type="button"
+                      >
+                        {savedDomains.has(domain)
+                          ? "Added"
+                          : saveMutation.isPending
+                            ? "Adding..."
+                            : outsideDomainRatingRange
+                              ? domainRatingRangeError
+                                ? "Fix DR range"
+                                : !rating || rating.status === "loading"
+                                  ? "Waiting for DR"
+                                  : rating?.status === "failed"
+                                    ? "DR unavailable"
+                                    : "Outside DR range"
+                            : "Add to registry"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
           {settingsQuery.data?.tavily_configured && (

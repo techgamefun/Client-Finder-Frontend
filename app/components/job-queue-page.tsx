@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   useMutation,
   useQuery,
@@ -10,6 +16,7 @@ import {
 import {
   addExcludedDomain,
   addExcludedDomainsBatch,
+  completeWebsiteCrawlJobManually,
   getWebsiteCorpusAnalysisJobsPage,
   getApplicationSettings,
   getPageSpeedScanJobs,
@@ -26,6 +33,8 @@ import {
   retryWebsiteCrawlJobs,
   type PageSpeedScanJob,
   type ExcludedDomainInput,
+  type ManualWebsiteCrawlCompletionInput,
+  type ManualEnrichmentStatus,
   type QueueJobsPageParams,
   type WebsiteCorpusAnalysisJob,
   type WebsiteCrawlJobResponse,
@@ -226,6 +235,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     statusFilterState.kind === kind ? statusFilterState.status : "all";
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [manualCompletionJob, setManualCompletionJob] =
+    useState<QueueJob | null>(null);
   const [failureReasonFilterState, setFailureReasonFilterState] = useState<{
     kind: QueueKind;
     reason: string;
@@ -359,6 +370,50 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       });
     },
   });
+  const manualCompletionMutation = useMutation({
+    mutationFn: ({
+      jobId,
+      input,
+    }: {
+      jobId: string;
+      input: ManualWebsiteCrawlCompletionInput;
+    }) => completeWebsiteCrawlJobManually(jobId, input),
+    onSuccess: async (result) => {
+      setManualCompletionJob(null);
+      setSelectedState((current) => {
+        if (current.kind !== "crawler" || !current.jobs.has(result.job_id)) {
+          return current;
+        }
+        const jobs = new Map(current.jobs);
+        jobs.delete(result.job_id);
+        return { kind: current.kind, jobs };
+      });
+      showToast({
+        type: "success",
+        title: "Manual website data saved",
+        message:
+          `Ahrefs: ${formatEnrichmentStatus(result.ahrefs_domain_rating)}; ` +
+          `HypeStat: ${formatEnrichmentStatus(result.hypestat)}; ` +
+          `PageSpeed: ${formatEnrichmentStatus(result.pagespeed)}.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["crawler", "queue-failure-reasons"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
+        queryClient.invalidateQueries({ queryKey: ["pagespeed", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["hypestat", "queue-jobs"] }),
+      ]);
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not save manual website data",
+        message: error.message,
+      });
+    },
+  });
   const excludeDomainMutation = useMutation({
     mutationFn: (job: QueueJob) =>
       addExcludedDomain({
@@ -481,6 +536,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const succeededCount = statusCounts.succeeded ?? 0;
   const failedJobs = jobs.filter((job) => job.status === "failed");
   const failedCount = statusCounts.failed ?? 0;
+  const manualCount = statusCounts.manual ?? 0;
   const skippedCount = statusCounts.skipped ?? 0;
   const visibleJobs = jobs;
   const selectedCount = selectedJobs.size;
@@ -602,6 +658,14 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           onClick={() => toggleStatusFilter("failed")}
           value={failedCount}
         />
+        {kind === "crawler" && (
+          <QueueStat
+            active={statusFilter === "manual"}
+            label="Manual data"
+            onClick={() => toggleStatusFilter("manual")}
+            value={manualCount}
+          />
+        )}
         {(kind === "keywords" || kind === "hypestat") && (
           <QueueStat
             active={statusFilter === "skipped"}
@@ -658,16 +722,23 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       <section aria-labelledby="queue-jobs-heading" className="panel queue-panel">
         <div className="queue-panel-heading">
           <div className="queue-panel-title">
-            <h2 id="queue-jobs-heading">Recent jobs</h2>
+            <h2 id="queue-jobs-heading">
+              {kind === "crawler" ? "Indexing activity" : "Recent jobs"}
+            </h2>
             <p className="panel-subtitle">
-              Showing {jobs.length} of {totalCount} jobs.
+              Showing {jobs.length} on this page.
               {kind === "keywords"
                 ? " Status refreshes automatically every five seconds."
                 : kind === "hypestat"
                   ? " HypeStat job status refreshes automatically every five seconds."
-                : ""}
+                  : ""}
             </p>
           </div>
+          <span className="queue-total-count">
+            <strong>{totalCount}</strong> total
+          </span>
+        </div>
+        <div className="queue-panel-toolbar">
           <div className="queue-panel-controls">
             <input
               aria-label={
@@ -719,6 +790,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                 ))}
               </select>
             )}
+          </div>
+          <div className="queue-panel-actions">
             {kind === "crawler" && jobs.length > 0 && (
               <label className="queue-select-page">
                 <input
@@ -815,126 +888,118 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         ) : visibleJobs.length === 0 ? (
           <p className="empty-copy">No {queueLabel} jobs match your filters.</p>
         ) : (
-          <div className="pagespeed-job-list">
-            {visibleJobs.map((job) => (
-              <article
-                className={`pagespeed-job-card queue-job-card queue-job-card-${kind}`}
-                key={job.id}
-              >
-                <div className="pagespeed-job-card-heading">
-                  <div>
-                    <strong>{job.detail}</strong>
-                    <a
-                      href={job.websiteUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      {job.websiteUrl}
-                    </a>
-                  </div>
-                  <div className="queue-job-actions">
-                    {kind === "crawler" && (
-                      <label className="queue-job-select">
-                        <input
-                          aria-label={`Select ${job.websiteUrl}`}
-                          checked={selectedJobs.has(job.id)}
-                          disabled={excludeSelectedDomainsMutation.isPending}
-                          onChange={(event) =>
-                            setJobSelected(job, event.target.checked)
+          <div className={`pagespeed-job-list queue-job-list-${kind}`}>
+            {visibleJobs.map((job) =>
+              kind === "crawler" ? (
+                <CrawlerQueueCard
+                  canRetry={canRetryJobs}
+                  isExcluding={
+                    excludeDomainMutation.isPending &&
+                    excludeDomainMutation.variables?.id === job.id
+                  }
+                  isRetrying={
+                    retryMutation.isPending && retryMutation.variables === job.id
+                  }
+                  isSelected={selectedJobs.has(job.id)}
+                  isSelectionBusy={
+                    excludeSelectedDomainsMutation.isPending ||
+                    excludeDomainMutation.isPending
+                  }
+                  isManualBusy={manualCompletionMutation.isPending}
+                  isSubmittingManual={
+                    manualCompletionMutation.isPending &&
+                    manualCompletionMutation.variables?.jobId === job.id
+                  }
+                  isRetryingAll={retryAllMutation.isPending}
+                  job={job}
+                  key={job.id}
+                  onExclude={() => excludeDomainMutation.mutate(job)}
+                  onManual={() => setManualCompletionJob(job)}
+                  onRetry={() => retryMutation.mutate(job.id)}
+                  onSelect={(selected) => setJobSelected(job, selected)}
+                />
+              ) : (
+                <article
+                  className={`pagespeed-job-card queue-job-card queue-job-card-${kind}`}
+                  key={job.id}
+                >
+                  <div className="pagespeed-job-card-heading">
+                    <div>
+                      <strong>{job.detail}</strong>
+                      <a
+                        href={job.websiteUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {job.websiteUrl}
+                      </a>
+                    </div>
+                    <div className="queue-job-actions">
+                      <span
+                        className={`pagespeed-job-status pagespeed-job-status-${job.status}`}
+                      >
+                        {formatJobStatus(job.status)}
+                      </span>
+                      {job.status === "failed" && (
+                        <button
+                          className="button button-secondary queue-retry-button"
+                          disabled={
+                            retryMutation.isPending ||
+                            retryAllMutation.isPending ||
+                            !canRetryJobs
                           }
-                          type="checkbox"
-                        />
-                        <span className="sr-only">
-                          Select indexing job for {job.websiteUrl}
-                        </span>
-                      </label>
-                    )}
-                    <span
-                      className={`pagespeed-job-status pagespeed-job-status-${job.status}`}
-                    >
-                      {formatJobStatus(job.status)}
-                    </span>
-                    {kind === "crawler" && (
-                      <button
-                        className="button button-secondary queue-exclude-button"
-                        disabled={
-                          excludeDomainMutation.isPending ||
-                          excludeSelectedDomainsMutation.isPending ||
-                          retryMutation.isPending ||
-                          retryAllMutation.isPending
-                        }
-                        onClick={() => excludeDomainMutation.mutate(job)}
-                        title={`Add ${job.websiteUrl} to Excluded domains`}
-                        type="button"
-                      >
-                        {excludeDomainMutation.isPending &&
-                        excludeDomainMutation.variables?.id === job.id
-                          ? "Excluding..."
-                          : "Exclude domain"}
-                      </button>
-                    )}
-                    {job.status === "failed" && (
-                      <button
-                        className="button button-secondary queue-retry-button"
-                        disabled={
-                          retryMutation.isPending ||
-                          retryAllMutation.isPending ||
-                          excludeDomainMutation.isPending ||
-                          excludeSelectedDomainsMutation.isPending ||
-                          !canRetryJobs
-                        }
-                        onClick={() => retryMutation.mutate(job.id)}
-                        type="button"
-                      >
-                        {retryMutation.isPending &&
-                        retryMutation.variables === job.id
-                          ? "Retrying..."
-                          : "Retry"}
-                      </button>
-                    )}
+                          onClick={() => retryMutation.mutate(job.id)}
+                          type="button"
+                        >
+                          {retryMutation.isPending &&
+                          retryMutation.variables === job.id
+                            ? "Retrying..."
+                            : "Retry"}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <dl className="pagespeed-job-times">
-                  <div>
-                    <dt>Queued</dt>
-                    <dd>{formatTimestamp(job.createdAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Started</dt>
-                    <dd>{job.startedAt ? formatTimestamp(job.startedAt) : "Not started"}</dd>
-                  </div>
-                  <div>
-                    <dt>Finished</dt>
-                    <dd>
-                      {job.completedAt
-                        ? formatTimestamp(job.completedAt)
-                        : "Not finished"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Elapsed</dt>
-                    <dd>
-                      {formatElapsedTime(job.startedAt, job.completedAt)}
-                    </dd>
-                  </div>
-                </dl>
-                {job.siteType && (
-                  <p className="queue-job-site-type">
-                    Site type: <strong>{formatSiteType(job.siteType)}</strong>
-                  </p>
-                )}
-                {job.error && (
-                  <p className="pagespeed-job-error">
-                    <strong>Failure reason:</strong> {job.error}
-                  </p>
-                )}
-                {job.skipReason && (
-                  <p className="queue-job-skip-reason">
-                    <strong>Skip reason:</strong> {job.skipReason}
-                  </p>
-                )}
-              </article>
-            ))}
+                  <dl className="pagespeed-job-times">
+                    <div>
+                      <dt>Queued</dt>
+                      <dd>{formatTimestamp(job.createdAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Started</dt>
+                      <dd>
+                        {job.startedAt
+                          ? formatTimestamp(job.startedAt)
+                          : "Not started"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Finished</dt>
+                      <dd>
+                        {job.completedAt
+                          ? formatTimestamp(job.completedAt)
+                          : "Not finished"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Elapsed</dt>
+                      <dd>
+                        {formatElapsedTime(job.startedAt, job.completedAt)}
+                      </dd>
+                    </div>
+                  </dl>
+                  {job.error && (
+                    <p className="pagespeed-job-error">
+                      <strong>Failure reason:</strong> {job.error}
+                    </p>
+                  )}
+                  {job.skipReason && (
+                    <p className="queue-job-skip-reason">
+                      <strong>Skip reason:</strong> {job.skipReason}
+                    </p>
+                  )}
+                </article>
+              ),
+            )}
           </div>
         )}
         {!jobsQuery.isLoading && !jobsQuery.isError && totalCount > 0 && (
@@ -979,7 +1044,414 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           </div>
         )}
       </section>
+      {manualCompletionJob && (
+        <ManualCrawlEntryDialog
+          isSubmitting={manualCompletionMutation.isPending}
+          job={manualCompletionJob}
+          onClose={() => {
+            if (!manualCompletionMutation.isPending) {
+              setManualCompletionJob(null);
+            }
+          }}
+          onSubmit={(input) =>
+            manualCompletionMutation.mutate({
+              jobId: manualCompletionJob.id,
+              input,
+            })
+          }
+        />
+      )}
     </>
+  );
+}
+
+function CrawlerQueueCard({
+  canRetry,
+  isExcluding,
+  isManualBusy,
+  isRetrying,
+  isRetryingAll,
+  isSelected,
+  isSelectionBusy,
+  isSubmittingManual,
+  job,
+  onExclude,
+  onManual,
+  onRetry,
+  onSelect,
+}: {
+  canRetry: boolean;
+  isExcluding: boolean;
+  isManualBusy: boolean;
+  isRetrying: boolean;
+  isRetryingAll: boolean;
+  isSelected: boolean;
+  isSelectionBusy: boolean;
+  isSubmittingManual: boolean;
+  job: QueueJob;
+  onExclude: () => void;
+  onManual: () => void;
+  onRetry: () => void;
+  onSelect: (selected: boolean) => void;
+}) {
+  return (
+    <article className="pagespeed-job-card queue-crawler-card">
+      <header className="queue-crawler-card-header">
+        <label className="queue-crawler-select">
+          <input
+            aria-label={`Select indexing job for ${job.websiteUrl}`}
+            checked={isSelected}
+            disabled={isSelectionBusy}
+            onChange={(event) => onSelect(event.target.checked)}
+            type="checkbox"
+          />
+          <span className="sr-only">
+            Select indexing job for {job.websiteUrl}
+          </span>
+        </label>
+        <div className="queue-crawler-identity">
+          <div className="queue-crawler-title-row">
+            <strong>Website indexing</strong>
+            <span
+              className={`pagespeed-job-status pagespeed-job-status-${job.status}`}
+            >
+              {formatJobStatus(job.status)}
+            </span>
+          </div>
+          <a href={job.websiteUrl} rel="noreferrer" target="_blank">
+            {job.websiteUrl}
+          </a>
+        </div>
+        {job.siteType && (
+          <span className="queue-crawler-type">
+            {formatSiteType(job.siteType)}
+          </span>
+        )}
+      </header>
+
+      {job.error && (
+        <p className="queue-crawler-error">
+          <strong>
+            {job.status === "manual"
+              ? "Original crawler failure"
+              : "Failure reason"}
+          </strong>
+          <span>{job.error}</span>
+        </p>
+      )}
+      {job.skipReason && (
+        <p className="queue-crawler-error">
+          <strong>Skip reason</strong>
+          <span>{job.skipReason}</span>
+        </p>
+      )}
+
+      <div className="queue-crawler-card-footer">
+        <dl className="queue-crawler-meta">
+          <div>
+            <dt>Queued</dt>
+            <dd title={formatTimestamp(job.createdAt)}>
+              {formatCompactTimestamp(job.createdAt)}
+            </dd>
+          </div>
+          <div>
+            <dt>Started</dt>
+            <dd title={job.startedAt ? formatTimestamp(job.startedAt) : ""}>
+              {job.startedAt ? formatCompactTimestamp(job.startedAt) : "-"}
+            </dd>
+          </div>
+          <div>
+            <dt>Finished</dt>
+            <dd title={job.completedAt ? formatTimestamp(job.completedAt) : ""}>
+              {job.completedAt
+                ? formatCompactTimestamp(job.completedAt)
+                : "-"}
+            </dd>
+          </div>
+          <div>
+            <dt>Elapsed</dt>
+            <dd>
+              {job.startedAt
+                ? formatElapsedTime(job.startedAt, job.completedAt)
+                : "-"}
+            </dd>
+          </div>
+        </dl>
+
+        <footer className="queue-crawler-actions">
+          {job.status === "failed" && (
+            <>
+              <button
+                className="button button-primary queue-crawler-manual"
+                disabled={isManualBusy}
+                onClick={onManual}
+                type="button"
+              >
+                {isSubmittingManual ? "Saving..." : "Enter manually"}
+              </button>
+              <button
+                className="button button-secondary queue-crawler-retry"
+                disabled={
+                  isRetrying ||
+                  isRetryingAll ||
+                  isExcluding ||
+                  isSelectionBusy ||
+                  !canRetry
+                }
+                onClick={onRetry}
+                type="button"
+              >
+                {isRetrying ? "Retrying..." : "Retry"}
+              </button>
+            </>
+          )}
+          <button
+            className="queue-crawler-exclude"
+            disabled={
+              isExcluding ||
+              isSelectionBusy ||
+              isRetrying ||
+              isRetryingAll
+            }
+            onClick={onExclude}
+            title={`Add ${job.websiteUrl} to Excluded domains`}
+            type="button"
+          >
+            {isExcluding ? "Excluding..." : "Exclude"}
+          </button>
+        </footer>
+      </div>
+    </article>
+  );
+}
+
+function formatCompactTimestamp(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unavailable";
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatEnrichmentStatus(
+  status: ManualEnrichmentStatus,
+): string {
+  switch (status) {
+    case "queued":
+      return "queued";
+    case "already_available":
+      return "already available";
+    case "already_queued":
+      return "already queued";
+    case "not_configured":
+      return "not configured";
+    case "disabled":
+      return "disabled in settings";
+  }
+}
+
+function ManualCrawlEntryDialog({
+  isSubmitting,
+  job,
+  onClose,
+  onSubmit,
+}: {
+  isSubmitting: boolean;
+  job: QueueJob;
+  onClose: () => void;
+  onSubmit: (input: ManualWebsiteCrawlCompletionInput) => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const getValue = (name: string) => {
+      const value = formData.get(name);
+      return typeof value === "string" ? value.trim() : "";
+    };
+    const getOptional = (name: string) => getValue(name) || null;
+    const getList = (name: string) =>
+      Array.from(
+        new Set(
+          getValue(name)
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      );
+    const input: ManualWebsiteCrawlCompletionInput = {
+      site_type: getValue("site_type"),
+      website_topics: getList("website_topics"),
+      language: getOptional("language"),
+      home_page_url: getOptional("home_page_url"),
+      home_content: getOptional("home_content"),
+      about_page_url: getOptional("about_page_url"),
+      about_content: getOptional("about_content"),
+      blog_page_url: getOptional("blog_page_url"),
+      blog_content: getOptional("blog_content"),
+      service_page_url: getOptional("service_page_url"),
+      service_content: getOptional("service_content"),
+      contact_page_url: getOptional("contact_page_url"),
+      contact_content: getOptional("contact_content"),
+      goals_page_url: getOptional("goals_page_url"),
+      goals_content: getOptional("goals_content"),
+      emails: getList("emails"),
+      phones: getList("phones"),
+      social_links: getList("social_links"),
+    };
+    onSubmit(input);
+  }
+
+  return (
+    <dialog
+      aria-labelledby="manual-crawl-dialog-title"
+      className="crawl-dialog manual-crawl-dialog"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      ref={dialogRef}
+    >
+      <header className="crawl-dialog-header">
+        <div>
+          <p className="eyebrow">MANUAL INDEXING</p>
+          <h2 id="manual-crawl-dialog-title">Add website details</h2>
+          <p className="heading-copy">
+            Enter what you know for {job.websiteUrl}. The original crawl failure
+            stays in the queue history; available enrichment jobs run in the
+            background.
+          </p>
+        </div>
+        <button
+          aria-label="Close manual website data form"
+          className="icon-button crawl-dialog-close"
+          disabled={isSubmitting}
+          onClick={onClose}
+          type="button"
+        >
+          <X aria-hidden="true" size={18} strokeWidth={2} />
+        </button>
+      </header>
+      <form
+        className="company-form manual-crawl-form"
+        onSubmit={handleSubmit}
+      >
+        <div className="manual-crawl-fields">
+          <label>
+            Site type <span aria-hidden="true">*</span>
+            <input
+              autoFocus
+              maxLength={64}
+              name="site_type"
+              placeholder="For example, B2B SaaS"
+              required
+            />
+          </label>
+          <label>
+            Topics <span className="manual-crawl-hint">(comma separated)</span>
+            <input
+              maxLength={1500}
+              name="website_topics"
+              placeholder="analytics, reporting, automation"
+            />
+          </label>
+          <label>
+            Language
+            <input maxLength={35} name="language" placeholder="English" />
+          </label>
+          <label>
+            Emails <span className="manual-crawl-hint">(comma separated)</span>
+            <input
+              maxLength={3200}
+              name="emails"
+              placeholder="hello@example.com"
+            />
+          </label>
+          <label>
+            Phone numbers <span className="manual-crawl-hint">(comma separated)</span>
+            <input
+              maxLength={5000}
+              name="phones"
+              placeholder="+1 555 010 1234"
+            />
+          </label>
+          <label>
+            Social profile URLs{" "}
+            <span className="manual-crawl-hint">(comma separated)</span>
+            <input
+              maxLength={8000}
+              name="social_links"
+              placeholder="https://linkedin.com/company/example"
+            />
+          </label>
+        </div>
+        <details className="manual-crawl-pages">
+          <summary>Optional page URLs and content</summary>
+          {(
+            [
+              ["Home", "home_page_url", "home_content"],
+              ["About", "about_page_url", "about_content"],
+              ["Blog", "blog_page_url", "blog_content"],
+              ["Services", "service_page_url", "service_content"],
+              ["Contact", "contact_page_url", "contact_content"],
+              ["Goals or mission", "goals_page_url", "goals_content"],
+            ] as const
+          ).map(([label, urlName, contentName]) => (
+            <fieldset key={urlName}>
+              <legend>{label}</legend>
+              <label>
+                Page URL
+                <input
+                  maxLength={2000}
+                  name={urlName}
+                  placeholder="https://example.com/page"
+                  type="url"
+                />
+              </label>
+              <label>
+                Page content or notes
+                <textarea
+                  maxLength={20000}
+                  name={contentName}
+                  rows={3}
+                />
+              </label>
+            </fieldset>
+          ))}
+        </details>
+        <footer className="manual-crawl-form-actions">
+          <button
+            className="button button-secondary"
+            disabled={isSubmitting}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="button button-primary"
+            disabled={isSubmitting}
+            type="submit"
+          >
+            {isSubmitting ? "Saving..." : "Save manual data"}
+          </button>
+        </footer>
+      </form>
+    </dialog>
   );
 }
 

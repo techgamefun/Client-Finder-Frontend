@@ -3,7 +3,8 @@ export type QueueJobStatus =
   | "running"
   | "succeeded"
   | "failed"
-  | "skipped";
+  | "skipped"
+  | "manual";
 
 export function formatJobStatus(status: QueueJobStatus): string {
   switch (status) {
@@ -17,6 +18,8 @@ export function formatJobStatus(status: QueueJobStatus): string {
       return "Failed";
     case "skipped":
       return "Skipped";
+    case "manual":
+      return "Manual data";
   }
 }
 
