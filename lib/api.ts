@@ -839,6 +839,20 @@ export interface WebsiteReclassificationBatchResult {
   skipped_count: number;
 }
 
+export interface WebsiteBulkEnrichmentResult {
+  website_count: number;
+  queued_website_count: number;
+  queued_job_count: number;
+  skipped_website_count: number;
+}
+
+export interface WebsiteEnrichmentCounts {
+  classification_missing_count: number;
+  ahrefs_missing_count: number;
+  hypestat_missing_count: number;
+  pagespeed_missing_scan_count: number;
+}
+
 export interface WebsiteAddToLeadsResult {
   requested_count: number;
   created_count: number;
@@ -2377,6 +2391,31 @@ export function reclassifyWebsite(websiteId: string): Promise<WebsiteRecord> {
 export function reclassifyUnclassifiedWebsites(): Promise<WebsiteReclassificationBatchResult> {
   return request<WebsiteReclassificationBatchResult>(
     "/websites/reclassify-unclassified",
+    { method: "POST" },
+  );
+}
+
+export function getWebsiteEnrichmentCounts(): Promise<WebsiteEnrichmentCounts> {
+  return request<WebsiteEnrichmentCounts>("/websites/enrichment-counts");
+}
+
+export function fetchMissingWebsiteAhrefsDomainRatings(): Promise<WebsiteBulkEnrichmentResult> {
+  return request<WebsiteBulkEnrichmentResult>(
+    "/websites/ahrefs-domain-rating/fetch-missing",
+    { method: "POST" },
+  );
+}
+
+export function fetchMissingWebsiteHypeStatProfiles(): Promise<WebsiteBulkEnrichmentResult> {
+  return request<WebsiteBulkEnrichmentResult>(
+    "/websites/hypestat/fetch-missing",
+    { method: "POST" },
+  );
+}
+
+export function fetchMissingWebsitePageSpeedScans(): Promise<WebsiteBulkEnrichmentResult> {
+  return request<WebsiteBulkEnrichmentResult>(
+    "/websites/pagespeed/fetch-missing",
     { method: "POST" },
   );
 }

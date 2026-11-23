@@ -9,13 +9,18 @@ import {
   ChevronDown,
   RotateCcw,
   Search,
+  Sparkles,
   SlidersHorizontal,
 } from "lucide-react";
 import {
   addExcludedDomain,
   addExcludedDomainsBatch,
   addWebsitesToLeads,
+  fetchMissingWebsiteAhrefsDomainRatings,
+  fetchMissingWebsiteHypeStatProfiles,
+  fetchMissingWebsitePageSpeedScans,
   getWebsiteCorpusWords,
+  getWebsiteEnrichmentCounts,
   getWebsiteRegistryFacets,
   getWebsiteRegistryPage,
   getLeadBatches,
@@ -29,6 +34,7 @@ import type {
   ExcludedDomainInput,
   PageSpeedScanSummary,
   WebsiteRecord,
+  WebsiteBulkEnrichmentResult,
   WebsitePageType,
   WebsiteRegistryPageParams,
   WebsiteRegistrySortKey,
@@ -102,6 +108,23 @@ const pageSpeedCategories: {
 function numericFilter(value: string): number | null {
   const parsed = Number(value);
   return value.trim() && Number.isFinite(parsed) ? parsed : null;
+}
+
+function enrichmentQueueMessage(
+  result: WebsiteBulkEnrichmentResult,
+  itemLabel: string,
+): string {
+  if (result.queued_website_count === 0) {
+    return `No missing ${itemLabel} found among ${result.website_count} websites.`;
+  }
+  const queued = `${result.queued_website_count} website${result.queued_website_count === 1 ? "" : "s"}`;
+  const jobs = `${result.queued_job_count} ${itemLabel} ${result.queued_job_count === 1 ? "job" : "jobs"}`;
+  const skipped = `${result.skipped_website_count} already complete or in progress`;
+  return `Queued ${queued} (${jobs}); skipped ${skipped}.`;
+}
+
+function formatMissingCount(count: number, item: string): string {
+  return `${count} ${item}${count === 1 ? "" : "s"} missing`;
 }
 
 async function addExcludedDomainsInBatches(
@@ -278,6 +301,9 @@ export function WebsitesPage() {
   const websiteScrollTimerRef = useRef<number | null>(null);
   const selectFilteredRef = useRef<HTMLInputElement>(null);
   const addToLeadDialogRef = useRef<HTMLDialogElement>(null);
+  const enrichmentMenuRef = useRef<HTMLDivElement>(null);
+  const enrichmentTriggerRef = useRef<HTMLButtonElement>(null);
+  const [enrichmentMenuOpen, setEnrichmentMenuOpen] = useState(false);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
   const [leadGroupMode, setLeadGroupMode] = useState<"existing" | "custom">(
     "custom",
@@ -404,6 +430,37 @@ export function WebsitesPage() {
     staleTime: 5 * 60_000,
     retry: false,
   });
+  const enrichmentCountsQuery = useQuery({
+    queryKey: ["websites", "enrichment-counts"],
+    queryFn: getWebsiteEnrichmentCounts,
+    enabled: enrichmentMenuOpen,
+    staleTime: 15_000,
+    refetchInterval: enrichmentMenuOpen ? 15_000 : false,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!enrichmentMenuOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !enrichmentMenuRef.current?.contains(event.target)
+      ) {
+        setEnrichmentMenuOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setEnrichmentMenuOpen(false);
+        enrichmentTriggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [enrichmentMenuOpen]);
   const updateMutation = useMutation({
     mutationFn: ({
       websiteId,
@@ -546,13 +603,119 @@ export function WebsitesPage() {
   });
   const reclassifyAllMutation = useMutation({
     mutationFn: reclassifyUnclassifiedWebsites,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["websites"] }),
         queryClient.invalidateQueries({ queryKey: ["website-detail"] }),
       ]);
+      showToast({
+        type: "success",
+        title: "Website classification updated",
+        message: `Reclassified ${result.recomputed_count} website${result.recomputed_count === 1 ? "" : "s"}${result.skipped_count ? `; skipped ${result.skipped_count} without enough saved crawl data` : ""}.`,
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not classify websites",
+        message: error.message,
+      });
     },
   });
+  const handleEnrichmentQueued = async (
+    result: WebsiteBulkEnrichmentResult,
+    title: string,
+    itemLabel: string,
+  ) => {
+    showToast({
+      type: "success",
+      title,
+      message: enrichmentQueueMessage(result, itemLabel),
+    });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["websites"] }),
+      queryClient.invalidateQueries({ queryKey: ["website-detail"] }),
+      queryClient.invalidateQueries({
+        queryKey: ["websites", "enrichment-counts"],
+      }),
+    ]);
+  };
+  const ahrefsBulkMutation = useMutation({
+    mutationFn: fetchMissingWebsiteAhrefsDomainRatings,
+    onSuccess: (result) =>
+      handleEnrichmentQueued(result, "Ahrefs DR jobs queued", "Ahrefs DR"),
+    onError: (error: Error) =>
+      showToast({
+        type: "error",
+        title: "Could not queue Ahrefs DR fetches",
+        message: error.message,
+      }),
+  });
+  const hypestatBulkMutation = useMutation({
+    mutationFn: fetchMissingWebsiteHypeStatProfiles,
+    onSuccess: (result) =>
+      handleEnrichmentQueued(result, "HypeStat jobs queued", "HypeStat"),
+    onError: (error: Error) =>
+      showToast({
+        type: "error",
+        title: "Could not queue HypeStat fetches",
+        message: error.message,
+      }),
+  });
+  const pagespeedBulkMutation = useMutation({
+    mutationFn: fetchMissingWebsitePageSpeedScans,
+    onSuccess: (result) =>
+      handleEnrichmentQueued(result, "PageSpeed jobs queued", "PageSpeed scan"),
+    onError: (error: Error) =>
+      showToast({
+        type: "error",
+        title: "Could not queue PageSpeed scans",
+        message: error.message,
+      }),
+  });
+  const registryBulkActionPending =
+    reclassifyAllMutation.isPending ||
+    ahrefsBulkMutation.isPending ||
+    hypestatBulkMutation.isPending ||
+    pagespeedBulkMutation.isPending;
+  const enrichmentActions = [
+    {
+      label: "Classify type & topic",
+      description: "Use saved crawl data to fill missing classifications.",
+      count: enrichmentCountsQuery.data?.classification_missing_count,
+      countItem: "website",
+      pending: reclassifyAllMutation.isPending,
+      pendingLabel: "Classifying…",
+      run: () => reclassifyAllMutation.mutate(),
+    },
+    {
+      label: "Ahrefs Domain Rating",
+      description: "Fetch a rating for websites without one.",
+      count: enrichmentCountsQuery.data?.ahrefs_missing_count,
+      countItem: "website",
+      pending: ahrefsBulkMutation.isPending,
+      pendingLabel: "Queuing…",
+      run: () => ahrefsBulkMutation.mutate(),
+    },
+    {
+      label: "HypeStat profile",
+      description: "Fetch data for websites without a saved profile.",
+      count: enrichmentCountsQuery.data?.hypestat_missing_count,
+      countItem: "website",
+      pending: hypestatBulkMutation.isPending,
+      pendingLabel: "Queuing…",
+      run: () => hypestatBulkMutation.mutate(),
+    },
+    {
+      label: "PageSpeed scans",
+      description: "Run missing desktop and mobile scans.",
+      count: enrichmentCountsQuery.data?.pagespeed_missing_scan_count,
+      countItem: "scan",
+      pending: pagespeedBulkMutation.isPending,
+      pendingLabel: "Queuing…",
+      run: () => pagespeedBulkMutation.mutate(),
+    },
+  ];
   const pageWebsites = websitesQuery.data?.items ?? [];
   const visibleWebsiteIds = pageWebsites.map((website) => website.id);
   const visibleCrawlTimestamps = pageWebsites.map(
@@ -1275,31 +1438,103 @@ export function WebsitesPage() {
             </button>
           </div>
           <div className="website-registry-actions">
-            <button
-              className="button button-secondary"
-              disabled={
-                websitesQuery.isLoading ||
-                updateMutation.isPending ||
-                addToLeadMutation.isPending ||
-                batchStatusMutation.isPending ||
-                reclassifyMutation.isPending ||
-                reclassifyAllMutation.isPending
-              }
-              onClick={() => reclassifyAllMutation.mutate()}
-              title="Recomputes both fields for all indexed websites with an unclassified Website Type or empty Site Topic. Uses saved indexed data."
-              type="button"
-            >
-              {reclassifyAllMutation.isPending ? (
-                "Recomputing all…"
-              ) : (
-                <>
-                  <span className="website-recompute-label">
-                    Recompute all missing
-                  </span>
-                  <span className="website-recompute-short">Recompute</span>
-                </>
+            <div className="website-enrichment-menu" ref={enrichmentMenuRef}>
+              <button
+                aria-controls={
+                  enrichmentMenuOpen
+                    ? "website-enrichment-options"
+                    : undefined
+                }
+                aria-expanded={enrichmentMenuOpen}
+                className="website-enrichment-trigger"
+                onClick={() => setEnrichmentMenuOpen((open) => !open)}
+                ref={enrichmentTriggerRef}
+                type="button"
+              >
+                <Sparkles aria-hidden="true" size={15} />
+                <span>Enrichment</span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className={enrichmentMenuOpen ? "is-open" : undefined}
+                  size={14}
+                />
+              </button>
+              {enrichmentMenuOpen && (
+                <div
+                  aria-label="Website enrichment actions"
+                  className="website-enrichment-popover"
+                  id="website-enrichment-options"
+                  role="region"
+                >
+                  <div className="website-enrichment-heading">
+                    <strong>Fill missing data</strong>
+                    <p>
+                      Counts cover all saved websites and include work already
+                      in progress.
+                    </p>
+                  </div>
+                  {enrichmentCountsQuery.isError && (
+                    <div className="website-enrichment-error" role="alert">
+                      <span>Couldn’t load missing counts.</span>
+                      <button
+                        className="website-enrichment-retry"
+                        onClick={() => void enrichmentCountsQuery.refetch()}
+                        type="button"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {enrichmentCountsQuery.isLoading && (
+                    <p
+                      aria-live="polite"
+                      className="website-enrichment-loading"
+                    >
+                      Loading missing counts…
+                    </p>
+                  )}
+                  <div className="website-enrichment-options">
+                    {enrichmentActions.map((action) => (
+                      <button
+                        aria-label={
+                          action.count === undefined
+                            ? action.label
+                            : `${action.label}, ${formatMissingCount(action.count, action.countItem)}`
+                        }
+                        className="website-enrichment-option"
+                        disabled={
+                          registryBulkActionPending ||
+                          action.count === 0 ||
+                          (action.count === undefined &&
+                            !enrichmentCountsQuery.isError)
+                        }
+                        key={action.label}
+                        onClick={() => {
+                          setEnrichmentMenuOpen(false);
+                          action.run();
+                        }}
+                        type="button"
+                      >
+                        <span className="website-enrichment-option-copy">
+                          <span className="website-enrichment-option-title">
+                            {action.pending ? action.pendingLabel : action.label}
+                          </span>
+                          <span className="website-enrichment-option-description">
+                            {action.description}
+                          </span>
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="website-enrichment-count"
+                        >
+                          {action.count === undefined ? "—" : action.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
             <button
               aria-label="Refresh websites"
               className="icon-button refresh-button"
