@@ -2074,10 +2074,12 @@ html[data-theme="dark"] .toast-error .toast-icon {
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   padding: 0 12px;
+  background: transparent;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .jobs-tabs a:hover {
