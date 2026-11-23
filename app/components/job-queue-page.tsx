@@ -54,8 +54,7 @@ interface QueueJob {
 const queueConfig = {
   crawler: {
     title: "Website indexing queue",
-    description:
-      "Track indexing jobs from dispatch through completion, including run times and failures.",
+    description: "Monitor website indexing jobs and retry failures.",
     label: "WEBSITE INDEXING",
   },
   pagespeed: {
@@ -460,7 +459,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
 
   return (
     <>
-      <header className="page-heading">
+      <header className="page-heading queue-page-heading">
         <div>
           <p className="eyebrow">{config.label}</p>
           <h1>{config.title}</h1>
@@ -569,10 +568,10 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <div>
             <h2 id="queue-jobs-heading">Recent jobs</h2>
             <p className="panel-subtitle">
-              Showing {jobs.length} of {totalCount} matching jobs.
+              Showing {jobs.length} of {totalCount} jobs.
               {kind === "keywords"
                 ? " Status refreshes automatically every five seconds."
-                : " Job status updates are streamed in real time."}
+                : ""}
             </p>
           </div>
           <div className="queue-panel-controls">
