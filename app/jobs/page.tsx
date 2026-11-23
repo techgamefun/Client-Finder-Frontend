@@ -11,6 +11,8 @@ export default async function JobsRoute({ searchParams }: JobsRouteProps) {
       ? "pagespeed"
       : tab === "keywords"
         ? "keywords"
+        : tab === "hypestat"
+          ? "hypestat"
         : "crawler";
   return <JobsPage kind={kind} />;
 }

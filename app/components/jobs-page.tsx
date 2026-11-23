@@ -8,11 +8,12 @@ import {
   getPageSpeedScanJobs,
   getWebsiteCorpusAnalysisJobsPage,
   getWebsiteCrawlJobsPage,
+  getWebsiteHypeStatJobsPage,
   type QueueJobsPageParams,
 } from "@/lib/api";
 import { JobQueuePage } from "./job-queue-page";
 
-type JobQueueKind = "crawler" | "pagespeed" | "keywords";
+type JobQueueKind = "crawler" | "pagespeed" | "keywords" | "hypestat";
 
 const firstQueuePage: QueueJobsPageParams = {
   page: 1,
@@ -43,10 +44,16 @@ function prefetchQueue(
         staleTime: 30_000,
       }),
     ]);
-  } else {
+  } else if (kind === "keywords") {
     void queryClient.prefetchQuery({
       queryKey: ["website-corpus-analysis", "queue-jobs", firstQueuePage],
       queryFn: () => getWebsiteCorpusAnalysisJobsPage(firstQueuePage),
+      staleTime: 30_000,
+    });
+  } else {
+    void queryClient.prefetchQuery({
+      queryKey: ["hypestat", "queue-jobs", firstQueuePage],
+      queryFn: () => getWebsiteHypeStatJobsPage(firstQueuePage),
       staleTime: 30_000,
     });
   }
@@ -61,12 +68,15 @@ export function JobsPage({ kind: initialKind }: { kind: JobQueueKind }) {
       ? "pagespeed"
       : tab === "keywords"
         ? "keywords"
+        : tab === "hypestat"
+          ? "hypestat"
         : tab === "crawler"
           ? "crawler"
           : initialKind;
   const tabs: { kind: JobQueueKind; label: string }[] = [
     { kind: "crawler", label: "Indexing" },
     { kind: "pagespeed", label: "PageSpeed" },
+    { kind: "hypestat", label: "HypeStat" },
     { kind: "keywords", label: "Keywords" },
   ];
 

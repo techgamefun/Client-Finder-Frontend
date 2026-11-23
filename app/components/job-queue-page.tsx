@@ -15,8 +15,11 @@ import {
   getPageSpeedScanJobs,
   getWebsiteCrawlJobFailureReasons,
   getWebsiteCrawlJobsPage,
+  getWebsiteHypeStatJobsPage,
   retryWebsiteCorpusAnalysisJob,
   retryWebsiteCorpusAnalysisJobs,
+  retryWebsiteHypeStatJob,
+  retryWebsiteHypeStatJobs,
   retryPageSpeedScanJob,
   retryPageSpeedScanJobs,
   retryWebsiteCrawlJob,
@@ -26,6 +29,7 @@ import {
   type QueueJobsPageParams,
   type WebsiteCorpusAnalysisJob,
   type WebsiteCrawlJobResponse,
+  type WebsiteHypeStatFetchJob,
 } from "@/lib/api";
 import {
   formatElapsedTime,
@@ -37,7 +41,7 @@ import { formatSiteType } from "@/lib/site-type";
 import { useToast } from "./toast-provider";
 import { TableLoading } from "./page-loading";
 
-type QueueKind = "crawler" | "pagespeed" | "keywords";
+type QueueKind = "crawler" | "pagespeed" | "keywords" | "hypestat";
 
 interface QueueJob {
   id: string;
@@ -69,6 +73,12 @@ const queueConfig = {
     description:
       "Track background keyword analysis for newly crawled websites and retry failures.",
     label: "WEBSITE KEYWORDS",
+  },
+  hypestat: {
+    title: "HypeStat profile queue",
+    description:
+      "Monitor background HypeStat profile lookups, their progress, duration, and any failures.",
+    label: "HYPESTAT PROFILES",
   },
 } satisfies Record<
   QueueKind,
@@ -113,6 +123,21 @@ function normalizeCorpusAnalysisJob(
     websiteUrl: job.website_url,
     siteType: null,
     detail: "Keyword generation",
+    status: job.status,
+    error: job.status === "failed" ? job.error : null,
+    skipReason: job.status === "skipped" ? job.error : null,
+    createdAt: job.created_at,
+    startedAt: job.started_at,
+    completedAt: job.completed_at,
+  };
+}
+
+function normalizeHypeStatJob(job: WebsiteHypeStatFetchJob): QueueJob {
+  return {
+    id: job.id,
+    websiteUrl: job.website_url,
+    siteType: null,
+    detail: "HypeStat profile",
     status: job.status,
     error: job.status === "failed" ? job.error : null,
     skipReason: job.status === "skipped" ? job.error : null,
@@ -179,7 +204,9 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       ? "indexing"
       : kind === "pagespeed"
         ? "PageSpeed"
-        : "keyword generation";
+        : kind === "hypestat"
+          ? "HypeStat profile"
+          : "keyword generation";
   const showToast = useToast();
   const queryClient = useQueryClient();
   const [selectedState, setSelectedState] = useState<{
@@ -272,6 +299,16 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     enabled: kind === "keywords",
     refetchInterval: kind === "keywords" ? 5_000 : false,
   });
+  const hypestatJobsQuery = useQuery({
+    queryKey: ["hypestat", "queue-jobs", queueParams],
+    queryFn: () => getWebsiteHypeStatJobsPage(queueParams),
+    select: (result) => ({
+      ...result,
+      items: result.items.map(normalizeHypeStatJob),
+    }),
+    enabled: kind === "hypestat",
+    refetchInterval: kind === "hypestat" ? 5_000 : false,
+  });
   const pageSpeedSettingsQuery = useQuery({
     queryKey: ["application-settings"],
     queryFn: getApplicationSettings,
@@ -283,7 +320,9 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       ? crawlerJobsQuery
       : kind === "pagespeed"
         ? pageSpeedJobsQuery
-        : corpusAnalysisJobsQuery;
+        : kind === "keywords"
+          ? corpusAnalysisJobsQuery
+          : hypestatJobsQuery;
   const canRetryJobs =
     kind !== "pagespeed" ||
     pageSpeedSettingsQuery.data?.pagespeed_configured === true;
@@ -293,6 +332,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         await retryWebsiteCrawlJob(jobId);
       } else if (kind === "keywords") {
         await retryWebsiteCorpusAnalysisJob(jobId);
+      } else if (kind === "hypestat") {
+        await retryWebsiteHypeStatJob(jobId);
       } else {
         await retryPageSpeedScanJob(jobId);
       }
@@ -381,9 +422,13 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           ? await retryWebsiteCrawlJobs(failedJobs.map((job) => job.id))
           : kind === "pagespeed"
             ? await retryPageSpeedScanJobs(failedJobs.map((job) => job.id))
-            : await retryWebsiteCorpusAnalysisJobs(
-                failedJobs.map((job) => job.id),
-              );
+            : kind === "keywords"
+              ? await retryWebsiteCorpusAnalysisJobs(
+                  failedJobs.map((job) => job.id),
+                )
+              : await retryWebsiteHypeStatJobs(
+                  failedJobs.map((job) => job.id),
+                );
       const jobsById = new Map(failedJobs.map((job) => [job.id, job]));
 
       return {
@@ -528,7 +573,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         className={`queue-stats-grid ${
           kind === "crawler"
             ? "queue-stats-grid-crawler"
-            : kind === "keywords"
+            : kind === "keywords" || kind === "hypestat"
               ? "queue-stats-grid-keywords"
               : ""
         }`}
@@ -557,7 +602,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           onClick={() => toggleStatusFilter("failed")}
           value={failedCount}
         />
-        {kind === "keywords" && (
+        {(kind === "keywords" || kind === "hypestat") && (
           <QueueStat
             active={statusFilter === "skipped"}
             label="Skipped"
@@ -618,6 +663,8 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
               Showing {jobs.length} of {totalCount} jobs.
               {kind === "keywords"
                 ? " Status refreshes automatically every five seconds."
+                : kind === "hypestat"
+                  ? " HypeStat job status refreshes automatically every five seconds."
                 : ""}
             </p>
           </div>

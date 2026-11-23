@@ -312,6 +312,20 @@ export interface WebsiteCorpusAnalysisJob {
   completed_at: string | null;
 }
 
+export interface WebsiteHypeStatFetchJob {
+  id: string;
+  website_id: string;
+  website_url: string;
+  domain: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface CompanyInput {
   name: string;
   website?: string | null;
@@ -2481,6 +2495,36 @@ export function retryWebsiteCorpusAnalysisJobs(
 ): Promise<BatchJobRetryResponse> {
   return request<BatchJobRetryResponse>(
     "/websites/corpus-words/jobs/retry-batch",
+    {
+      method: "POST",
+      body: JSON.stringify({ job_ids: jobIds }),
+    },
+  );
+}
+
+export function getWebsiteHypeStatJobsPage(
+  params: QueueJobsPageParams = {},
+): Promise<QueueJobsPage<WebsiteHypeStatFetchJob>> {
+  const query = queueJobsQuery(params);
+  return request<QueueJobsPage<WebsiteHypeStatFetchJob>>(
+    `/websites/hypestat/jobs${query ? `?${query}` : ""}`,
+  );
+}
+
+export function retryWebsiteHypeStatJob(
+  jobId: string,
+): Promise<WebsiteHypeStatFetchJob> {
+  return request<WebsiteHypeStatFetchJob>(
+    `/websites/hypestat/jobs/${jobId}/retry`,
+    { method: "POST" },
+  );
+}
+
+export function retryWebsiteHypeStatJobs(
+  jobIds: string[],
+): Promise<BatchJobRetryResponse> {
+  return request<BatchJobRetryResponse>(
+    "/websites/hypestat/jobs/retry-batch",
     {
       method: "POST",
       body: JSON.stringify({ job_ids: jobIds }),
