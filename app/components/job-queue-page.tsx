@@ -565,7 +565,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
 
       <section aria-labelledby="queue-jobs-heading" className="panel queue-panel">
         <div className="queue-panel-heading">
-          <div>
+          <div className="queue-panel-title">
             <h2 id="queue-jobs-heading">Recent jobs</h2>
             <p className="panel-subtitle">
               Showing {jobs.length} of {totalCount} jobs.
@@ -682,7 +682,10 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         ) : (
           <div className="pagespeed-job-list">
             {visibleJobs.map((job) => (
-              <article className="pagespeed-job-card" key={job.id}>
+              <article
+                className={`pagespeed-job-card queue-job-card queue-job-card-${kind}`}
+                key={job.id}
+              >
                 <div className="pagespeed-job-card-heading">
                   <div>
                     <strong>{job.detail}</strong>

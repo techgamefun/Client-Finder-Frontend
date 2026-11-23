@@ -1918,6 +1918,25 @@ html[data-theme="dark"] .toast-error .toast-icon {
   padding: 12px;
 }
 
+.queue-job-card-crawler {
+  padding: 8px 10px;
+}
+
+.queue-job-card-crawler .pagespeed-job-times {
+  gap: 4px 10px;
+  margin-top: 7px;
+}
+
+.queue-job-card-crawler .pagespeed-job-times dt {
+  margin-bottom: 1px;
+}
+
+.queue-job-card-crawler .pagespeed-job-error {
+  margin-top: 6px;
+  padding: 6px 8px;
+  line-height: 1.4;
+}
+
 .pagespeed-job-card-heading {
   flex-wrap: wrap;
 }
@@ -2180,6 +2199,22 @@ html[data-theme="dark"] .toast-error .toast-icon {
   line-height: 1.4;
 }
 
+.queue-panel-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.queue-panel .queue-panel-title h2 {
+  margin: 0;
+}
+
+.queue-panel .queue-panel-title .panel-subtitle {
+  margin: 0;
+}
+
 .queue-panel-controls {
   display: flex;
   align-items: center;
@@ -2232,7 +2267,7 @@ html[data-theme="dark"] .toast-error .toast-icon {
 }
 
 .queue-search-input {
-  width: min(220px, 100%);
+  width: min(180px, 100%);
   min-height: 31px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -6692,6 +6727,50 @@ html[data-theme="dark"] .discovery-result > p {
 @media (min-width: 760px) {
   .pagespeed-job-times {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .queue-job-card-crawler .pagespeed-job-card-heading {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .queue-job-card-crawler .pagespeed-job-card-heading > div:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+  }
+
+  .queue-job-card-crawler .queue-job-actions {
+    gap: 5px;
+  }
+
+  .queue-job-card-crawler .queue-exclude-button,
+  .queue-job-card-crawler .queue-retry-button {
+    min-height: 25px;
+    padding: 0 7px;
+  }
+}
+
+@media (min-width: 900px) {
+  .queue-panel-heading {
+    flex-wrap: nowrap;
+  }
+
+  .queue-panel-title {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+
+  .queue-panel-controls {
+    flex-wrap: nowrap;
+  }
+
+  .queue-select-page,
+  .queue-panel-controls .button {
+    white-space: nowrap;
   }
 }
 
