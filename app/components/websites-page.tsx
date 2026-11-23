@@ -114,13 +114,34 @@ function enrichmentQueueMessage(
   result: WebsiteBulkEnrichmentResult,
   itemLabel: string,
 ): string {
-  if (result.queued_website_count === 0) {
+  if (result.missing_website_count === 0) {
     return `No missing ${itemLabel} found among ${result.website_count} websites.`;
   }
+  const missing = `${result.missing_website_count} website${result.missing_website_count === 1 ? "" : "s"} missing ${itemLabel}`;
+  if (result.queued_job_count === 0) {
+    if (result.in_progress_job_count > 0) {
+      const active = `${result.in_progress_job_count} ${itemLabel} ${result.in_progress_job_count === 1 ? "job is" : "jobs are"} already queued or running`;
+      return `${missing}; ${active}.`;
+    }
+    return `${missing}; no new jobs were queued.`;
+  }
+
+  const messages: string[] = [];
   const queued = `${result.queued_website_count} website${result.queued_website_count === 1 ? "" : "s"}`;
   const jobs = `${result.queued_job_count} ${itemLabel} ${result.queued_job_count === 1 ? "job" : "jobs"}`;
-  const skipped = `${result.skipped_website_count} already complete or in progress`;
-  return `Queued ${queued} (${jobs}); skipped ${skipped}.`;
+  messages.push(`Queued ${queued} (${jobs})`);
+  if (result.in_progress_job_count > 0) {
+    const inProgress = `${result.in_progress_job_count} ${itemLabel} ${result.in_progress_job_count === 1 ? "job is" : "jobs are"} already queued or running`;
+    messages.push(inProgress);
+  }
+  const completeWebsiteCount =
+    result.website_count - result.missing_website_count;
+  if (completeWebsiteCount > 0) {
+    messages.push(
+      `${completeWebsiteCount} website${completeWebsiteCount === 1 ? "" : "s"} already complete`,
+    );
+  }
+  return `${messages.join("; ")}.`;
 }
 
 function formatMissingCount(count: number, item: string): string {

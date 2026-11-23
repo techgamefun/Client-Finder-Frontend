@@ -843,6 +843,8 @@ export interface WebsiteBulkEnrichmentResult {
   website_count: number;
   queued_website_count: number;
   queued_job_count: number;
+  missing_website_count: number;
+  in_progress_job_count: number;
   skipped_website_count: number;
 }
 
