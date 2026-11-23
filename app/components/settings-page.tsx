@@ -1087,8 +1087,8 @@ export function SettingsPage() {
                 <h2>API subscription and usage</h2>
                 <p className="panel-subtitle">
                   Your key is stored on the backend and is never returned to
-                  this page. Usage is retrieved from Ahrefs without consuming
-                  Site Explorer units.
+                  this page. Usage lookup does not consume Site Explorer units,
+                  but may not be available with a free public-endpoints key.
                 </p>
               </div>
               <span
@@ -1188,6 +1188,13 @@ export function SettingsPage() {
                 {ahrefsUsageQuery.error.message}
               </p>
             )}
+            {settingsQuery.data.ahrefs_configured &&
+              ahrefsUsageQuery.data === null && (
+                <p className="settings-feedback" role="status">
+                  Subscription usage is not available for this API key. Free
+                  public Domain Rating lookups may still work.
+                </p>
+              )}
             {settingsQuery.data.ahrefs_configured &&
               ahrefsUsageQuery.data && (
               <AhrefsUsagePanel usage={ahrefsUsageQuery.data} />

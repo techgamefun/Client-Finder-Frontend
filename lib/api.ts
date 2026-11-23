@@ -78,6 +78,7 @@ export interface QueueJobsPage<T> {
 
 export interface QueueJobsPageParams {
   search?: string;
+  failure_reason?: string;
   status?: string;
   page?: number;
   page_size?: number;
@@ -605,11 +606,88 @@ export interface WebsiteRecord {
   hypestat_referring_domains: number | null;
   hypestat_global_rank: number | null;
   hypestat_country: string | null;
+  ahrefs_domain_rating: number | null;
+  ahrefs_domain_rating_license_url: string | null;
+  ahrefs_domain_rating_fetched_at: string | null;
+  pagespeed_desktop: PageSpeedScanSummary | null;
+  pagespeed_mobile: PageSpeedScanSummary | null;
   hypestat_referring_domains_by_country: {
     country: string;
     domains: number;
   }[];
   hypestat_audience_countries: string[];
+}
+
+export interface WebsiteAnalyticsBreakdown {
+  key: string;
+  count: number;
+  percentage: number;
+}
+
+export interface WebsiteAnalyticsCoverage {
+  domain_rating: number;
+  hypestat: number;
+  pagespeed_any: number;
+  pagespeed_desktop: number;
+  pagespeed_mobile: number;
+}
+
+export interface WebsiteAnalyticsDomainRating {
+  count: number;
+  average: number | null;
+  median: number | null;
+  distribution: WebsiteAnalyticsBreakdown[];
+}
+
+export interface WebsiteAnalyticsPageSpeedDevice {
+  scanned_websites: number;
+  averages: Record<string, number | null>;
+  performance_distribution: WebsiteAnalyticsBreakdown[];
+}
+
+export interface WebsiteAnalyticsKeywordTerm {
+  keyword: string;
+  website_count: number;
+  website_percentage: number;
+}
+
+export interface WebsiteAnalyticsDiscoveryKeyword {
+  keyword: string;
+  website_count: number;
+  website_percentage: number;
+  search_count: number;
+}
+
+export interface WebsiteContentKeywordAnalytics {
+  analyzed_websites: number;
+  crawled_websites: number;
+  unique_words: number;
+  unique_phrases: number;
+  top_words: WebsiteAnalyticsKeywordTerm[];
+  top_phrases: WebsiteAnalyticsKeywordTerm[];
+}
+
+export interface WebsiteDiscoveryKeywordAnalytics {
+  unique_queries: number;
+  linked_websites: number;
+  top_queries: WebsiteAnalyticsDiscoveryKeyword[];
+}
+
+export interface WebsiteAnalyticsResponse {
+  generated_at: string;
+  total_websites: number;
+  crawled_websites: number;
+  crawled_percentage: number | null;
+  coverage: WebsiteAnalyticsCoverage;
+  status_breakdown: WebsiteAnalyticsBreakdown[];
+  discovery_source_breakdown: WebsiteAnalyticsBreakdown[];
+  site_type_breakdown: WebsiteAnalyticsBreakdown[];
+  page_type_breakdown: WebsiteAnalyticsBreakdown[];
+  domain_rating: WebsiteAnalyticsDomainRating;
+  pagespeed_desktop: WebsiteAnalyticsPageSpeedDevice;
+  pagespeed_mobile: WebsiteAnalyticsPageSpeedDevice;
+  content_keywords: WebsiteContentKeywordAnalytics;
+  discovery_keywords: WebsiteDiscoveryKeywordAnalytics;
 }
 
 export type WebsiteRegistrySortKey =
@@ -623,7 +701,16 @@ export type WebsiteRegistrySortKey =
   | "hypestat_global_rank"
   | "hypestat_country"
   | "hypestat_backlink_countries"
-  | "hypestat_audience_countries";
+  | "hypestat_audience_countries"
+  | "ahrefs_domain_rating"
+  | "pagespeed_desktop_performance"
+  | "pagespeed_desktop_accessibility"
+  | "pagespeed_desktop_best_practices"
+  | "pagespeed_desktop_seo"
+  | "pagespeed_mobile_performance"
+  | "pagespeed_mobile_accessibility"
+  | "pagespeed_mobile_best_practices"
+  | "pagespeed_mobile_seo";
 
 export interface WebsiteRegistryPageParams {
   limit: number;
@@ -636,6 +723,12 @@ export interface WebsiteRegistryPageParams {
   minimum_monthly_visits?: number;
   minimum_referring_domains?: number;
   maximum_global_rank?: number;
+  minimum_ahrefs_domain_rating?: number;
+  maximum_ahrefs_domain_rating?: number;
+  pagespeed_strategy?: "desktop" | "mobile";
+  pagespeed_category?: "performance" | "accessibility" | "best-practices" | "seo";
+  minimum_pagespeed_score?: number;
+  maximum_pagespeed_score?: number;
   hypestat_country?: string;
   backlink_country?: string;
   audience_country?: string;
@@ -678,14 +771,14 @@ export interface WebsiteAhrefsMetrics {
   snapshot_date: string;
   domain_rating: number;
   domain_rating_license_url: string;
-  organic_traffic: number | null;
-  organic_traffic_cost_cents: number | null;
-  organic_keywords: number | null;
-  backlinks_live: number | null;
-  backlinks_all_time: number | null;
-  refdomains_live: number | null;
-  refdomains_all_time: number | null;
-  units_used: number | null;
+  organic_traffic?: number | null;
+  organic_traffic_cost_cents?: number | null;
+  organic_keywords?: number | null;
+  backlinks_live?: number | null;
+  backlinks_all_time?: number | null;
+  refdomains_live?: number | null;
+  refdomains_all_time?: number | null;
+  units_used?: number | null;
   fetched_at: string;
 }
 
@@ -1669,8 +1762,8 @@ export function getHypeStatUsage(): Promise<HypeStatUsage> {
   return request<HypeStatUsage>("/settings/hypestat/usage");
 }
 
-export function getAhrefsUsage(): Promise<AhrefsUsage> {
-  return request<AhrefsUsage>("/settings/ahrefs/usage");
+export function getAhrefsUsage(): Promise<AhrefsUsage | null> {
+  return request<AhrefsUsage | null>("/settings/ahrefs/usage");
 }
 
 export function getOctoparseUsage(): Promise<OctoparseUsage> {
@@ -2375,6 +2468,10 @@ export function deleteExcludedDomain(domainId: string): Promise<void> {
   });
 }
 
+export function getWebsiteAnalytics(): Promise<WebsiteAnalyticsResponse> {
+  return request<WebsiteAnalyticsResponse>("/websites/analytics");
+}
+
 export async function getWebsites(): Promise<WebsiteRecord[]> {
   const pageSize = 500;
   const websites: WebsiteRecord[] = [];
@@ -2421,6 +2518,10 @@ export function getPageSpeedJobSummary(): Promise<JobQueueStatusSummary> {
 
 export function getCompanyNavigationSummary(): Promise<CompanyNavigationSummary> {
   return request<CompanyNavigationSummary>("/companies/navigation-summary");
+}
+
+export function getWebsiteCrawlJobFailureReasons(): Promise<string[]> {
+  return request<string[]>("/crawler/jobs/failure-reasons");
 }
 
 export function retryWebsiteCrawlJob(

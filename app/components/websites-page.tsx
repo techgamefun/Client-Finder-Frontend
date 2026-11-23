@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import type {
   ExcludedDomainInput,
+  PageSpeedScanSummary,
   WebsiteRecord,
   WebsitePageType,
   WebsiteRegistryPageParams,
@@ -56,10 +57,28 @@ const pageTypes: WebsitePageType[] = [
 const pageSizes = [10, 25, 50];
 const websiteStatuses: WebsiteStatus[] = ["new", "lead", "checked"];
 const EXCLUDED_DOMAIN_BATCH_SIZE = 1000;
+const pageSpeedSortOptions: {
+  key: WebsiteRegistrySortKey;
+  label: string;
+}[] = [
+  { key: "pagespeed_desktop_performance", label: "Desktop performance" },
+  { key: "pagespeed_desktop_accessibility", label: "Desktop accessibility" },
+  {
+    key: "pagespeed_desktop_best_practices",
+    label: "Desktop best practices",
+  },
+  { key: "pagespeed_desktop_seo", label: "Desktop SEO" },
+  { key: "pagespeed_mobile_performance", label: "Mobile performance" },
+  { key: "pagespeed_mobile_accessibility", label: "Mobile accessibility" },
+  { key: "pagespeed_mobile_best_practices", label: "Mobile best practices" },
+  { key: "pagespeed_mobile_seo", label: "Mobile SEO" },
+];
 const websiteSortOptions: { key: WebsiteRegistrySortKey; label: string }[] = [
   { key: "website", label: "Website" },
   { key: "website_type", label: "Website type" },
   { key: "site_topic", label: "Site topic" },
+  { key: "ahrefs_domain_rating", label: "Domain Rating (DR)" },
+  ...pageSpeedSortOptions,
   { key: "hypestat_monthly_visits", label: "Monthly visits" },
   { key: "hypestat_referring_domains", label: "Referring domains" },
   { key: "hypestat_global_rank", label: "Global rank" },
@@ -68,6 +87,15 @@ const websiteSortOptions: { key: WebsiteRegistrySortKey; label: string }[] = [
   { key: "hypestat_audience_countries", label: "Audience countries" },
   { key: "language", label: "Language" },
   { key: "crawled_at", label: "Crawled at" },
+];
+const pageSpeedCategories: {
+  key: NonNullable<WebsiteRegistryPageParams["pagespeed_category"]>;
+  label: string;
+}[] = [
+  { key: "performance", label: "Performance" },
+  { key: "accessibility", label: "Accessibility" },
+  { key: "best-practices", label: "Best practices" },
+  { key: "seo", label: "SEO" },
 ];
 
 function numericFilter(value: string): number | null {
@@ -161,6 +189,53 @@ function SortableHeader({
   );
 }
 
+function PageSpeedScoreCell({
+  label,
+  category,
+  scan,
+}: {
+  label: string;
+  category: string;
+  scan: PageSpeedScanSummary | null;
+}) {
+  const score = scan?.category_scores[category] ?? null;
+  const scoreTone =
+    score === null
+      ? "unknown"
+      : score >= 90
+        ? "good"
+        : score >= 50
+          ? "needs-work"
+          : "poor";
+  const scannedDate = scan
+    ? new Date(scan.scanned_at).toLocaleDateString(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : null;
+  return (
+    <td className="website-pagespeed-score-cell" data-label={label}>
+      <span
+        aria-label={
+          score === null ? `${label}: not reported` : `${label}: ${score} / 100`
+        }
+        className={`website-pagespeed-table-score is-${scoreTone}`}
+        title={
+          score === null
+            ? `${label}: not reported`
+            : `${label}: ${score} / 100`
+        }
+      >
+        {score ?? "—"}
+      </span>
+      {category === "performance" && scannedDate && (
+        <small>{scannedDate}</small>
+      )}
+    </td>
+  );
+}
+
 function snapWebsiteTableToColumn(element: HTMLDivElement) {
   const containerLeft = element.getBoundingClientRect().left;
   const frozenColumn = element.querySelector<HTMLTableCellElement>(
@@ -241,6 +316,18 @@ export function WebsitesPage() {
   const [minimumMonthlyVisits, setMinimumMonthlyVisits] = useState("");
   const [minimumReferringDomains, setMinimumReferringDomains] = useState("");
   const [maximumGlobalRank, setMaximumGlobalRank] = useState("");
+  const [minimumAhrefsDomainRating, setMinimumAhrefsDomainRating] =
+    useState("");
+  const [maximumAhrefsDomainRating, setMaximumAhrefsDomainRating] =
+    useState("");
+  const [pageSpeedStrategy, setPageSpeedStrategy] =
+    useState<PageSpeedScanSummary["strategy"]>("desktop");
+  const [pageSpeedCategory, setPageSpeedCategory] =
+    useState<NonNullable<WebsiteRegistryPageParams["pagespeed_category"]>>(
+      "performance",
+    );
+  const [minimumPageSpeedScore, setMinimumPageSpeedScore] = useState("");
+  const [maximumPageSpeedScore, setMaximumPageSpeedScore] = useState("");
   const [hypestatCountry, setHypestatCountry] = useState("all");
   const [backlinkCountry, setBacklinkCountry] = useState("all");
   const [audienceCountry, setAudienceCountry] = useState("all");
@@ -252,6 +339,9 @@ export function WebsitesPage() {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
     return () => window.clearTimeout(timer);
   }, [search]);
+  const hasPageSpeedScoreFilter = Boolean(
+    minimumPageSpeedScore || maximumPageSpeedScore,
+  );
   const registryParams: WebsiteRegistryPageParams = {
     limit: pageSize,
     offset: (currentPage - 1) * pageSize,
@@ -265,6 +355,20 @@ export function WebsitesPage() {
     minimum_referring_domains:
       numericFilter(minimumReferringDomains) ?? undefined,
     maximum_global_rank: numericFilter(maximumGlobalRank) ?? undefined,
+    minimum_ahrefs_domain_rating:
+      numericFilter(minimumAhrefsDomainRating) ?? undefined,
+    maximum_ahrefs_domain_rating:
+      numericFilter(maximumAhrefsDomainRating) ?? undefined,
+    pagespeed_strategy: hasPageSpeedScoreFilter
+      ? pageSpeedStrategy
+      : undefined,
+    pagespeed_category: hasPageSpeedScoreFilter
+      ? pageSpeedCategory
+      : undefined,
+    minimum_pagespeed_score:
+      numericFilter(minimumPageSpeedScore) ?? undefined,
+    maximum_pagespeed_score:
+      numericFilter(maximumPageSpeedScore) ?? undefined,
     hypestat_country:
       hypestatCountry === "all" ? undefined : hypestatCountry,
     backlink_country:
@@ -491,6 +595,10 @@ export function WebsitesPage() {
     minimumMonthlyVisits,
     minimumReferringDomains,
     maximumGlobalRank,
+    minimumAhrefsDomainRating,
+    maximumAhrefsDomainRating,
+    minimumPageSpeedScore,
+    maximumPageSpeedScore,
   ].filter(Boolean).length +
     [hypestatCountry, backlinkCountry, audienceCountry].filter(
       (value) => value !== "all",
@@ -613,6 +721,12 @@ export function WebsitesPage() {
                       setMinimumMonthlyVisits("");
                       setMinimumReferringDomains("");
                       setMaximumGlobalRank("");
+                      setMinimumAhrefsDomainRating("");
+                      setMaximumAhrefsDomainRating("");
+                      setPageSpeedStrategy("desktop");
+                      setPageSpeedCategory("performance");
+                      setMinimumPageSpeedScore("");
+                      setMaximumPageSpeedScore("");
                       setHypestatCountry("all");
                       setBacklinkCountry("all");
                       setAudienceCountry("all");
@@ -812,6 +926,115 @@ export function WebsitesPage() {
                 </select>
               </label>
             </div>
+              </div>
+              <div className="website-filter-group">
+                <h2>Domain Rating</h2>
+                <div className="website-advanced-filter-grid">
+                  <label className="website-filter-field hypestat-table-filter">
+                    <span className="website-filter-field-label">
+                      Min. DR
+                    </span>
+                    <input
+                      max="100"
+                      min="0"
+                      onChange={(event) => {
+                        resetPage();
+                        setMinimumAhrefsDomainRating(event.target.value);
+                      }}
+                      placeholder="0–100"
+                      type="number"
+                      value={minimumAhrefsDomainRating}
+                    />
+                  </label>
+                  <label className="website-filter-field hypestat-table-filter">
+                    <span className="website-filter-field-label">
+                      Max. DR
+                    </span>
+                    <input
+                      max="100"
+                      min="0"
+                      onChange={(event) => {
+                        resetPage();
+                        setMaximumAhrefsDomainRating(event.target.value);
+                      }}
+                      placeholder="0–100"
+                      type="number"
+                      value={maximumAhrefsDomainRating}
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="website-filter-group">
+                <h2>PageSpeed score</h2>
+                <div className="website-advanced-filter-grid">
+                  <label className="website-filter-field select-filter">
+                    <span className="website-filter-field-label">Device</span>
+                    <select
+                      onChange={(event) => {
+                        resetPage();
+                        const strategy = event.target.value;
+                        if (strategy === "desktop" || strategy === "mobile") {
+                          setPageSpeedStrategy(strategy);
+                        }
+                      }}
+                      value={pageSpeedStrategy}
+                    >
+                      <option value="desktop">Desktop</option>
+                      <option value="mobile">Mobile</option>
+                    </select>
+                  </label>
+                  <label className="website-filter-field select-filter">
+                    <span className="website-filter-field-label">Category</span>
+                    <select
+                      onChange={(event) => {
+                        resetPage();
+                        const category = pageSpeedCategories.find(
+                          (option) => option.key === event.target.value,
+                        )?.key;
+                        if (category) setPageSpeedCategory(category);
+                      }}
+                      value={pageSpeedCategory}
+                    >
+                      {pageSpeedCategories.map(({ key, label }) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="website-filter-field hypestat-table-filter">
+                    <span className="website-filter-field-label">
+                      Min. score
+                    </span>
+                    <input
+                      max="100"
+                      min="0"
+                      onChange={(event) => {
+                        resetPage();
+                        setMinimumPageSpeedScore(event.target.value);
+                      }}
+                      placeholder="0–100"
+                      type="number"
+                      value={minimumPageSpeedScore}
+                    />
+                  </label>
+                  <label className="website-filter-field hypestat-table-filter">
+                    <span className="website-filter-field-label">
+                      Max. score
+                    </span>
+                    <input
+                      max="100"
+                      min="0"
+                      onChange={(event) => {
+                        resetPage();
+                        setMaximumPageSpeedScore(event.target.value);
+                      }}
+                      placeholder="0–100"
+                      type="number"
+                      value={maximumPageSpeedScore}
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           </details>
@@ -1249,6 +1472,21 @@ export function WebsitesPage() {
                       sort={sort}
                       sortKey="crawled_at"
                     />
+                    <SortableHeader
+                      label="DR"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="ahrefs_domain_rating"
+                    />
+                    {pageSpeedSortOptions.map(({ key, label }) => (
+                      <SortableHeader
+                        key={key}
+                        label={label}
+                        onSort={toggleSort}
+                        sort={sort}
+                        sortKey={key}
+                      />
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -1610,6 +1848,51 @@ export function WebsitesPage() {
                           ? new Date(website.crawled_at).toLocaleString()
                           : "—"}
                       </td>
+                      <td className="website-ahrefs-dr-cell" data-label="DR">
+                        {website.ahrefs_domain_rating === null
+                          ? "—"
+                          : website.ahrefs_domain_rating.toFixed(1)}
+                      </td>
+                      <PageSpeedScoreCell
+                        category="performance"
+                        label="Desktop performance"
+                        scan={website.pagespeed_desktop}
+                      />
+                      <PageSpeedScoreCell
+                        category="accessibility"
+                        label="Desktop accessibility"
+                        scan={website.pagespeed_desktop}
+                      />
+                      <PageSpeedScoreCell
+                        category="best-practices"
+                        label="Desktop best practices"
+                        scan={website.pagespeed_desktop}
+                      />
+                      <PageSpeedScoreCell
+                        category="seo"
+                        label="Desktop SEO"
+                        scan={website.pagespeed_desktop}
+                      />
+                      <PageSpeedScoreCell
+                        category="performance"
+                        label="Mobile performance"
+                        scan={website.pagespeed_mobile}
+                      />
+                      <PageSpeedScoreCell
+                        category="accessibility"
+                        label="Mobile accessibility"
+                        scan={website.pagespeed_mobile}
+                      />
+                      <PageSpeedScoreCell
+                        category="best-practices"
+                        label="Mobile best practices"
+                        scan={website.pagespeed_mobile}
+                      />
+                      <PageSpeedScoreCell
+                        category="seo"
+                        label="Mobile SEO"
+                        scan={website.pagespeed_mobile}
+                      />
                     </tr>
                   ))}
                 </tbody>

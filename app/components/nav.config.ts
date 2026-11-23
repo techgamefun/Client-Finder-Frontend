@@ -1,5 +1,6 @@
 import {
   Building2,
+  BarChart3,
   CircleOff,
   Compass,
   FileText,
@@ -82,6 +83,12 @@ export const navigationSections: NavigationSection[] = [
         label: "Websites",
         href: "/websites",
         icon: Globe,
+      },
+      {
+        id: "website-analytics",
+        label: "Website analytics",
+        href: "/website-analytics",
+        icon: BarChart3,
       },
     ],
   },

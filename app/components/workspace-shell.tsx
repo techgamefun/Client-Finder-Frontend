@@ -753,6 +753,7 @@ const workspaceRoutes = new Set([
   "/settings",
   "/signup",
   "/templates",
+  "/website-analytics",
   "/websites",
 ]);
 
@@ -1704,6 +1705,7 @@ function getPageLoadingLabel(pathname: string) {
   if (pathname === "/organization/settings") return "organization settings";
   if (pathname === "/organization") return "organization";
   if (pathname === "/overview") return "overview";
+  if (pathname === "/website-analytics") return "website analytics";
   if (pathname.startsWith("/company/")) return "company details";
   if (pathname.startsWith("/websites/")) return "website details";
   if (pathname === "/websites") return "websites";
@@ -1727,6 +1729,7 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
     return "dashboard";
   }
   if (pathname === "/overview") return "overview";
+  if (pathname === "/website-analytics") return "website-analytics";
   if (pathname === "/organization") return "organization";
   if (pathname === "/organization/settings") {
     return "organization-settings";

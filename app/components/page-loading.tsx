@@ -9,6 +9,7 @@ export type PageLoadingVariant =
   | "overview"
   | "members"
   | "websites"
+  | "website-analytics"
   | "leads"
   | "companies"
   | "table";
@@ -63,6 +64,9 @@ export function PageLoading({
   }
   if (variant === "members") return <MembersLoading label={label} />;
   if (variant === "websites") return <WebsitesLoading label={label} />;
+  if (variant === "website-analytics") {
+    return <WebsiteAnalyticsLoading label={label} />;
+  }
   if (variant === "leads") {
     return <PipelineLoading isCompanies={false} label={label} />;
   }
@@ -142,6 +146,194 @@ export function PageLoading({
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+function WebsiteAnalyticsLoading({ label }: { label: string }) {
+  return (
+    <section
+      aria-busy="true"
+      aria-label={label}
+      className="website-analytics-page is-loading"
+      role="status"
+    >
+      <span className="sr-only">{label}</span>
+      <header aria-hidden="true" className="website-analytics-header">
+        <div className="website-analytics-loading-intro">
+          <span className="website-analytics-skeleton-line is-eyebrow" />
+          <span className="website-analytics-skeleton-line is-title" />
+          <span className="website-analytics-skeleton-line is-description" />
+          <span className="website-analytics-skeleton-line is-updated" />
+        </div>
+        <div className="website-analytics-actions">
+          <span className="website-analytics-skeleton-control" />
+          <span className="website-analytics-skeleton-control is-primary" />
+        </div>
+      </header>
+
+      <section aria-hidden="true" className="website-analytics-kpis">
+        {Array.from({ length: 4 }, (_, index) => (
+          <article className="website-analytics-kpi" key={index}>
+            <div className="website-analytics-kpi-heading">
+              <span className="website-analytics-skeleton-line is-label" />
+              <span className="website-analytics-skeleton-icon" />
+            </div>
+            <span className="website-analytics-skeleton-line is-value" />
+            <span className="website-analytics-skeleton-line is-note" />
+          </article>
+        ))}
+      </section>
+
+      <section aria-hidden="true" className="website-analytics-grid">
+        {Array.from({ length: 6 }, (_, index) => (
+          <article className="website-analytics-panel" key={index}>
+            <div className="website-analytics-skeleton-heading">
+              <span className="website-analytics-skeleton-panel-title">
+                <span className="website-analytics-skeleton-icon" />
+                <span className="website-analytics-skeleton-line is-panel-title" />
+              </span>
+              <span className="website-analytics-skeleton-line is-panel-copy" />
+            </div>
+            <div className="website-analytics-skeleton-chart">
+              {index === 5
+                ? Array.from({ length: 4 }, (_, row) => (
+                    <div
+                      className="website-analytics-skeleton-coverage-row"
+                      key={row}
+                    >
+                      <span className="website-analytics-skeleton-line is-chart-label" />
+                      <span className="website-analytics-skeleton-line is-chart-value" />
+                      <span className="website-analytics-skeleton-line is-chart-percent" />
+                    </div>
+                  ))
+                : Array.from(
+                    {
+                      length: index === 2 ? 3 : index === 5 ? 4 : 5,
+                    },
+                    (_, row) => (
+                    <div
+                      className="website-analytics-skeleton-chart-row"
+                      key={row}
+                    >
+                      <span className="website-analytics-skeleton-line is-chart-label" />
+                      <span className="website-analytics-skeleton-line is-chart-percent" />
+                      <span className="website-analytics-skeleton-line is-chart-value" />
+                      <span className="website-analytics-skeleton-bar" />
+                    </div>
+                    ),
+                  )}
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section
+        aria-hidden="true"
+        className="website-analytics-pagespeed is-loading"
+      >
+        <div className="website-analytics-section-heading">
+          <div className="website-analytics-skeleton-heading">
+            <span className="website-analytics-skeleton-line is-eyebrow" />
+            <span className="website-analytics-skeleton-line is-panel-title" />
+          </div>
+          <span className="website-analytics-skeleton-line is-panel-copy" />
+        </div>
+        <div className="website-analytics-pagespeed-grid">
+          {Array.from({ length: 2 }, (_, index) => (
+            <article
+              className="website-analytics-pagespeed-panel"
+              key={index}
+            >
+              <div className="website-analytics-skeleton-device-heading">
+                <span className="website-analytics-skeleton-device">
+                  <span className="website-analytics-skeleton-icon" />
+                  <span className="website-analytics-skeleton-line is-panel-title" />
+                </span>
+                <span className="website-analytics-skeleton-line is-chart-label" />
+              </div>
+              <div className="website-analytics-skeleton-score-content">
+                <span className="website-analytics-skeleton-ring" />
+                <div className="website-analytics-skeleton-score-bars">
+                  {Array.from({ length: 3 }, (_, row) => (
+                    <span
+                      className="website-analytics-skeleton-bar"
+                      key={row}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="website-analytics-skeleton-bands">
+                {Array.from({ length: 3 }, (_, band) => (
+                  <span
+                    className="website-analytics-skeleton-band"
+                    key={band}
+                  />
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+        <span className="website-analytics-skeleton-line is-method-note" />
+      </section>
+
+      <section
+        aria-hidden="true"
+        className="website-analytics-keywords is-loading"
+      >
+        <div className="website-analytics-keyword-heading">
+          <div className="website-analytics-skeleton-heading">
+            <span className="website-analytics-skeleton-line is-eyebrow" />
+            <span className="website-analytics-skeleton-line is-panel-title" />
+          </div>
+          <span className="website-analytics-skeleton-line is-panel-copy" />
+        </div>
+        <div className="website-analytics-keyword-metrics">
+          {Array.from({ length: 2 }, (_, index) => (
+            <article
+              className="website-analytics-keyword-metric"
+              key={index}
+            >
+              <div className="website-analytics-keyword-metric-title">
+                <span className="website-analytics-skeleton-line is-label" />
+                <span className="website-analytics-skeleton-line is-chart-label" />
+              </div>
+              <span className="website-analytics-skeleton-line is-value" />
+              <span className="website-analytics-skeleton-line is-note" />
+            </article>
+          ))}
+        </div>
+        <div className="website-analytics-keyword-grid">
+          {Array.from({ length: 3 }, (_, index) => (
+            <article
+              className="website-analytics-panel website-analytics-keyword-panel"
+              key={index}
+            >
+              <div className="website-analytics-skeleton-heading">
+                <span className="website-analytics-skeleton-panel-title">
+                  <span className="website-analytics-skeleton-icon" />
+                  <span className="website-analytics-skeleton-line is-panel-title" />
+                </span>
+                <span className="website-analytics-skeleton-line is-panel-copy" />
+              </div>
+              <div className="website-analytics-skeleton-chart">
+                {Array.from({ length: 5 }, (_, row) => (
+                  <div
+                    className="website-analytics-skeleton-chart-row"
+                    key={row}
+                  >
+                    <span className="website-analytics-skeleton-line is-chart-label" />
+                    <span className="website-analytics-skeleton-line is-chart-percent" />
+                    <span className="website-analytics-skeleton-line is-chart-value" />
+                    <span className="website-analytics-skeleton-bar" />
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+        <span className="website-analytics-skeleton-line is-method-note" />
+      </section>
     </section>
   );
 }

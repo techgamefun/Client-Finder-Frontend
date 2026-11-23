@@ -24,6 +24,7 @@ export default function robots(): MetadataRoute.Robots {
         "/signup",
         "/templates",
         "/unsubscribe",
+        "/website-analytics",
         "/websites",
         "/api/",
       ],

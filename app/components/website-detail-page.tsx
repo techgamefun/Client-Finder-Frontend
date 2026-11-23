@@ -335,6 +335,9 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
         website={website}
       />
       <AhrefsSection
+        domainRating={website.ahrefs_domain_rating}
+        domainRatingFetchedAt={website.ahrefs_domain_rating_fetched_at}
+        domainRatingLicenseUrl={website.ahrefs_domain_rating_license_url}
         error={fetchAhrefs.error?.message}
         isConfigured={settingsQuery.data?.ahrefs_configured === true}
         isPending={fetchAhrefs.isPending}
@@ -872,72 +875,127 @@ function WebsiteAvatar({
 }
 
 function AhrefsSection({
+  domainRating,
+  domainRatingFetchedAt,
+  domainRatingLicenseUrl,
   error,
   isConfigured,
   isPending,
   metrics,
   onFetch,
 }: {
+  domainRating: number | null;
+  domainRatingFetchedAt: string | null;
+  domainRatingLicenseUrl: string | null;
   error?: string;
   isConfigured: boolean;
   isPending: boolean;
   metrics: WebsiteAhrefsMetrics | null;
   onFetch: () => void;
 }) {
-  const metricItems = [
-    ["Domain Rating", metrics ? metrics.domain_rating.toFixed(1) : "—"],
-    ["Organic traffic", formatMetric(metrics?.organic_traffic ?? null)],
-    ["Organic keywords", formatMetric(metrics?.organic_keywords ?? null)],
-    ["Live backlinks", formatMetric(metrics?.backlinks_live ?? null)],
-    ["All-time backlinks", formatMetric(metrics?.backlinks_all_time ?? null)],
-    ["Live referring domains", formatMetric(metrics?.refdomains_live ?? null)],
-    [
+  const rating = metrics?.domain_rating ?? domainRating;
+  const metricItems: [string, string][] = [];
+  if (rating !== null) {
+    metricItems.push(["Domain Rating", rating.toFixed(1)]);
+  }
+  if (metrics?.organic_traffic != null) {
+    metricItems.push([
+      "Organic traffic",
+      formatMetric(metrics.organic_traffic),
+    ]);
+  }
+  if (metrics?.organic_keywords != null) {
+    metricItems.push([
+      "Organic keywords",
+      formatMetric(metrics.organic_keywords),
+    ]);
+  }
+  if (metrics?.backlinks_live != null) {
+    metricItems.push(["Live backlinks", formatMetric(metrics.backlinks_live)]);
+  }
+  if (metrics?.backlinks_all_time != null) {
+    metricItems.push([
+      "All-time backlinks",
+      formatMetric(metrics.backlinks_all_time),
+    ]);
+  }
+  if (metrics?.refdomains_live != null) {
+    metricItems.push([
+      "Live referring domains",
+      formatMetric(metrics.refdomains_live),
+    ]);
+  }
+  if (metrics?.refdomains_all_time != null) {
+    metricItems.push([
       "All-time referring domains",
-      formatMetric(metrics?.refdomains_all_time ?? null),
-    ],
-    [
+      formatMetric(metrics.refdomains_all_time),
+    ]);
+  }
+  if (metrics?.organic_traffic_cost_cents != null) {
+    metricItems.push([
       "Organic traffic value",
-      metrics?.organic_traffic_cost_cents === null ||
-      metrics?.organic_traffic_cost_cents === undefined
-        ? "—"
-        : new Intl.NumberFormat(undefined, {
-            style: "currency",
-            currency: "USD",
-            maximumFractionDigits: 0,
-          }).format(metrics.organic_traffic_cost_cents / 100),
-    ],
-  ];
+      new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 0,
+      }).format(metrics.organic_traffic_cost_cents / 100),
+    ]);
+  }
+  const hasPaidMetrics = metricItems.some(
+    ([label]) => label !== "Domain Rating",
+  );
+  const isFreeApiSnapshot = rating !== null && !hasPaidMetrics;
+  const isFreeDomainRating = isFreeApiSnapshot && rating !== null;
+  const fetchedAt = metrics?.fetched_at ?? domainRatingFetchedAt;
+  const ratingProgress = Math.max(0, Math.min(100, rating ?? 0)) * 3.6;
 
   return (
     <section
       aria-labelledby="website-ahrefs-heading"
-      className="profile-card profile-seo-overview"
+      className={`profile-card profile-seo-overview${isFreeDomainRating ? " ahrefs-dr-card" : ""}`}
       id="ahrefs"
     >
-      <header className="profile-seo-heading">
-        <div>
-          <p className="profile-seo-eyebrow">AHREFS SITE EXPLORER</p>
-          <h2 id="website-ahrefs-heading">Ahrefs metrics</h2>
-          <p>Domain authority, organic search, and backlink estimates.</p>
-        </div>
+      <header
+        className={`profile-seo-heading${isFreeDomainRating ? " ahrefs-dr-header" : ""}`}
+      >
+        {isFreeDomainRating ? (
+          <div>
+            <p className="profile-seo-eyebrow">AHREFS</p>
+            <h2 id="website-ahrefs-heading">Domain Rating</h2>
+          </div>
+        ) : (
+          <div>
+            <p className="profile-seo-eyebrow">AHREFS METRICS</p>
+            <h2 id="website-ahrefs-heading">Ahrefs metrics</h2>
+            <p>
+              Free Domain Rating is available with the public API. Organic and
+              backlink metrics require paid Site Explorer access.
+            </p>
+          </div>
+        )}
         <div className="settings-actions">
           {isConfigured ? (
             <button
-              className="profile-button profile-button-primary"
+              className={`profile-button${isFreeDomainRating ? " ahrefs-dr-refresh" : " profile-button-primary"}`}
               disabled={isPending}
               onClick={onFetch}
-              title="Snapshots are cached for 24 hours to avoid repeated API-unit charges."
+              title="Paid snapshots are cached for 24 hours. Free Domain Rating can be refreshed at any time."
               type="button"
             >
+              {isFreeDomainRating && !isPending && (
+                <RotateCw aria-hidden="true" size={14} />
+              )}
               {isPending
                 ? "Fetching…"
-                : metrics
-                  ? "Refresh Ahrefs metrics"
-                  : "Fetch Ahrefs metrics"}
+                : isFreeDomainRating
+                  ? "Refresh"
+                  : rating !== null
+                    ? "Refresh Ahrefs metrics"
+                    : "Fetch Ahrefs metrics"}
             </button>
           ) : (
             <Link
-              className="profile-button profile-button-primary"
+              className={`profile-button${isFreeDomainRating ? " ahrefs-dr-refresh" : " profile-button-primary"}`}
               href="/settings?section=ahrefs"
             >
               Configure Ahrefs
@@ -946,7 +1004,46 @@ function AhrefsSection({
         </div>
       </header>
       {error && <InlineError message={`Ahrefs request failed: ${error}`} />}
-      {metrics ? (
+      {isFreeDomainRating ? (
+        <div className="ahrefs-dr-main">
+          <div
+            aria-label={`Domain Rating ${rating.toFixed(1)} out of 100`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={rating}
+            className="ahrefs-dr-gauge"
+            role="meter"
+            style={{
+              background: `conic-gradient(var(--profile-accent) ${ratingProgress}deg, var(--profile-divider) ${ratingProgress}deg)`,
+            }}
+          >
+            <div className="ahrefs-dr-gauge-inner">
+              <span>DR</span>
+              <strong>{rating.toFixed(1)}</strong>
+            </div>
+          </div>
+          <div className="ahrefs-dr-info">
+            {fetchedAt && (
+              <span className="ahrefs-dr-updated">
+                <RelativeTime prefix="Updated" value={fetchedAt} />
+              </span>
+            )}
+            <a
+              className="ahrefs-dr-license"
+              href={
+                metrics?.domain_rating_license_url ??
+                domainRatingLicenseUrl ??
+                "https://ahrefs.com"
+              }
+              rel="noreferrer"
+              target="_blank"
+            >
+              Ahrefs data license
+              <ExternalLink aria-hidden="true" size={13} />
+            </a>
+          </div>
+        </div>
+      ) : metricItems.length > 0 ? (
         <>
           <div
             aria-label="Ahrefs website metrics"
@@ -961,33 +1058,39 @@ function AhrefsSection({
             ))}
           </div>
           <p className="profile-empty">
-            Snapshot date {new Date(metrics.snapshot_date).toLocaleDateString()}
-            {" · "}
-            <RelativeTime prefix="Fetched" value={metrics.fetched_at} />
-            {metrics.units_used !== null
+            {metrics
+              ? `Snapshot date ${new Date(metrics.snapshot_date).toLocaleDateString()} · `
+              : ""}
+            {fetchedAt && <RelativeTime prefix="Fetched" value={fetchedAt} />}
+            {metrics?.units_used != null
               ? ` · ${metrics.units_used.toLocaleString()} API units used`
               : ""}
           </p>
         </>
       ) : (
         <p className="profile-empty">
-          Fetch an Ahrefs snapshot to view this website’s Domain Rating,
-          backlinks, referring domains, and organic search metrics.
+          Fetch a free Domain Rating snapshot. Organic search, backlink, and
+          referring-domain metrics require paid Site Explorer access.
         </p>
       )}
-      <p className="profile-empty">
-        Each uncached snapshot makes two paid Site Explorer requests, with a
-        minimum cost of 50 units each. Results are cached for 24 hours.{" "}
-        Domain Rating data by Ahrefs ·{" "}
-        <a
-          href={metrics?.domain_rating_license_url ?? "https://ahrefs.com"}
-          rel="noreferrer"
-          target="_blank"
-        >
-          View license
-        </a>
-        .
-      </p>
+      {!isFreeDomainRating && (
+        <p className="profile-empty">
+          Paid Site Explorer requests use API units. Results are cached for 24
+          hours. Domain Rating data by Ahrefs ·{" "}
+          <a
+            href={
+              metrics?.domain_rating_license_url ??
+              domainRatingLicenseUrl ??
+              "https://ahrefs.com"
+            }
+            rel="noreferrer"
+            target="_blank"
+          >
+            View license
+          </a>
+          .
+        </p>
+      )}
     </section>
   );
 }

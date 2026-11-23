@@ -13,6 +13,7 @@ import {
   getWebsiteCorpusAnalysisJobsPage,
   getApplicationSettings,
   getPageSpeedScanJobs,
+  getWebsiteCrawlJobFailureReasons,
   getWebsiteCrawlJobsPage,
   retryWebsiteCorpusAnalysisJob,
   retryWebsiteCorpusAnalysisJobs,
@@ -198,6 +199,14 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     statusFilterState.kind === kind ? statusFilterState.status : "all";
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [failureReasonFilterState, setFailureReasonFilterState] = useState<{
+    kind: QueueKind;
+    reason: string;
+  }>({ kind, reason: "" });
+  const failureReasonFilter =
+    failureReasonFilterState.kind === kind
+      ? failureReasonFilterState.reason
+      : "";
   const [pageState, setPageState] = useState({ kind, page: 1 });
   const page = pageState.kind === kind ? pageState.page : 1;
   const updatePage = (nextPage: number | ((current: number) => number)) => {
@@ -220,10 +229,19 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
     }, 300);
     return () => window.clearTimeout(timeout);
   }, [kind, searchText]);
+  const crawlerFailureReasonsQuery = useQuery({
+    queryKey: ["crawler", "queue-failure-reasons"],
+    queryFn: getWebsiteCrawlJobFailureReasons,
+    enabled: kind === "crawler",
+    staleTime: 30_000,
+  });
   const queueParams: QueueJobsPageParams = {
     page,
     page_size: pageSize,
     search: debouncedSearch,
+    ...(kind === "crawler" && failureReasonFilter
+      ? { failure_reason: failureReasonFilter }
+      : {}),
     ...(statusFilter !== "all" ? { status: statusFilter } : {}),
   };
   const crawlerJobsQuery = useQuery({
@@ -286,6 +304,11 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         message: `The ${queueLabel} job was returned to the queue.`,
       });
       await jobsQuery.refetch();
+      if (kind === "crawler") {
+        await queryClient.invalidateQueries({
+          queryKey: ["crawler", "queue-failure-reasons"],
+        });
+      }
     },
     onError: (error: Error) => {
       showToast({
@@ -309,6 +332,9 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["crawler", "queue-failure-reasons"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
         queryClient.invalidateQueries({ queryKey: ["websites"] }),
       ]);
@@ -332,6 +358,9 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["crawler", "queue-failure-reasons"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
         queryClient.invalidateQueries({ queryKey: ["websites"] }),
       ]);
@@ -386,6 +415,11 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         });
       }
       await jobsQuery.refetch();
+      if (kind === "crawler") {
+        await queryClient.invalidateQueries({
+          queryKey: ["crawler", "queue-failure-reasons"],
+        });
+      }
     },
     onError: (error: Error) => {
       showToast({
@@ -474,7 +508,14 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           <button
             className="button button-secondary"
             disabled={jobsQuery.isFetching}
-            onClick={() => void jobsQuery.refetch()}
+            onClick={() => {
+              void jobsQuery.refetch();
+              if (kind === "crawler") {
+                void queryClient.invalidateQueries({
+                  queryKey: ["crawler", "queue-failure-reasons"],
+                });
+              }
+            }}
             type="button"
           >
             {jobsQuery.isFetching ? "Refreshing..." : "Refresh"}
@@ -531,6 +572,12 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           Could not refresh the queue: {jobsQuery.error.message}
         </p>
       )}
+      {kind === "crawler" && crawlerFailureReasonsQuery.isError && (
+        <p className="alert alert-error" role="alert">
+          Could not load failure-reason filters:{" "}
+          {crawlerFailureReasonsQuery.error.message}
+        </p>
+      )}
       {kind === "pagespeed" &&
         pageSpeedSettingsQuery.isError && (
           <p className="alert alert-warning" role="alert">
@@ -576,14 +623,55 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
           </div>
           <div className="queue-panel-controls">
             <input
-              aria-label={`Search ${queueLabel} jobs`}
+              aria-label={
+                kind === "crawler"
+                  ? "Search indexing jobs by URL or failure reason"
+                  : `Search ${queueLabel} jobs`
+              }
               className="queue-search-input"
               maxLength={300}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search website URL"
+              placeholder={
+                kind === "crawler"
+                  ? "Search URL or failure reason"
+                  : "Search website URL"
+              }
               type="search"
               value={searchText}
             />
+            {kind === "crawler" && (
+              <select
+                aria-label="Filter by failure reason"
+                className="queue-failure-reason-filter"
+                disabled={
+                  crawlerFailureReasonsQuery.isLoading ||
+                  crawlerFailureReasonsQuery.isError
+                }
+                onChange={(event) => {
+                  setFailureReasonFilterState({
+                    kind,
+                    reason: event.target.value,
+                  });
+                  updatePage(1);
+                }}
+                value={failureReasonFilter}
+              >
+                <option value="">All failure reasons</option>
+                {failureReasonFilter &&
+                  !crawlerFailureReasonsQuery.data?.includes(
+                    failureReasonFilter,
+                  ) && (
+                    <option value={failureReasonFilter}>
+                      {failureReasonFilter}
+                    </option>
+                  )}
+                {(crawlerFailureReasonsQuery.data ?? []).map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+            )}
             {kind === "crawler" && jobs.length > 0 && (
               <label className="queue-select-page">
                 <input
