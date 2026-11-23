@@ -27,9 +27,25 @@ export interface Company {
   last_email_sent_at: string | null;
   created_at: string;
   created_by_email: string | null;
+  lead_batches: LeadBatchSummary[];
   contacts: Contact[];
   pagespeed_scans: PageSpeedScanSummary[];
 }
+
+export interface LeadBatchSummary {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface LeadBatch {
+  id: string;
+  name: string;
+  created_at: string;
+  lead_count: number;
+}
+
+export type LeadBatchMembershipAction = "add" | "move" | "ungroup";
 
 export interface CompanyPipelineFilters {
   view: "companies" | "leads";
@@ -37,6 +53,8 @@ export interface CompanyPipelineFilters {
   status: string | null;
   email_status: "all" | "contacted" | "not_contacted";
   website: "all" | "with_website" | "without_website";
+  batch_id: string | null;
+  ungrouped: boolean;
   page: number;
   page_size: 10 | 25 | 50;
 }
@@ -829,6 +847,13 @@ export interface WebsiteAddToLeadsResult {
   skipped_listing_count: number;
   skipped_uncrawled_count: number;
   not_found_count: number;
+  batch_id: string | null;
+  batch_name: string | null;
+}
+
+export interface WebsiteLeadGroupSelection {
+  batchId?: string;
+  batchName?: string;
 }
 
 export interface WebsiteBatchStatusUpdateResult {
@@ -1791,6 +1816,8 @@ function companyPipelineSearchParams(
   });
   if (filters.query) search.set("query", filters.query);
   if (filters.status) search.set("status", filters.status);
+  if (filters.batch_id) search.set("batch_id", filters.batch_id);
+  if (filters.ungrouped) search.set("ungrouped", "true");
   return search;
 }
 
@@ -1817,6 +1844,44 @@ export function getCompanyPipeline(
   return request<CompanyPipelineResponse>(
     `/companies/pipeline?${search.toString()}`,
   );
+}
+
+export function getLeadBatches(): Promise<{ items: LeadBatch[] }> {
+  return request<{ items: LeadBatch[] }>("/companies/lead-batches");
+}
+
+export function createLeadBatch(input: {
+  name: string;
+  company_ids: string[];
+}): Promise<LeadBatchSummary> {
+  return request<LeadBatchSummary>("/companies/lead-batches", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateLeadBatch(
+  batchId: string,
+  name: string,
+): Promise<LeadBatchSummary> {
+  return request<LeadBatchSummary>(
+    `/companies/lead-batches/${encodeURIComponent(batchId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    },
+  );
+}
+
+export function updateLeadBatchMembers(input: {
+  batch_id?: string;
+  company_ids: string[];
+  action: LeadBatchMembershipAction;
+}): Promise<{ updated_count: number }> {
+  return request<{ updated_count: number }>("/companies/lead-batches/members", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getCompanyPipelineSelection(
@@ -2224,6 +2289,7 @@ export function updateWebsite(
 
 export async function addWebsitesToLeads(
   websiteIds: string[],
+  group: WebsiteLeadGroupSelection = {},
 ): Promise<WebsiteAddToLeadsResult> {
   const result: WebsiteAddToLeadsResult = {
     requested_count: 0,
@@ -2233,13 +2299,15 @@ export async function addWebsitesToLeads(
     skipped_listing_count: 0,
     skipped_uncrawled_count: 0,
     not_found_count: 0,
+    batch_id: group.batchId ?? null,
+    batch_name: null,
   };
   for (
     let offset = 0;
     offset < websiteIds.length;
     offset += WEBSITE_ACTION_BATCH_SIZE
   ) {
-    const batch = await request<WebsiteAddToLeadsResult>(
+    const response = await request<WebsiteAddToLeadsResult>(
       "/websites/add-to-leads",
       {
         method: "POST",
@@ -2248,16 +2316,20 @@ export async function addWebsitesToLeads(
             offset,
             offset + WEBSITE_ACTION_BATCH_SIZE,
           ),
+          batch_id: result.batch_id,
+          batch_name: group.batchName ?? null,
         }),
       },
     );
-    result.requested_count += batch.requested_count;
-    result.created_count += batch.created_count;
-    result.already_existing_count += batch.already_existing_count;
-    result.status_updated_count += batch.status_updated_count;
-    result.skipped_listing_count += batch.skipped_listing_count;
-    result.skipped_uncrawled_count += batch.skipped_uncrawled_count;
-    result.not_found_count += batch.not_found_count;
+    result.requested_count += response.requested_count;
+    result.created_count += response.created_count;
+    result.already_existing_count += response.already_existing_count;
+    result.status_updated_count += response.status_updated_count;
+    result.skipped_listing_count += response.skipped_listing_count;
+    result.skipped_uncrawled_count += response.skipped_uncrawled_count;
+    result.not_found_count += response.not_found_count;
+    result.batch_id = response.batch_id ?? result.batch_id;
+    result.batch_name = response.batch_name ?? result.batch_name;
   }
   return result;
 }

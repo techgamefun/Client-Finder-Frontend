@@ -15,12 +15,16 @@ import {
 import { useToast } from "./toast-provider";
 import {
   createCompany,
+  createLeadBatch,
   deleteCompany,
   getAuthSession,
   getCompanyPipeline,
   getCompanyPipelineSelection,
+  getLeadBatches,
   getQueueEventsWebSocketUrl,
   PENDING_CAMPAIGN_AUDIENCE_KEY,
+  updateLeadBatch,
+  updateLeadBatchMembers,
   updateCompany,
   updateLeadStatus,
 } from "@/lib/api";
@@ -29,6 +33,7 @@ import type {
   CompanyInput,
   CompanyPipelineFilters,
   CompanyUpdateInput,
+  LeadBatchMembershipAction,
 } from "@/lib/api";
 import { CompanyName } from "./overview-page";
 import { TableLoading } from "./page-loading";
@@ -113,6 +118,12 @@ export function LeadsPage({
     requestedStatus && leadStatuses.includes(requestedStatus)
       ? requestedStatus
       : "all";
+  const requestedBatch = pipelineParams.get("batch");
+  const batchFilter =
+    requestedBatch && requestedBatch !== "ungrouped"
+      ? requestedBatch
+      : "all";
+  const ungroupedFilter = requestedBatch === "ungrouped";
   const requestedEmailStatus = pipelineParams.get("email_status");
   const emailStatusFilter =
     requestedEmailStatus === "contacted" ||
@@ -149,14 +160,20 @@ export function LeadsPage({
     status: statusFilter === "all" ? null : statusFilter,
     email_status: emailStatusFilter,
     website: websiteFilter,
+    batch_id: isCompanyDatabaseView || batchFilter === "all" ? null : batchFilter,
+    ungrouped: !isCompanyDatabaseView && ungroupedFilter,
     page: currentPage,
     page_size: pageSize,
   };
   const [companyForm, setCompanyForm] = useState<CompanyInput>(emptyCompany);
   const addCompanyDialogRef = useRef<HTMLDialogElement>(null);
+  const leadBatchDialogRef = useRef<HTMLDialogElement>(null);
+  const leadActionsMenuRef = useRef<HTMLDetailsElement>(null);
   const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<CompanyUpdateInput>({});
+  const [newLeadBatchName, setNewLeadBatchName] = useState("");
+  const [targetLeadBatchId, setTargetLeadBatchId] = useState("");
 
   useEffect(() => {
     if (!shouldOpenAddCompany) return;
@@ -176,6 +193,12 @@ export function LeadsPage({
   const sessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
+    enabled: !isCompanyDatabaseView,
+    retry: false,
+  });
+  const leadBatchesQuery = useQuery({
+    queryKey: ["companies", "lead-batches"],
+    queryFn: getLeadBatches,
     enabled: !isCompanyDatabaseView,
     retry: false,
   });
@@ -234,6 +257,73 @@ export function LeadsPage({
       });
     },
   });
+  const createLeadBatchMutation = useMutation({
+    mutationFn: createLeadBatch,
+    onSuccess: async (batch) => {
+      await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      setTargetLeadBatchId(batch.id);
+      setNewLeadBatchName("");
+      leadBatchDialogRef.current?.close();
+      showToast({
+        type: "success",
+        title: "Group created",
+        message: `${batch.name} is ready to organize leads.`,
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not create group",
+        message: error.message,
+      });
+    },
+  });
+  const updateLeadBatchMutation = useMutation({
+    mutationFn: ({
+      batchId,
+      name,
+    }: {
+      batchId: string;
+      name: string;
+    }) => updateLeadBatch(batchId, name),
+    onSuccess: async (batch) => {
+      await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      showToast({
+        type: "success",
+        title: "Group renamed",
+        message: `The group is now named ${batch.name}.`,
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not rename group",
+        message: error.message,
+      });
+    },
+  });
+  const leadBatchMembershipMutation = useMutation({
+    mutationFn: updateLeadBatchMembers,
+    onSuccess: async ({ updated_count: updatedCount }, variables) => {
+      leadActionsMenuRef.current?.removeAttribute("open");
+      await queryClient.invalidateQueries({ queryKey: ["companies"] });
+      showToast({
+        type: "success",
+        title: "Lead groups updated",
+        message:
+          updatedCount === 0
+            ? "Those leads already have the requested group membership."
+            : `${updatedCount.toLocaleString()} lead${updatedCount === 1 ? "" : "s"} ${variables.action === "ungroup" ? "ungrouped" : variables.action === "move" ? "moved" : "added to the group"}.`,
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not update lead groups",
+        message: error.message,
+      });
+    },
+  });
   const filteredSelectionMutation = useMutation({
     mutationFn: () =>
       getCompanyPipelineSelection({
@@ -242,24 +332,14 @@ export function LeadsPage({
         status: statusFilter === "all" ? null : statusFilter,
         email_status: emailStatusFilter,
         website: websiteFilter,
+        batch_id: batchFilter === "all" ? null : batchFilter,
+        ungrouped: ungroupedFilter,
       }),
     onSuccess: (selection) => {
       setCampaignAudienceError("");
       if (selection.total_count > maxCampaignCompanies) {
         setCampaignAudienceError(
           `Select no more than ${maxCampaignCompanies.toLocaleString()} companies for one campaign.`,
-        );
-        return;
-      }
-      const allFilteredSelected =
-        selection.company_ids.length > 0 &&
-        selection.company_ids.every((id) =>
-          selectedLeadCompanyIdSet.has(id),
-        );
-      if (allFilteredSelected) {
-        const filteredIds = new Set(selection.company_ids);
-        setSelectedLeadCompanyIds((current) =>
-          current.filter((id) => !filteredIds.has(id)),
         );
         return;
       }
@@ -339,6 +419,12 @@ export function LeadsPage({
       selectedLeadCompanyIdSet.has(company.id),
     );
   const isAdmin = sessionQuery.data?.user.role === "admin";
+  const activeExtraFilterCount = [
+    websiteFilter !== "all",
+    !isCompanyDatabaseView && emailStatusFilter !== "all",
+    !isCompanyDatabaseView &&
+      (batchFilter !== "all" || ungroupedFilter),
+  ].filter(Boolean).length;
   const emptyStateTitle =
     eligibleCount > 0
       ? isCompanyDatabaseView
@@ -403,7 +489,7 @@ export function LeadsPage({
     setSelectedLeadCompanyIds([...next]);
   }
 
-  function toggleFilteredLeadSelection() {
+  function selectFilteredLeads() {
     setCampaignAudienceError("");
     filteredSelectionMutation.mutate();
   }
@@ -411,6 +497,37 @@ export function LeadsPage({
   function clearLeadSelection() {
     setSelectedLeadCompanyIds([]);
     setCampaignAudienceError("");
+  }
+
+  function handleCreateLeadBatch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    createLeadBatchMutation.mutate({
+      name: newLeadBatchName.trim(),
+      company_ids: selectedLeadCompanyIds,
+    });
+  }
+
+  function handleRenameLeadBatch(
+    event: FormEvent<HTMLFormElement>,
+    batchId: string,
+  ) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get("name") ?? "").trim();
+    if (!name) return;
+    updateLeadBatchMutation.mutate({ batchId, name });
+  }
+
+  function updateSelectedLeadGroups(
+    action: LeadBatchMembershipAction,
+  ) {
+    if (selectedLeadCompanyIds.length === 0) return;
+    if (action !== "ungroup" && !targetLeadBatchId) return;
+    leadBatchMembershipMutation.mutate({
+      action,
+      company_ids: selectedLeadCompanyIds,
+      ...(action === "ungroup" ? {} : { batch_id: targetLeadBatchId }),
+    });
   }
 
   function createCampaignFromLeads() {
@@ -559,56 +676,103 @@ export function LeadsPage({
                   })}
                 </select>
               </label>
-              <label className="select-filter">
-                <span className="sr-only">Filter by website</span>
-                <select
-                  onChange={(event) =>
-                    updatePipelineQuery({
-                      website:
-                        event.target.value === "all"
-                          ? null
-                          : event.target.value,
-                      page: null,
-                    })
-                  }
-                  value={websiteFilter}
-                >
-                  <option value="all">All websites ({eligibleCount})</option>
-                  <option value="with_website">
-                    With a website ({websiteCount})
-                  </option>
-                  <option value="without_website">
-                    Without a website ({eligibleCount - websiteCount})
-                  </option>
-                </select>
-              </label>
-              {!isCompanyDatabaseView && (
-                <label className="select-filter">
-                  <span className="sr-only">Filter by email status</span>
-                  <select
-                    onChange={(event) =>
-                      updatePipelineQuery({
-                        email_status:
-                          event.target.value === "all"
-                            ? null
-                            : event.target.value,
-                        page: null,
-                      })
-                    }
-                    value={emailStatusFilter}
-                  >
-                    <option value="all">
-                      All email status ({eligibleCount})
-                    </option>
-                    <option value="contacted">
-                      Contacted ({contactedCompanyCount})
-                    </option>
-                    <option value="not_contacted">
-                      Not contacted ({eligibleCount - contactedCompanyCount})
-                    </option>
-                  </select>
-                </label>
-              )}
+              <details className="lead-extra-filters">
+                <summary>
+                  More filters
+                  {activeExtraFilterCount > 0 && (
+                    <span>{activeExtraFilterCount}</span>
+                  )}
+                </summary>
+                <div className="lead-extra-filter-panel">
+                  <label className="lead-extra-filter">
+                    <span>Website</span>
+                    <select
+                      onChange={(event) =>
+                        updatePipelineQuery({
+                          website:
+                            event.target.value === "all"
+                              ? null
+                              : event.target.value,
+                          page: null,
+                        })
+                      }
+                      value={websiteFilter}
+                    >
+                      <option value="all">Any website ({eligibleCount})</option>
+                      <option value="with_website">
+                        Has a website ({websiteCount})
+                      </option>
+                      <option value="without_website">
+                        No website ({eligibleCount - websiteCount})
+                      </option>
+                    </select>
+                  </label>
+                  {!isCompanyDatabaseView && (
+                    <label className="lead-extra-filter">
+                      <span>Email outreach</span>
+                      <select
+                        onChange={(event) =>
+                          updatePipelineQuery({
+                            email_status:
+                              event.target.value === "all"
+                                ? null
+                                : event.target.value,
+                            page: null,
+                          })
+                        }
+                        value={emailStatusFilter}
+                      >
+                        <option value="all">
+                          Any outreach ({eligibleCount})
+                        </option>
+                        <option value="contacted">
+                          Contacted ({contactedCompanyCount})
+                        </option>
+                        <option value="not_contacted">
+                          Not contacted ({eligibleCount - contactedCompanyCount})
+                        </option>
+                      </select>
+                    </label>
+                  )}
+                  {!isCompanyDatabaseView && (
+                    <div className="lead-group-filter-field">
+                      <label className="lead-extra-filter">
+                        <span>Lead group</span>
+                        <select
+                          disabled={leadBatchesQuery.isLoading}
+                          onChange={(event) =>
+                            updatePipelineQuery({
+                              batch:
+                                event.target.value === "all"
+                                  ? null
+                                  : event.target.value,
+                              page: null,
+                            })
+                          }
+                          value={
+                            ungroupedFilter ? "ungrouped" : batchFilter
+                          }
+                        >
+                          <option value="all">Any group</option>
+                          <option value="ungrouped">Ungrouped</option>
+                          {(leadBatchesQuery.data?.items ?? []).map((batch) => (
+                            <option key={batch.id} value={batch.id}>
+                              {batch.name} ({batch.lead_count})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="text-button"
+                        onClick={() => leadBatchDialogRef.current?.showModal()}
+                        type="button"
+                      >
+                        Manage groups
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </details>
               <button
                 aria-label={`Refresh ${isCompanyDatabaseView ? "companies" : "leads"}`}
                 className="icon-button refresh-button"
@@ -619,60 +783,183 @@ export function LeadsPage({
                 ↻
               </button>
             </div>
+            {!isCompanyDatabaseView && leadBatchesQuery.isError && (
+              <p className="settings-feedback settings-feedback-error" role="alert">
+                Could not load lead groups: {leadBatchesQuery.error.message}
+              </p>
+            )}
             {!isCompanyDatabaseView && (
-              <div className="lead-campaign-toolbar">
-                <div className="lead-campaign-selection">
-                  <strong>
-                    {selectedLeadCompanyIds.length.toLocaleString()} selected
-                  </strong>
-                  <span>
-                    Select companies on this page or include every filtered
-                    result.
-                  </span>
-                </div>
-                <div className="lead-campaign-actions">
-                  <button
-                    className="button button-secondary"
-                    disabled={
-                      filteredCount === 0 ||
-                      filteredSelectionMutation.isPending
-                    }
-                    onClick={toggleFilteredLeadSelection}
-                    type="button"
-                  >
-                    {filteredSelectionMutation.isPending
-                      ? "Selecting filtered..."
-                      : `Toggle filtered selection (${filteredCount.toLocaleString()})`}
-                  </button>
-                  {selectedLeadCompanyIds.length > 0 && (
+              <div
+                aria-label="Lead selection actions"
+                className={`lead-selection-toolbar${selectedLeadCompanyIds.length > 0 ? " has-selection" : ""}`}
+              >
+                {selectedLeadCompanyIds.length > 0 ? (
+                  <>
+                    <div className="lead-selection-summary">
+                      <span className="lead-selection-count">
+                        {selectedLeadCompanyIds.length.toLocaleString()}
+                      </span>
+                      <strong>
+                        lead{selectedLeadCompanyIds.length === 1 ? "" : "s"} selected
+                      </strong>
+                    </div>
+                    <div className="lead-selection-actions">
+                      <button
+                        className="lead-selection-select-all"
+                        disabled={
+                          filteredCount === 0 ||
+                          filteredSelectionMutation.isPending
+                        }
+                        onClick={selectFilteredLeads}
+                        type="button"
+                      >
+                        {filteredSelectionMutation.isPending
+                          ? "Selecting..."
+                          : `Select all ${filteredCount.toLocaleString()} matching`}
+                      </button>
+                      <details
+                        className="lead-actions-menu"
+                        ref={leadActionsMenuRef}
+                      >
+                        <summary>
+                          Manage selected
+                        </summary>
+                        <div className="lead-actions-popover">
+                          <section className="lead-action-section">
+                            <div>
+                              <h3>Lead group</h3>
+                              <p>Add selected leads to a group, move them, or
+                                ungroup them.</p>
+                            </div>
+                            <label className="lead-action-destination">
+                              <span>Destination group</span>
+                              <select
+                                disabled={
+                                  (leadBatchesQuery.data?.items.length ?? 0) === 0
+                                }
+                                onChange={(event) =>
+                                  setTargetLeadBatchId(event.target.value)
+                                }
+                                value={targetLeadBatchId}
+                              >
+                                <option value="">Choose a group</option>
+                                {(leadBatchesQuery.data?.items ?? []).map(
+                                  (batch) => (
+                                    <option key={batch.id} value={batch.id}>
+                                      {batch.name}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </label>
+                            <div className="lead-action-buttons">
+                              <button
+                                className="button button-secondary"
+                                disabled={
+                                  !targetLeadBatchId ||
+                                  leadBatchMembershipMutation.isPending
+                                }
+                                onClick={() => updateSelectedLeadGroups("add")}
+                                type="button"
+                              >
+                                Add to group
+                              </button>
+                              <button
+                                className="button button-secondary"
+                                disabled={
+                                  !targetLeadBatchId ||
+                                  leadBatchMembershipMutation.isPending
+                                }
+                                onClick={() => updateSelectedLeadGroups("move")}
+                                type="button"
+                              >
+                                Move to group
+                              </button>
+                              <button
+                                className="text-button"
+                                disabled={
+                                  leadBatchMembershipMutation.isPending
+                                }
+                                onClick={() =>
+                                  updateSelectedLeadGroups("ungroup")
+                                }
+                                type="button"
+                              >
+                                Ungroup
+                              </button>
+                            </div>
+                            {(leadBatchesQuery.data?.items.length ?? 0) === 0 && (
+                              <button
+                                className="text-button"
+                                onClick={() =>
+                                  leadBatchDialogRef.current?.showModal()
+                                }
+                                type="button"
+                              >
+                                Create a group first
+                              </button>
+                            )}
+                            <p className="lead-action-note">
+                              Add keeps other groups; Move replaces them;
+                              Ungroup removes all groups.
+                            </p>
+                          </section>
+                          {sessionQuery.isPending ? (
+                            <p className="lead-action-access">
+                              Checking campaign access...
+                            </p>
+                          ) : isAdmin ? (
+                            <section className="lead-action-section lead-action-campaign">
+                              <div>
+                                <h3>Campaign</h3>
+                                <p>Use the selected leads in an email campaign.</p>
+                              </div>
+                              <button
+                                className="button button-primary"
+                                onClick={createCampaignFromLeads}
+                                type="button"
+                              >
+                                Create campaign
+                              </button>
+                            </section>
+                          ) : (
+                            <p className="lead-action-access">
+                              Campaign creation requires an admin.
+                            </p>
+                          )}
+                        </div>
+                      </details>
+                      <button
+                        className="text-button"
+                        disabled={filteredSelectionMutation.isPending}
+                        onClick={clearLeadSelection}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="lead-selection-idle">
+                    <span>
+                      {filteredCount.toLocaleString()} matching lead
+                      {filteredCount === 1 ? "" : "s"}
+                    </span>
                     <button
-                      className="text-button"
-                      disabled={filteredSelectionMutation.isPending}
-                      onClick={clearLeadSelection}
+                      className="lead-selection-select-all"
+                      disabled={
+                        filteredCount === 0 ||
+                        filteredSelectionMutation.isPending
+                      }
+                      onClick={selectFilteredLeads}
                       type="button"
                     >
-                      Clear selection
+                      {filteredSelectionMutation.isPending
+                        ? "Selecting..."
+                        : "Select all"}
                     </button>
-                  )}
-                  {sessionQuery.isPending ? (
-                    <span className="lead-campaign-admin-hint">
-                      Checking campaign access...
-                    </span>
-                  ) : isAdmin ? (
-                    <button
-                      className="button button-primary"
-                      disabled={selectedLeadCompanyIds.length === 0}
-                      onClick={createCampaignFromLeads}
-                      type="button"
-                    >
-                      Create campaign
-                    </button>
-                  ) : (
-                    <span className="lead-campaign-admin-hint">
-                      Campaigns require an organization admin.
-                    </span>
-                  )}
-                </div>
+                  </div>
+                )}
                 {campaignAudienceError && (
                   <p className="campaign-field-error" role="alert">
                     {campaignAudienceError}
@@ -748,6 +1035,7 @@ export function LeadsPage({
                   <th>EMAIL OUTREACH</th>
                   <th>SCORE</th>
                   <th>ADDED</th>
+                  {!isCompanyDatabaseView && <th>GROUP</th>}
                   <th>RECORD</th>
                 </tr>
               </thead>
@@ -834,6 +1122,38 @@ export function LeadsPage({
                           { month: "short", day: "numeric", year: "numeric" },
                         )}
                       </td>
+                      {!isCompanyDatabaseView && (
+                        <td>
+                          {company.lead_batches.length > 0 ? (
+                            <span
+                              className="lead-batch-badges"
+                              aria-label={`Groups: ${company.lead_batches.map((batch) => batch.name).join(", ")}`}
+                            >
+                              <span
+                                className="lead-batch-badge"
+                                title={company.lead_batches[0].name}
+                              >
+                                {company.lead_batches[0].name}
+                              </span>
+                              {company.lead_batches.length > 1 && (
+                                <span
+                                  className="lead-batch-extra"
+                                  title={company.lead_batches
+                                    .slice(1)
+                                    .map((batch) => batch.name)
+                                    .join(", ")}
+                                >
+                                  +{company.lead_batches.length - 1}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="lead-batch-ungrouped">
+                              Ungrouped
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td>
                         <Link
                           className="text-button"
@@ -845,7 +1165,7 @@ export function LeadsPage({
                     </tr>
                     {expandedCompanyId === company.id && (
                       <tr className="detail-row">
-                        <td colSpan={isCompanyDatabaseView ? 9 : 10}>
+                        <td colSpan={isCompanyDatabaseView ? 9 : 11}>
                           <section
                             aria-label={`${company.name} full record`}
                             className="company-record"
@@ -1275,6 +1595,110 @@ export function LeadsPage({
           </>
         )}
       </section>
+
+      {!isCompanyDatabaseView && (
+        <dialog
+          aria-labelledby="lead-batch-dialog-title"
+          className="add-company-dialog lead-batch-dialog"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              event.currentTarget.close();
+            }
+          }}
+          ref={leadBatchDialogRef}
+        >
+          <div className="panel-heading compact-heading">
+            <div>
+              <p className="eyebrow">LEAD ORGANIZATION</p>
+              <h2 id="lead-batch-dialog-title">Manage lead groups</h2>
+              <p className="panel-subtitle">
+                Create a named group or rename an existing one. Selected leads
+                will join a group when you create it.
+              </p>
+            </div>
+            <button
+              aria-label="Close lead group manager"
+              className="icon-button"
+              onClick={() => leadBatchDialogRef.current?.close()}
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <form
+            className="company-form lead-batch-create-form"
+            onSubmit={handleCreateLeadBatch}
+          >
+            <label>
+              New group name
+              <input
+                autoComplete="off"
+                maxLength={160}
+                onChange={(event) => setNewLeadBatchName(event.target.value)}
+                placeholder="e.g. West Coast retailers"
+                required
+                value={newLeadBatchName}
+              />
+            </label>
+            <p>
+              {selectedLeadCompanyIds.length > 0
+                ? `${selectedLeadCompanyIds.length.toLocaleString()} selected leads will be added to this group.`
+                : "No leads are selected. You can create an empty group and add leads later."}
+            </p>
+            <button
+              className="button button-primary"
+              disabled={
+                !newLeadBatchName.trim() || createLeadBatchMutation.isPending
+              }
+              type="submit"
+            >
+              {createLeadBatchMutation.isPending
+                ? "Creating group..."
+                : "Create group"}
+            </button>
+          </form>
+          <section aria-label="Existing lead groups" className="lead-batch-list">
+            <h3>Existing groups</h3>
+            {leadBatchesQuery.isLoading ? (
+              <p className="lead-batch-list-empty">Loading groups...</p>
+            ) : (leadBatchesQuery.data?.items.length ?? 0) === 0 ? (
+              <p className="lead-batch-list-empty">
+                No groups yet. Create one above to get started.
+              </p>
+            ) : (
+              leadBatchesQuery.data?.items.map((batch) => (
+                <form
+                  className="lead-batch-rename-form"
+                  key={`${batch.id}-${batch.name}`}
+                  onSubmit={(event) =>
+                    handleRenameLeadBatch(event, batch.id)
+                  }
+                >
+                  <label>
+                    <span className="sr-only">Group name for {batch.name}</span>
+                    <input
+                      defaultValue={batch.name}
+                      maxLength={160}
+                      name="name"
+                      required
+                    />
+                  </label>
+                  <span className="lead-batch-list-count">
+                    {batch.lead_count} lead{batch.lead_count === 1 ? "" : "s"}
+                  </span>
+                  <button
+                    className="button button-secondary"
+                    disabled={updateLeadBatchMutation.isPending}
+                    type="submit"
+                  >
+                    Save
+                  </button>
+                </form>
+              ))
+            )}
+          </section>
+        </dialog>
+      )}
 
       <dialog
         aria-labelledby="add-company-title"

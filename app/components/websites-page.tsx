@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -18,6 +18,7 @@ import {
   getWebsiteCorpusWords,
   getWebsiteRegistryFacets,
   getWebsiteRegistryPage,
+  getLeadBatches,
   reclassifyWebsite,
   reclassifyUnclassifiedWebsites,
   updateWebsite,
@@ -276,7 +277,13 @@ export function WebsitesPage() {
   const showToast = useToast();
   const websiteScrollTimerRef = useRef<number | null>(null);
   const selectFilteredRef = useRef<HTMLInputElement>(null);
+  const addToLeadDialogRef = useRef<HTMLDialogElement>(null);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
+  const [leadGroupMode, setLeadGroupMode] = useState<"existing" | "custom">(
+    "custom",
+  );
+  const [selectedLeadBatchId, setSelectedLeadBatchId] = useState("");
+  const [customLeadBatchName, setCustomLeadBatchName] = useState("");
   const [selectedWebsiteRecords, setSelectedWebsiteRecords] = useState<
     Map<string, WebsiteRecord>
   >(
@@ -384,6 +391,12 @@ export function WebsitesPage() {
     staleTime: 60_000,
     retry: false,
   });
+  const leadBatchesQuery = useQuery({
+    queryKey: ["companies", "lead-batches"],
+    queryFn: getLeadBatches,
+    staleTime: 60_000,
+    retry: false,
+  });
   const facetsQuery = useQuery({
     queryKey: ["websites", "registry-facets"],
     queryFn: getWebsiteRegistryFacets,
@@ -418,8 +431,17 @@ export function WebsitesPage() {
     },
   });
   const addToLeadMutation = useMutation({
-    mutationFn: addWebsitesToLeads,
+    mutationFn: ({
+      websiteIds,
+      batchId,
+      batchName,
+    }: {
+      websiteIds: string[];
+      batchId?: string;
+      batchName?: string;
+    }) => addWebsitesToLeads(websiteIds, { batchId, batchName }),
     onSuccess: async () => {
+      addToLeadDialogRef.current?.close();
       setSelectedWebsiteRecords(new Map());
       setBulkStatus("");
       await Promise.all([
@@ -655,6 +677,21 @@ export function WebsitesPage() {
     });
   }
 
+  function submitAddSelectedWebsites(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const websiteIds = Array.from(selectedWebsiteIds);
+    if (websiteIds.length === 0) return;
+    if (leadGroupMode === "existing") {
+      if (!selectedLeadBatchId) return;
+      addToLeadMutation.mutate({ websiteIds, batchId: selectedLeadBatchId });
+      return;
+    }
+
+    const batchName = customLeadBatchName.trim();
+    if (!batchName) return;
+    addToLeadMutation.mutate({ websiteIds, batchName });
+  }
+
   function resetPage() {
     setCurrentPage(1);
   }
@@ -676,6 +713,142 @@ export function WebsitesPage() {
       {crawlDialogOpen && (
         <CrawlWebsiteDialog onClose={() => setCrawlDialogOpen(false)} />
       )}
+      <dialog
+        aria-labelledby="website-lead-group-dialog-title"
+        className="add-company-dialog website-lead-group-dialog"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            event.currentTarget.close();
+          }
+        }}
+        ref={addToLeadDialogRef}
+      >
+        <div className="panel-heading compact-heading">
+          <div>
+            <p className="eyebrow">WEBSITE IMPORT</p>
+            <h2 id="website-lead-group-dialog-title">
+              Choose a lead group
+            </h2>
+            <p className="panel-subtitle">
+              Add {selectedCount} selected website
+              {selectedCount === 1 ? "" : "s"} to an existing group or create
+              one with a custom name.
+            </p>
+          </div>
+          <button
+            aria-label="Close lead group selection"
+            className="icon-button"
+            onClick={() => addToLeadDialogRef.current?.close()}
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+        <form
+          className="company-form website-lead-group-form"
+          onSubmit={submitAddSelectedWebsites}
+        >
+          <label className="website-lead-group-option">
+            <input
+              checked={leadGroupMode === "existing"}
+              disabled={
+                leadBatchesQuery.isLoading ||
+                (leadBatchesQuery.data?.items.length ?? 0) === 0
+              }
+              name="lead-group-mode"
+              onChange={() => setLeadGroupMode("existing")}
+              type="radio"
+            />
+            <span>
+              <strong>Add to an existing group</strong>
+              <small>Keep the group&apos;s name and add these leads to it.</small>
+            </span>
+          </label>
+          {leadGroupMode === "existing" && (
+            <label className="website-lead-group-field">
+              Existing group
+              <select
+                onChange={(event) =>
+                  setSelectedLeadBatchId(event.target.value)
+                }
+                required
+                value={selectedLeadBatchId}
+              >
+                <option value="">Choose a group</option>
+                {(leadBatchesQuery.data?.items ?? []).map((batch) => (
+                  <option key={batch.id} value={batch.id}>
+                    {batch.name} ({batch.lead_count} leads)
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="website-lead-group-option">
+            <input
+              checked={leadGroupMode === "custom"}
+              name="lead-group-mode"
+              onChange={() => setLeadGroupMode("custom")}
+              type="radio"
+            />
+            <span>
+              <strong>Create a custom-named group</strong>
+              <small>
+                A new group is created if at least one selected website can be
+                added as a lead.
+              </small>
+            </span>
+          </label>
+          {leadGroupMode === "custom" && (
+            <label className="website-lead-group-field">
+              Group name
+              <input
+                autoComplete="off"
+                maxLength={160}
+                onChange={(event) =>
+                  setCustomLeadBatchName(event.target.value)
+                }
+                placeholder="e.g. Q4 manufacturing prospects"
+                required
+                value={customLeadBatchName}
+              />
+            </label>
+          )}
+          {leadBatchesQuery.isError && (
+            <p className="website-lead-group-error" role="alert">
+              Could not load existing groups: {leadBatchesQuery.error.message}
+            </p>
+          )}
+          {addToLeadMutation.isError && (
+            <p className="website-lead-group-error" role="alert">
+              Could not add websites to Leads: {addToLeadMutation.error.message}
+            </p>
+          )}
+          <div className="website-lead-group-actions">
+            <button
+              className="button button-secondary"
+              onClick={() => addToLeadDialogRef.current?.close()}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="button button-primary"
+              disabled={
+                addToLeadMutation.isPending ||
+                (leadGroupMode === "existing" && leadBatchesQuery.isLoading) ||
+                (leadGroupMode === "existing" &&
+                  (!selectedLeadBatchId || leadBatchesQuery.isError)) ||
+                (leadGroupMode === "custom" && !customLeadBatchName.trim())
+              }
+              type="submit"
+            >
+              {addToLeadMutation.isPending
+                ? "Adding websites..."
+                : "Add websites to Leads"}
+            </button>
+          </div>
+        </form>
+      </dialog>
 
       <section className="website-registry-panel">
         <div className="website-registry-toolbar">
@@ -1200,9 +1373,7 @@ export function WebsitesPage() {
                 excludeSelectedWebsitesMutation.isPending ||
                 excludeWebsiteMutation.isPending
               }
-              onClick={() =>
-                addToLeadMutation.mutate(Array.from(selectedWebsiteIds))
-              }
+              onClick={() => addToLeadDialogRef.current?.showModal()}
               type="button"
             >
               {addToLeadMutation.isPending
@@ -1267,6 +1438,21 @@ export function WebsitesPage() {
           <div className="alert alert-success" role="status">
             Created {addToLeadMutation.data.created_count} companies and marked{" "}
             {addToLeadMutation.data.status_updated_count} websites as Lead.
+            {addToLeadMutation.data.batch_id && (
+              <>
+                {" "}Added to{" "}
+                <strong>
+                  {addToLeadMutation.data.batch_name ?? "a new lead group"}
+                </strong>
+                {" "}·{" "}
+                <Link
+                  href={`/leads?batch=${encodeURIComponent(addToLeadMutation.data.batch_id)}`}
+                >
+                  View group
+                </Link>
+                .
+              </>
+            )}
             {addToLeadMutation.data.already_existing_count > 0 &&
               ` ${addToLeadMutation.data.already_existing_count} already had a company.`}
             {addToLeadMutation.data.skipped_listing_count > 0 &&
