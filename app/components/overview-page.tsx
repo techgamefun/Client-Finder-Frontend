@@ -199,13 +199,13 @@ export function OverviewPage({
     );
   }
 
-  const heading = (
+  const headingCopy = (
     <div>
       {adminDashboard && (
         <p className="overview-dashboard-eyebrow">ORGANIZATION OVERVIEW</p>
       )}
       <h1>{adminDashboard ? "Organization dashboard" : "Overview"}</h1>
-      <p>
+      <p className={adminDashboard ? "overview-admin-summary" : undefined}>
         {adminDashboard
           ? "Organization-wide performance and team progress"
           : "Your pipeline performance and next steps"}
@@ -230,6 +230,16 @@ export function OverviewPage({
         </span>
       </p>
     </div>
+  );
+  const heading = adminDashboard ? (
+    <div className="overview-admin-heading">
+      <span aria-hidden="true" className="overview-admin-mark">
+        <Users size={24} strokeWidth={1.8} />
+      </span>
+      {headingCopy}
+    </div>
+  ) : (
+    headingCopy
   );
   const headerActions = (
     <div className="overview-header-actions">
@@ -544,6 +554,7 @@ function Sparkline({
 
 function FunnelWidget({ query }: { query: OverviewQuery }) {
   const data = query.data;
+  const startingCount = data?.funnel.stages[0]?.count ?? 0;
   return (
     <article className="overview-panel overview-funnel-panel">
       <div className="overview-section-heading">
@@ -570,29 +581,41 @@ function FunnelWidget({ query }: { query: OverviewQuery }) {
       ) : (
         <>
           <ol className="overview-funnel-list">
-            {data?.funnel.stages.map((stage, index) => (
-              <li key={stage.key}>
-                <Link
-                  aria-label={`${stage.label}: ${formatCount(stage.count)}. Open the related list.`}
-                  className="overview-funnel-row"
-                  href={funnelHref(stage.key)}
-                >
-                  <span className="overview-funnel-index">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="overview-funnel-label">
-                    {stage.label}
-                    <OverviewMetricInfo metricKey={`funnel_${stage.key}`} />
-                  </span>
-                  <strong>{formatCount(stage.count)}</strong>
-                  <span className="overview-funnel-rate">
-                    {index === 0
-                      ? "Starting set"
-                      : `${formatPercentage(stage.conversion_percent)} from prior`}
-                  </span>
-                </Link>
-              </li>
-            ))}
+            {data?.funnel.stages.map((stage, index) => {
+              const stageWidth =
+                startingCount > 0
+                  ? Math.min(100, (stage.count / startingCount) * 100)
+                  : 0;
+              return (
+                <li key={stage.key}>
+                  <Link
+                    aria-label={`${stage.label}: ${formatCount(stage.count)}. Open the related list.`}
+                    className="overview-funnel-row"
+                    href={funnelHref(stage.key)}
+                  >
+                    <span className="overview-funnel-index">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="overview-funnel-label">
+                      {stage.label}
+                      <OverviewMetricInfo metricKey={`funnel_${stage.key}`} />
+                    </span>
+                    <strong>{formatCount(stage.count)}</strong>
+                    <span className="overview-funnel-rate">
+                      {index === 0
+                        ? "Starting set"
+                        : `${formatPercentage(stage.conversion_percent)} from prior`}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="overview-funnel-progress"
+                    >
+                      <span style={{ width: `${stageWidth}%` }} />
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ol>
           {data?.funnel.biggest_drop && (
             <p className="overview-funnel-insight">
@@ -1139,11 +1162,16 @@ function TeamActivityWidget({
                   href={`/organization/members/${user.user_id}`}
                 >
                   <span className="overview-team-activity-member">
-                    <span className="overview-team-user">{user.email}</span>
-                    <span
-                      className={`overview-team-user-status${isInactive ? " is-inactive" : ""}`}
-                    >
-                      {isInactive ? "Inactive" : "Active"}
+                    <span aria-hidden="true" className="overview-team-avatar">
+                      {user.email.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="overview-team-activity-member-copy">
+                      <span className="overview-team-user">{user.email}</span>
+                      <span
+                        className={`overview-team-user-status${isInactive ? " is-inactive" : ""}`}
+                      >
+                        {isInactive ? "Inactive" : "Active"}
+                      </span>
                     </span>
                   </span>
                   <span
