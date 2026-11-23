@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useMutation,
   useQuery,
@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import {
   addExcludedDomain,
+  addExcludedDomainsBatch,
   getWebsiteCorpusAnalysisJobsPage,
   getApplicationSettings,
   getPageSpeedScanJobs,
@@ -20,6 +21,7 @@ import {
   retryWebsiteCrawlJob,
   retryWebsiteCrawlJobs,
   type PageSpeedScanJob,
+  type ExcludedDomainInput,
   type QueueJobsPageParams,
   type WebsiteCorpusAnalysisJob,
   type WebsiteCrawlJobResponse,
@@ -120,6 +122,56 @@ function normalizeCorpusAnalysisJob(
   };
 }
 
+async function excludeQueueJobsInBatches(
+  jobs: QueueJob[],
+): Promise<{ createdCount: number; updatedCount: number; totalCount: number }> {
+  const domains = new Map<string, ExcludedDomainInput>();
+  for (const job of jobs) {
+    let url: URL;
+    try {
+      url = new URL(
+        job.websiteUrl.includes("://")
+          ? job.websiteUrl
+          : `https://${job.websiteUrl}`,
+      );
+    } catch {
+      throw new Error(`Could not determine a valid domain from ${job.websiteUrl}.`);
+    }
+    const domain = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (domain) {
+      domains.set(domain, { domain, reason: "Manual Exclusion" });
+    }
+  }
+  const exclusions = Array.from(domains.values());
+  if (exclusions.length === 0) {
+    throw new Error("No selected indexing jobs contain a valid domain.");
+  }
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  const batchSize = 1000;
+  for (let start = 0; start < exclusions.length; start += batchSize) {
+    try {
+      const result = await addExcludedDomainsBatch(
+        exclusions.slice(start, start + batchSize),
+      );
+      createdCount += result.created_count;
+      updatedCount += result.updated_count;
+    } catch (error) {
+      const processedCount = createdCount + updatedCount;
+      if (processedCount > 0) {
+        const detail =
+          error instanceof Error ? error.message : "The request failed.";
+        throw new Error(
+          `Excluded ${processedCount} of ${exclusions.length} domains before a later batch failed: ${detail}`,
+        );
+      }
+      throw error;
+    }
+  }
+  return { createdCount, updatedCount, totalCount: exclusions.length };
+}
+
 export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const config = queueConfig[kind];
   const queueLabel =
@@ -130,6 +182,15 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
         : "keyword generation";
   const showToast = useToast();
   const queryClient = useQueryClient();
+  const [selectedState, setSelectedState] = useState<{
+    kind: QueueKind;
+    jobs: Map<string, QueueJob>;
+  }>({ kind, jobs: new Map() });
+  const selectedJobs =
+    selectedState.kind === kind
+      ? selectedState.jobs
+      : new Map<string, QueueJob>();
+  const selectPageRef = useRef<HTMLInputElement>(null);
   const [statusFilterState, setStatusFilterState] = useState<{
     kind: QueueKind;
     status: "all" | QueueJobStatus;
@@ -261,6 +322,30 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
       });
     },
   });
+  const excludeSelectedDomainsMutation = useMutation({
+    mutationFn: excludeQueueJobsInBatches,
+    onSuccess: async (result) => {
+      setSelectedState({ kind, jobs: new Map() });
+      showToast({
+        type: "success",
+        title: "Selected domains excluded",
+        message: `Added ${result.createdCount} and updated ${result.updatedCount} exclusions across ${result.totalCount} unique domains. Matching queued indexing jobs were removed.`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
+      ]);
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not exclude selected domains",
+        message: error.message,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] });
+    },
+  });
   const retryAllMutation = useMutation({
     mutationFn: async (failedJobs: QueueJob[]) => {
       const result =
@@ -320,6 +405,46 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
   const failedCount = statusCounts.failed ?? 0;
   const skippedCount = statusCounts.skipped ?? 0;
   const visibleJobs = jobs;
+  const selectedCount = selectedJobs.size;
+  const selectedPageCount = visibleJobs.filter((job) =>
+    selectedJobs.has(job.id),
+  ).length;
+  const allVisibleSelected =
+    visibleJobs.length > 0 && selectedPageCount === visibleJobs.length;
+  useEffect(() => {
+    if (selectPageRef.current) {
+      selectPageRef.current.indeterminate =
+        selectedPageCount > 0 && !allVisibleSelected;
+    }
+  }, [selectedPageCount, allVisibleSelected]);
+  const setJobSelected = (job: QueueJob, selected: boolean) => {
+    setSelectedState((current) => {
+      const jobsForKind =
+        current.kind === kind
+          ? new Map(current.jobs)
+          : new Map<string, QueueJob>();
+      if (selected) jobsForKind.set(job.id, job);
+      else jobsForKind.delete(job.id);
+      return { kind, jobs: jobsForKind };
+    });
+  };
+  const toggleVisibleJobs = () => {
+    setSelectedState((current) => {
+      const jobsForKind =
+        current.kind === kind
+          ? new Map(current.jobs)
+          : new Map<string, QueueJob>();
+      if (allVisibleSelected) {
+        visibleJobs.forEach((job) => jobsForKind.delete(job.id));
+      } else {
+        visibleJobs.forEach((job) => jobsForKind.set(job.id, job));
+      }
+      return { kind, jobs: jobsForKind };
+    });
+  };
+  const clearSelectedJobs = () => {
+    setSelectedState({ kind, jobs: new Map() });
+  };
   const totalCount = jobsQuery.data?.total_count ?? 0;
   const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
   const toggleStatusFilter = (status: QueueJobStatus) => {
@@ -460,6 +585,26 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
               type="search"
               value={searchText}
             />
+            {kind === "crawler" && jobs.length > 0 && (
+              <label className="queue-select-page">
+                <input
+                  aria-label={
+                    allVisibleSelected
+                      ? "Deselect all indexing jobs on this page"
+                      : "Select all indexing jobs on this page"
+                  }
+                  checked={allVisibleSelected}
+                  disabled={
+                    excludeSelectedDomainsMutation.isPending ||
+                    excludeDomainMutation.isPending
+                  }
+                  onChange={toggleVisibleJobs}
+                  ref={selectPageRef}
+                  type="checkbox"
+                />
+                <span>Select page</span>
+              </label>
+            )}
             {failedJobs.length > 0 && (
               <button
                 className="button button-secondary queue-retry-button"
@@ -467,6 +612,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                   retryAllMutation.isPending ||
                   retryMutation.isPending ||
                   excludeDomainMutation.isPending ||
+                  excludeSelectedDomainsMutation.isPending ||
                   !canRetryJobs
                 }
                 onClick={() => retryAllMutation.mutate(failedJobs)}
@@ -480,6 +626,49 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
             )}
           </div>
         </div>
+
+        {kind === "crawler" && selectedCount > 0 && (
+          <div
+            aria-label="Selected indexing job actions"
+            className="queue-selection-toolbar"
+            role="region"
+          >
+            <span>
+              {selectedCount} indexing job{selectedCount === 1 ? "" : "s"}{" "}
+              selected
+              <small>Selection stays active across pages and filters.</small>
+            </span>
+            <div>
+              <button
+                className="button button-primary"
+                disabled={
+                  excludeSelectedDomainsMutation.isPending ||
+                  excludeDomainMutation.isPending ||
+                  retryMutation.isPending ||
+                  retryAllMutation.isPending
+                }
+                onClick={() =>
+                  excludeSelectedDomainsMutation.mutate(
+                    Array.from(selectedJobs.values()),
+                  )
+                }
+                type="button"
+              >
+                {excludeSelectedDomainsMutation.isPending
+                  ? "Excluding..."
+                  : `Exclude selected (${selectedCount})`}
+              </button>
+              <button
+                className="button button-secondary"
+                disabled={excludeSelectedDomainsMutation.isPending}
+                onClick={clearSelectedJobs}
+                type="button"
+              >
+                Clear selection
+              </button>
+            </div>
+          </div>
+        )}
 
         {jobsQuery.isLoading ? (
           <TableLoading label={`Loading ${queueLabel} jobs`} rows={5} />
@@ -507,6 +696,22 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                     </a>
                   </div>
                   <div className="queue-job-actions">
+                    {kind === "crawler" && (
+                      <label className="queue-job-select">
+                        <input
+                          aria-label={`Select ${job.websiteUrl}`}
+                          checked={selectedJobs.has(job.id)}
+                          disabled={excludeSelectedDomainsMutation.isPending}
+                          onChange={(event) =>
+                            setJobSelected(job, event.target.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span className="sr-only">
+                          Select indexing job for {job.websiteUrl}
+                        </span>
+                      </label>
+                    )}
                     <span
                       className={`pagespeed-job-status pagespeed-job-status-${job.status}`}
                     >
@@ -517,6 +722,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                         className="button button-secondary queue-exclude-button"
                         disabled={
                           excludeDomainMutation.isPending ||
+                          excludeSelectedDomainsMutation.isPending ||
                           retryMutation.isPending ||
                           retryAllMutation.isPending
                         }
@@ -537,6 +743,7 @@ export function JobQueuePage({ kind }: { kind: QueueKind }) {
                           retryMutation.isPending ||
                           retryAllMutation.isPending ||
                           excludeDomainMutation.isPending ||
+                          excludeSelectedDomainsMutation.isPending ||
                           !canRetryJobs
                         }
                         onClick={() => retryMutation.mutate(job.id)}

@@ -1454,6 +1454,10 @@ h1 {
   gap: 8px;
 }
 
+.queue-job-select {
+  margin-right: 2px;
+}
+
 .result-card {
   display: flex;
   gap: 12px;
@@ -2150,6 +2154,49 @@ html[data-theme="dark"] .toast-error .toast-icon {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.queue-select-page,
+.queue-job-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.queue-select-page input,
+.queue-job-select input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--purple);
+}
+
+.queue-selection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.queue-selection-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.queue-selection-toolbar small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .queue-search-input {
