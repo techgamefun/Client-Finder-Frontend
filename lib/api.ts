@@ -669,8 +669,24 @@ export interface WebsiteDetailResponse {
   crawl: WebsiteCrawlResponse | null;
   pagespeed_scans: PageSpeedScanSummary[];
   hypestat_profile: WebsiteHypeStatProfile | null;
+  ahrefs_metrics: WebsiteAhrefsMetrics | null;
   crawl_jobs: WebsiteCrawlJobHistory[];
   discovery_keywords: SearchKeyword[];
+}
+
+export interface WebsiteAhrefsMetrics {
+  snapshot_date: string;
+  domain_rating: number;
+  domain_rating_license_url: string;
+  organic_traffic: number | null;
+  organic_traffic_cost_cents: number | null;
+  organic_keywords: number | null;
+  backlinks_live: number | null;
+  backlinks_all_time: number | null;
+  refdomains_live: number | null;
+  refdomains_all_time: number | null;
+  units_used: number | null;
+  fetched_at: string;
 }
 
 export interface WebsiteHypeStatProfile {
@@ -766,6 +782,7 @@ export interface ApplicationSettings {
   hypestat_service_auth_configured: boolean;
   pagespeed_configured: boolean;
   pagespeed_key_source: "database" | "unset";
+  ahrefs_configured: boolean;
   gemini_configured: boolean;
   selected_discovery_tools: DiscoveryProviderId[];
   tavily_default_search_depth: TavilySearchDepth;
@@ -814,6 +831,18 @@ export interface HypeStatUsage {
   };
   meta: {
     requests_left_today: number;
+  };
+}
+
+export interface AhrefsUsage {
+  limits_and_usage: {
+    api_key_expiration_date: string | null;
+    subscription: string;
+    units_limit_api_key: number | null;
+    units_limit_workspace: number | null;
+    units_usage_api_key: number;
+    units_usage_workspace: number | null;
+    usage_reset_date: string;
   };
 }
 
@@ -1616,6 +1645,7 @@ export function updateApplicationSettings(
     octoparse_api_key?: string | null;
     hypestat_api_key?: string | null;
     pagespeed_api_key?: string | null;
+    ahrefs_api_key?: string | null;
     gemini_api_key?: string | null;
     hypestat_auto_fetch_enabled?: boolean;
     selected_discovery_tools?: DiscoveryProviderId[];
@@ -1637,6 +1667,10 @@ export function getTavilyUsage(): Promise<TavilyUsage> {
 
 export function getHypeStatUsage(): Promise<HypeStatUsage> {
   return request<HypeStatUsage>("/settings/hypestat/usage");
+}
+
+export function getAhrefsUsage(): Promise<AhrefsUsage> {
+  return request<AhrefsUsage>("/settings/ahrefs/usage");
 }
 
 export function getOctoparseUsage(): Promise<OctoparseUsage> {
@@ -2193,6 +2227,15 @@ export function refetchWebsiteHypeStat(
 ): Promise<WebsiteHypeStatProfile> {
   return request<WebsiteHypeStatProfile>(
     `/websites/${websiteId}/hypestat/refetch`,
+    { method: "POST" },
+  );
+}
+
+export function fetchWebsiteAhrefsMetrics(
+  websiteId: string,
+): Promise<WebsiteAhrefsMetrics> {
+  return request<WebsiteAhrefsMetrics>(
+    `/websites/${websiteId}/ahrefs-metrics`,
     { method: "POST" },
   );
 }

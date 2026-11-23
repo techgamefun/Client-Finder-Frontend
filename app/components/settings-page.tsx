@@ -12,6 +12,7 @@ import {
   assignGmailAccount,
   changePassword,
   deleteProfilePhoto,
+  getAhrefsUsage,
   getApplicationSettings,
   getAuthSession,
   getConnectedGmailAccounts,
@@ -26,6 +27,7 @@ import {
   updateApplicationSettings,
   uploadProfilePhoto,
   type AuthSession,
+  type AhrefsUsage,
   type ConnectedGmailAccount,
   type HypeStatUsage,
   type OctoparseTemplateConfiguration,
@@ -69,6 +71,7 @@ const tavilySearchDepthOptions: {
 
 type SettingsSection =
   | "tavily"
+  | "ahrefs"
   | "octoparse"
   | "hypestat"
   | "pagespeed"
@@ -101,6 +104,7 @@ export function SettingsPage() {
   const [octoparseApiKey, setOctoparseApiKey] = useState("");
   const [hypestatApiKey, setHypestatApiKey] = useState("");
   const [pagespeedApiKey, setPagespeedApiKey] = useState("");
+  const [ahrefsApiKey, setAhrefsApiKey] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
   const [hypestatAutoFetchEnabled, setHypestatAutoFetchEnabled] = useState<
     boolean | null
@@ -176,6 +180,12 @@ export function SettingsPage() {
     enabled: settingsQuery.data?.hypestat_configured === true,
     retry: false,
   });
+  const ahrefsUsageQuery = useQuery({
+    queryKey: ["ahrefs-usage"],
+    queryFn: getAhrefsUsage,
+    enabled: settingsQuery.data?.ahrefs_configured === true,
+    retry: false,
+  });
   const templateSearchMutation = useMutation({
     mutationFn: getOctoparseTemplates,
   });
@@ -207,6 +217,7 @@ export function SettingsPage() {
       setOctoparseApiKey("");
       setHypestatApiKey("");
       setPagespeedApiKey("");
+      setAhrefsApiKey("");
       setGeminiApiKey("");
       setHypestatAutoFetchEnabled(null);
       setMaxPages(null);
@@ -220,6 +231,7 @@ export function SettingsPage() {
       queryClient.setQueryData(["application-settings"], settings);
       await queryClient.invalidateQueries({ queryKey: ["tavily-usage"] });
       await queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] });
+      await queryClient.invalidateQueries({ queryKey: ["ahrefs-usage"] });
     },
   });
 
@@ -384,6 +396,7 @@ export function SettingsPage() {
               value={activeSection}
             >
               <option value="tavily">Tavily</option>
+              <option value="ahrefs">Ahrefs</option>
               <option value="octoparse">Octoparse</option>
               <option value="hypestat">HypeStat</option>
               <option value="pagespeed">PageSpeed</option>
@@ -1066,6 +1079,128 @@ export function SettingsPage() {
 
           <section
             className="panel settings-panel"
+            hidden={activeSection !== "ahrefs"}
+          >
+            <div className="settings-section-heading">
+              <div>
+                <p className="eyebrow">AHREFS</p>
+                <h2>API subscription and usage</h2>
+                <p className="panel-subtitle">
+                  Your key is stored on the backend and is never returned to
+                  this page. Usage is retrieved from Ahrefs without consuming
+                  Site Explorer units.
+                </p>
+              </div>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.ahrefs_configured ? " is-configured" : ""}`}
+              >
+                {settingsQuery.data.ahrefs_configured
+                  ? "Configured"
+                  : "Not configured"}
+              </span>
+            </div>
+            <form
+              className="settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNotice("");
+                saveMutation.mutate({
+                  ahrefs_api_key: ahrefsApiKey.trim() || null,
+                });
+              }}
+            >
+              <label className="settings-field">
+                Ahrefs API key
+                <input
+                  autoComplete="new-password"
+                  onChange={(event) => setAhrefsApiKey(event.target.value)}
+                  placeholder={
+                    settingsQuery.data.ahrefs_configured
+                      ? "Leave blank to keep the current key"
+                      : "Enter your Ahrefs API key"
+                  }
+                  type="password"
+                  value={ahrefsApiKey}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={saveMutation.isPending}
+                  type="submit"
+                >
+                  {saveMutation.isPending ? "Saving…" : "Save API key"}
+                </button>
+                <button
+                  className="button button-secondary"
+                  disabled={
+                    !settingsQuery.data.ahrefs_configured ||
+                    ahrefsUsageQuery.isFetching
+                  }
+                  onClick={() => void ahrefsUsageQuery.refetch()}
+                  type="button"
+                >
+                  {ahrefsUsageQuery.isFetching
+                    ? "Refreshing…"
+                    : "Refresh usage"}
+                </button>
+                {settingsQuery.data.ahrefs_configured && (
+                  <button
+                    className="button button-secondary"
+                    disabled={saveMutation.isPending}
+                    onClick={() => {
+                      setNotice("");
+                      saveMutation.mutate({ ahrefs_api_key: "" });
+                    }}
+                    type="button"
+                  >
+                    Remove saved key
+                  </button>
+                )}
+              </div>
+            </form>
+            {saveMutation.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not save Ahrefs settings: {saveMutation.error.message}
+              </p>
+            )}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
+            {settingsQuery.data.ahrefs_configured &&
+              ahrefsUsageQuery.isPending && (
+                <p className="settings-feedback" role="status">
+                  Loading Ahrefs usage…
+                </p>
+              )}
+            {settingsQuery.data.ahrefs_configured &&
+              ahrefsUsageQuery.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not retrieve Ahrefs usage:{" "}
+                {ahrefsUsageQuery.error.message}
+              </p>
+            )}
+            {settingsQuery.data.ahrefs_configured &&
+              ahrefsUsageQuery.data && (
+              <AhrefsUsagePanel usage={ahrefsUsageQuery.data} />
+            )}
+            {!settingsQuery.data.ahrefs_configured && (
+              <p className="settings-feedback">
+                Add an API key to view subscription limits and unit usage.
+              </p>
+            )}
+          </section>
+
+          <section
+            className="panel settings-panel"
             hidden={activeSection !== "crawler"}
           >
             <div className="settings-section-heading">
@@ -1444,6 +1579,64 @@ function HypeStatUsagePanel({ usage }: { usage: HypeStatUsage }) {
   );
 }
 
+function AhrefsUsagePanel({ usage }: { usage: AhrefsUsage }) {
+  const { limits_and_usage: limits } = usage;
+  const usageCards = [
+    {
+      label: "API key units",
+      used: limits.units_usage_api_key,
+      limit: limits.units_limit_api_key,
+    },
+    ...(limits.units_usage_workspace !== null
+      ? [
+          {
+            label: "Workspace units",
+            used: limits.units_usage_workspace,
+            limit: limits.units_limit_workspace,
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <div className="tavily-usage">
+      <p className="panel-subtitle">
+        Subscription: {limits.subscription}. Usage resets{" "}
+        {new Date(limits.usage_reset_date).toLocaleDateString()}.
+      </p>
+      <div className="tavily-usage">
+        {usageCards.map(({ label, used, limit }) => (
+          <article className="tavily-usage-card" key={label}>
+            <span>{label}</span>
+            <strong>
+              {used.toLocaleString()} /{" "}
+              {limit === null ? "unlimited" : limit.toLocaleString()}
+            </strong>
+            {limit !== null && (
+              <>
+                <progress
+                  aria-label={`Ahrefs ${label.toLowerCase()} usage`}
+                  max={Math.max(limit, 1)}
+                  value={Math.min(used, limit)}
+                />
+                <small>
+                  {Math.max(limit - used, 0).toLocaleString()} units remaining
+                </small>
+              </>
+            )}
+          </article>
+        ))}
+      </div>
+      {limits.api_key_expiration_date && (
+        <p className="settings-feedback">
+          API key expires{" "}
+          {new Date(limits.api_key_expiration_date).toLocaleDateString()}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function OctoparseUsagePanel({ usage }: { usage: OctoparseUsage }) {
   const period = new Date(usage.period_start).toLocaleDateString(undefined, {
     month: "long",
@@ -1494,6 +1687,7 @@ function getTemplateFields(
 function isSettingsSection(value: string): value is SettingsSection {
   return (
     value === "tavily" ||
+    value === "ahrefs" ||
     value === "octoparse" ||
     value === "hypestat" ||
     value === "pagespeed" ||

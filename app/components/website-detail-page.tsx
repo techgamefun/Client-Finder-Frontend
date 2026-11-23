@@ -19,6 +19,8 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import {
   crawlWebsite,
+  fetchWebsiteAhrefsMetrics,
+  getApplicationSettings,
   getWebsiteDetail,
   refetchWebsiteHypeStat,
   updateWebsite,
@@ -28,6 +30,7 @@ import type {
   PageSpeedScanSummary,
   WebsiteCrawlJobHistory,
   WebsiteDetailResponse,
+  WebsiteAhrefsMetrics,
   WebsiteStatus,
 } from "@/lib/api";
 import { formatSiteType } from "@/lib/site-type";
@@ -38,6 +41,7 @@ const uuidPattern =
 
 const WEBSITE_PROFILE_SECTIONS = [
   ["overview", "Overview"],
+  ["ahrefs", "Ahrefs"],
   ["pagespeed", "PageSpeed"],
   ["content", "Content"],
   ["contacts", "Contacts"],
@@ -96,9 +100,15 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
     website,
     crawl,
     hypestat_profile: hypestatProfile,
+    ahrefs_metrics: ahrefsMetrics,
     crawl_jobs: crawlJobs,
     discovery_keywords: discoveryKeywords,
   } = data;
+  const settingsQuery = useQuery({
+    queryKey: ["application-settings"],
+    queryFn: getApplicationSettings,
+    retry: false,
+  });
   const crawlStatus =
     website.crawl_job_status ??
     (website.is_crawled ? "succeeded" : "not_queued");
@@ -164,6 +174,15 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
       await Promise.all([
         invalidateWebsite(),
         queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] }),
+      ]);
+    },
+  });
+  const fetchAhrefs = useMutation({
+    mutationFn: () => fetchWebsiteAhrefsMetrics(website.id),
+    onSuccess: async () => {
+      await Promise.all([
+        invalidateWebsite(),
+        queryClient.invalidateQueries({ queryKey: ["ahrefs-usage"] }),
       ]);
     },
   });
@@ -314,6 +333,13 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
         onRetry={() => refetchHypeStat.mutate()}
         profile={hypestatProfile}
         website={website}
+      />
+      <AhrefsSection
+        error={fetchAhrefs.error?.message}
+        isConfigured={settingsQuery.data?.ahrefs_configured === true}
+        isPending={fetchAhrefs.isPending}
+        metrics={ahrefsMetrics}
+        onFetch={() => fetchAhrefs.mutate()}
       />
 
       <div className="profile-content-layout">
@@ -842,6 +868,127 @@ function WebsiteAvatar({
         domain.slice(0, 1).toUpperCase()
       )}
     </span>
+  );
+}
+
+function AhrefsSection({
+  error,
+  isConfigured,
+  isPending,
+  metrics,
+  onFetch,
+}: {
+  error?: string;
+  isConfigured: boolean;
+  isPending: boolean;
+  metrics: WebsiteAhrefsMetrics | null;
+  onFetch: () => void;
+}) {
+  const metricItems = [
+    ["Domain Rating", metrics ? metrics.domain_rating.toFixed(1) : "—"],
+    ["Organic traffic", formatMetric(metrics?.organic_traffic ?? null)],
+    ["Organic keywords", formatMetric(metrics?.organic_keywords ?? null)],
+    ["Live backlinks", formatMetric(metrics?.backlinks_live ?? null)],
+    ["All-time backlinks", formatMetric(metrics?.backlinks_all_time ?? null)],
+    ["Live referring domains", formatMetric(metrics?.refdomains_live ?? null)],
+    [
+      "All-time referring domains",
+      formatMetric(metrics?.refdomains_all_time ?? null),
+    ],
+    [
+      "Organic traffic value",
+      metrics?.organic_traffic_cost_cents === null ||
+      metrics?.organic_traffic_cost_cents === undefined
+        ? "—"
+        : new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 0,
+          }).format(metrics.organic_traffic_cost_cents / 100),
+    ],
+  ];
+
+  return (
+    <section
+      aria-labelledby="website-ahrefs-heading"
+      className="profile-card profile-seo-overview"
+      id="ahrefs"
+    >
+      <header className="profile-seo-heading">
+        <div>
+          <p className="profile-seo-eyebrow">AHREFS SITE EXPLORER</p>
+          <h2 id="website-ahrefs-heading">Ahrefs metrics</h2>
+          <p>Domain authority, organic search, and backlink estimates.</p>
+        </div>
+        <div className="settings-actions">
+          {isConfigured ? (
+            <button
+              className="profile-button profile-button-primary"
+              disabled={isPending}
+              onClick={onFetch}
+              title="Snapshots are cached for 24 hours to avoid repeated API-unit charges."
+              type="button"
+            >
+              {isPending
+                ? "Fetching…"
+                : metrics
+                  ? "Refresh Ahrefs metrics"
+                  : "Fetch Ahrefs metrics"}
+            </button>
+          ) : (
+            <Link
+              className="profile-button profile-button-primary"
+              href="/settings?section=ahrefs"
+            >
+              Configure Ahrefs
+            </Link>
+          )}
+        </div>
+      </header>
+      {error && <InlineError message={`Ahrefs request failed: ${error}`} />}
+      {metrics ? (
+        <>
+          <div
+            aria-label="Ahrefs website metrics"
+            className="profile-seo-metrics"
+          >
+            {metricItems.map(([label, value]) => (
+              <div className="profile-seo-metric" key={label}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+                <small>Ahrefs estimate</small>
+              </div>
+            ))}
+          </div>
+          <p className="profile-empty">
+            Snapshot date {new Date(metrics.snapshot_date).toLocaleDateString()}
+            {" · "}
+            <RelativeTime prefix="Fetched" value={metrics.fetched_at} />
+            {metrics.units_used !== null
+              ? ` · ${metrics.units_used.toLocaleString()} API units used`
+              : ""}
+          </p>
+        </>
+      ) : (
+        <p className="profile-empty">
+          Fetch an Ahrefs snapshot to view this website’s Domain Rating,
+          backlinks, referring domains, and organic search metrics.
+        </p>
+      )}
+      <p className="profile-empty">
+        Each uncached snapshot makes two paid Site Explorer requests, with a
+        minimum cost of 50 units each. Results are cached for 24 hours.{" "}
+        Domain Rating data by Ahrefs ·{" "}
+        <a
+          href={metrics?.domain_rating_license_url ?? "https://ahrefs.com"}
+          rel="noreferrer"
+          target="_blank"
+        >
+          View license
+        </a>
+        .
+      </p>
+    </section>
   );
 }
 
