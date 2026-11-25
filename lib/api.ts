@@ -372,6 +372,13 @@ export interface DiscoverySearchInput extends DiscoveryInput {
   providers?: DiscoveryProviderId[];
 }
 
+export interface DiscoveryAiSearchInput extends DiscoverySearchInput {
+  ai_provider: DiscoveryAiProvider;
+  model?: string;
+}
+
+export type DiscoveryAiProvider = "gemini" | "groq";
+
 export interface OctoparseTemplateConfiguration {
   template_name: string;
   query_field: string;
@@ -439,6 +446,7 @@ export interface DiscoveryDomainRatingResult {
 export interface DiscoveryResponse {
   query: string;
   results: DiscoveryResult[];
+  search_queries: string[];
   search_id: string;
   answer: string | null;
   credits_used: number | null;
@@ -448,6 +456,8 @@ export interface DiscoveryResponse {
     detail: string;
   }[];
 }
+
+export type DiscoveryAiSearchResponse = DiscoveryResponse;
 
 export interface IngestResponse {
   query: string;
@@ -2351,6 +2361,15 @@ export function searchCompanies(
   input: DiscoverySearchInput,
 ): Promise<DiscoveryResponse> {
   return request<DiscoveryResponse>("/discovery/search", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function searchCompaniesWithAi(
+  input: DiscoveryAiSearchInput,
+): Promise<DiscoveryAiSearchResponse> {
+  return request<DiscoveryAiSearchResponse>("/discovery/ai-search", {
     method: "POST",
     body: JSON.stringify(input),
   });

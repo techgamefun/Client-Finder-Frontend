@@ -69,6 +69,12 @@ result. **Auto Find More Results** can continue searching until no new domains
 are found, excluding displayed and already-registered domains; each additional
 Tavily search uses credits. Search depth, default country, and excluded domains
 can be configured by organization admins in **Settings → Tavily**.
+Enter up to five keywords separated by commas or new lines to search them in
+parallel. The selected result limit is shared across the keywords, results are
+deduplicated by website domain, and the searches used are shown with results.
+**AI Search** uses a saved Gemini or Groq key to add up to two related queries
+when the shared result limit allows, then searches those alongside the entered
+keywords through Tavily. Tavily credits apply to each search.
 
 ## Useful commands
 

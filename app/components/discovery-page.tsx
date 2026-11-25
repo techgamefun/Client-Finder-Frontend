@@ -8,16 +8,20 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { Settings, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   getApplicationSettings,
   getAuthSession,
   getDiscoveryDomainRatings,
   getDiscoveryProviderJob,
+  getGroqModels,
   getSearchKeywordSuggestions,
   getWebsites,
   saveDiscoveryWebsites,
   searchCompanies,
+  searchCompaniesWithAi,
+  type DiscoveryAiProvider,
   type UserTavilySearchPreferences,
 } from "@/lib/api";
 import type {
@@ -40,6 +44,20 @@ const suggestedQueries = [
   "Independent dental clinics in Chicago",
   "Commercial cleaning companies in Seattle",
 ];
+const MAX_DISCOVERY_KEYWORDS = 5;
+
+function parseSearchKeywords(value: string) {
+  const keywords = value
+    .split(/[,\r\n]+/)
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  return keywords.filter(
+    (keyword, index) =>
+      keywords.findIndex(
+        (candidate) => candidate.toLowerCase() === keyword.toLowerCase(),
+      ) === index,
+  );
+}
 
 type DiscoveryDomainRatingState = {
   status: "loading" | "succeeded" | "failed";
@@ -70,6 +88,19 @@ type DiscoveryFilterState = {
 export function DiscoveryPage() {
   const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState("");
+  const discoveryQueryRef = useRef<HTMLTextAreaElement>(null);
+  const searchKeywords = parseSearchKeywords(searchText);
+  const keywordInputError =
+    searchKeywords.length > MAX_DISCOVERY_KEYWORDS
+      ? `Enter no more than ${MAX_DISCOVERY_KEYWORDS} keywords.`
+      : searchKeywords.some((keyword) => keyword.length < 3)
+        ? "Each keyword must contain at least 3 characters."
+        : "";
+  const hasValidSearchKeywords =
+    searchKeywords.length > 0 && !keywordInputError;
+  const [selectedAiProvider, setSelectedAiProvider] =
+    useState<DiscoveryAiProvider | null>(null);
+  const [groqModel, setGroqModel] = useState("openai/gpt-oss-20b");
   const [saveResult, setSaveResult] =
     useState<DiscoveryWebsiteSaveResponse | null>(null);
   const [savedDomains, setSavedDomains] = useState<Set<string>>(new Set());
@@ -84,6 +115,12 @@ export function DiscoveryPage() {
   const preferenceSaveAttempt = useRef<string | null>(null);
   const requestedAhrefsDomains = useRef(new Set<string>());
   const ahrefsSearchId = useRef<string | null>(null);
+  useEffect(() => {
+    const textarea = discoveryQueryRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 90)}px`;
+  }, [searchText]);
   const [lastSearchInput, setLastSearchInput] =
     useState<DiscoverySearchInput | null>(null);
   const [moreResults, setMoreResults] = useState<DiscoveryResponse["results"]>([]);
@@ -97,11 +134,35 @@ export function DiscoveryPage() {
     queryFn: getApplicationSettings,
     retry: false,
   });
+  const activeAiProvider =
+    selectedAiProvider ??
+    (settingsQuery.data?.groq_configured &&
+    !settingsQuery.data.gemini_configured
+      ? "groq"
+      : "gemini");
   const authSessionQuery = useQuery({
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
     retry: false,
   });
+  const groqModelsQuery = useQuery({
+    queryKey: ["groq-models", authSessionQuery.data?.user.id],
+    queryFn: getGroqModels,
+    enabled:
+      activeAiProvider === "groq" &&
+      settingsQuery.data?.groq_configured === true,
+    retry: false,
+  });
+  const availableGroqModels = groqModelsQuery.data?.models ?? [];
+  const selectedGroqModel = availableGroqModels.includes(groqModel)
+    ? groqModel
+    : availableGroqModels.includes("openai/gpt-oss-20b")
+      ? "openai/gpt-oss-20b"
+      : availableGroqModels[0] ?? "";
+  const activeAiProviderConfigured =
+    activeAiProvider === "gemini"
+      ? settingsQuery.data?.gemini_configured === true
+      : settingsQuery.data?.groq_configured === true;
   const userPreferences = useUserPreferences(authSessionQuery.data?.user.id);
   const saveUserPreferences = userPreferences.save;
   const storedTavilyFilters = userPreferences.data?.search.tavily;
@@ -284,8 +345,23 @@ export function DiscoveryPage() {
     },
   });
   const searchMutation = useMutation({
-    mutationFn: ({ input }: { input: DiscoverySearchInput; autoFindMore: boolean }) =>
-      searchCompanies(input),
+    mutationFn: ({
+      input,
+      aiProvider,
+      aiModel,
+    }: {
+      input: DiscoverySearchInput;
+      autoFindMore: boolean;
+      aiProvider: DiscoveryAiProvider | null;
+      aiModel: string | null;
+    }) =>
+      aiProvider
+        ? searchCompaniesWithAi({
+            ...input,
+            ai_provider: aiProvider,
+            ...(aiProvider === "groq" && aiModel ? { model: aiModel } : {}),
+          })
+        : searchCompanies(input),
     onSuccess: (response, variables) => {
       if (variables.autoFindMore && settingsQuery.data?.tavily_configured) {
         findMoreMutation.mutate({
@@ -537,10 +613,10 @@ export function DiscoveryPage() {
         : [],
     ),
   ];
-  function handleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function runSearch(aiProvider: DiscoveryAiProvider | null = null) {
+    if (!hasValidSearchKeywords) return;
     const request: DiscoverySearchInput = {
-      query: searchText.trim(),
+      query: searchKeywords.join("\n"),
       max_results: filters.max_results,
       search_depth: filters.search_depth,
       topic: filters.topic,
@@ -586,7 +662,17 @@ export function DiscoveryPage() {
     searchMutation.mutate({
       input: request,
       autoFindMore: filters.auto_find_more,
+      aiProvider,
+      aiModel:
+        aiProvider === "groq" && selectedGroqModel
+          ? selectedGroqModel
+          : null,
     });
+  }
+
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    runSearch();
   }
 
   function toggleDirectoryPreset() {
@@ -650,75 +736,265 @@ export function DiscoveryPage() {
         <h1>Discover websites</h1>
         <p>Find businesses and websites across the web</p>
 
-        <form className="discovery-form" onSubmit={handleSearch}>
-          <label className="sr-only" htmlFor="discovery-query">
-            Describe the websites you want to find
-          </label>
-          <span className="search-symbol" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <circle cx="10.8" cy="10.8" r="6.8" />
-              <path d="m16 16 4.2 4.2" />
-            </svg>
-          </span>
-          <input
-            autoComplete="off"
-            id="discovery-query"
-            list="discovery-keyword-suggestions"
-            maxLength={300}
-            minLength={3}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="Search for companies, industries, or locations"
-            required
-            value={searchText}
-          />
-          {searchText && (
+        <form className="discovery-search-form" onSubmit={handleSearch}>
+          <div className="discovery-search-field">
+            <label className="sr-only" htmlFor="discovery-query">
+              Enter keywords for the websites you want to find
+            </label>
+            <span className="search-symbol" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="10.8" cy="10.8" r="6.8" />
+                <path d="m16 16 4.2 4.2" />
+              </svg>
+            </span>
+            <textarea
+              id="discovery-query"
+              aria-describedby="discovery-keyword-hint"
+              maxLength={300}
+              minLength={3}
+              onChange={(event) => setSearchText(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  (event.ctrlKey || event.metaKey)
+                ) {
+                  event.preventDefault();
+                  runSearch();
+                }
+              }}
+              placeholder="Search businesses or websites..."
+              ref={discoveryQueryRef}
+              required
+              rows={1}
+              value={searchText}
+            />
+            {searchText && (
+              <button
+                aria-label="Clear search"
+                className="discovery-clear-search"
+                onClick={() => setSearchText("")}
+                type="button"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <div className="discovery-search-actions">
             <button
-              aria-label="Clear search"
-              className="discovery-clear-search"
-              onClick={() => setSearchText("")}
+              className="button button-secondary discovery-ai-search-button"
+              disabled={
+                !hasValidSearchKeywords ||
+                !activeAiProviderConfigured ||
+                !settingsQuery.data?.tavily_configured ||
+                searchMutation.isPending ||
+                findMoreMutation.isPending ||
+                saveMutation.isPending ||
+                (activeAiProvider === "groq" &&
+                  (groqModelsQuery.isPending ||
+                    groqModelsQuery.isError ||
+                    !selectedGroqModel))
+              }
+              onClick={() => runSearch(activeAiProvider)}
+              title="Expands related searches and may use additional Tavily credits."
               type="button"
             >
-              ×
+              <Sparkles aria-hidden="true" size={15} />
+              {searchMutation.isPending &&
+              searchMutation.variables?.aiProvider
+                ? "AI searching..."
+                : "AI Search"}
             </button>
-          )}
-          <datalist id="discovery-keyword-suggestions">
-            {suggestionsQuery.data?.map(({ id, keyword }) => (
-              <option key={id} value={keyword} />
-            ))}
-          </datalist>
-          <button
-            className="button button-primary search-button"
-            disabled={
-              searchMutation.isPending ||
-              findMoreMutation.isPending ||
-              saveMutation.isPending ||
-              settingsQuery.isPending ||
-              settingsQuery.isError ||
-              userPreferences.isPending ||
-              userPreferences.saveMutation.isPending ||
-              configuredSelectedProviders.length === 0
-            }
-            type="submit"
-          >
-            {searchMutation.isPending ? "Searching..." : "Search"}
-          </button>
+            <button
+              className="button button-primary search-button"
+              disabled={
+                !hasValidSearchKeywords ||
+                searchMutation.isPending ||
+                findMoreMutation.isPending ||
+                saveMutation.isPending ||
+                settingsQuery.isPending ||
+                settingsQuery.isError ||
+                userPreferences.isPending ||
+                userPreferences.saveMutation.isPending ||
+                configuredSelectedProviders.length === 0
+              }
+              type="submit"
+            >
+              {searchMutation.isPending ? "Searching..." : "Search"}
+            </button>
+          </div>
         </form>
-
         <details className="discovery-advanced-filters">
           <summary>
-            <span>Advanced Search Filters</span>
-            <span className="discovery-advanced-summary">
-              {filters.topic === "general" ? "General" : filters.topic}
-              {" · "}
-              {filters.search_depth}
-              {" · "}
-              {filters.max_results} results
-            </span>
-            <span aria-hidden="true" className="discovery-source-summary-chevron">
-              ▾
-            </span>
+            <span className="sr-only">Advanced search filters</span>
+            <Settings aria-hidden="true" size={17} />
           </summary>
           <div className="discovery-advanced-content">
+            <section className="discovery-ai-model-settings">
+              <h3>AI model settings</h3>
+              <div className="discovery-filter-grid discovery-ai-model-grid">
+                <label className="discovery-filter-field">
+                  AI provider
+                  <select
+                    disabled={searchMutation.isPending}
+                    id="discovery-ai-provider"
+                    onChange={(event) =>
+                      setSelectedAiProvider(
+                        event.target.value as DiscoveryAiProvider,
+                      )
+                    }
+                    value={activeAiProvider}
+                  >
+                    <option value="gemini">
+                      Gemini
+                      {!settingsQuery.data?.gemini_configured
+                        ? " · setup required"
+                        : ""}
+                    </option>
+                    <option value="groq">
+                      Groq
+                      {!settingsQuery.data?.groq_configured
+                        ? " · setup required"
+                        : ""}
+                    </option>
+                  </select>
+                </label>
+                {activeAiProvider === "groq" &&
+                  activeAiProviderConfigured &&
+                  groqModelsQuery.isSuccess &&
+                  availableGroqModels.length > 0 && (
+                    <label className="discovery-filter-field">
+                      Groq model
+                      <select
+                        disabled={searchMutation.isPending}
+                        onChange={(event) => setGroqModel(event.target.value)}
+                        value={selectedGroqModel}
+                      >
+                        {availableGroqModels.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+              </div>
+              {settingsQuery.data &&
+                !settingsQuery.data.tavily_configured && (
+                  <p className="discovery-ai-search-help">
+                    AI Search needs a Tavily key.{" "}
+                    <Link href="/settings?section=tavily">Set up Tavily</Link>
+                  </p>
+                )}
+              {settingsQuery.data &&
+                settingsQuery.data.tavily_configured &&
+                !activeAiProviderConfigured && (
+                  <p className="discovery-ai-search-help">
+                    Add your {activeAiProvider === "gemini" ? "Gemini" : "Groq"}{" "}
+                    key to use AI Search.{" "}
+                    <Link href={`/settings?section=${activeAiProvider}`}>
+                      Open{" "}
+                      {activeAiProvider === "gemini" ? "Gemini" : "Groq"}{" "}
+                      settings
+                    </Link>
+                  </p>
+                )}
+              {activeAiProvider === "groq" &&
+                activeAiProviderConfigured &&
+                groqModelsQuery.isPending && (
+                  <p className="discovery-ai-search-help" role="status">
+                    Loading compatible Groq models…
+                  </p>
+                )}
+              {activeAiProvider === "groq" && groqModelsQuery.isError && (
+                <p className="discovery-ai-search-help is-error" role="alert">
+                  Could not load Groq models: {groqModelsQuery.error.message}
+                </p>
+              )}
+              {activeAiProvider === "groq" &&
+                groqModelsQuery.isSuccess &&
+                availableGroqModels.length === 0 && (
+                  <p className="discovery-ai-search-help is-error" role="alert">
+                    No Groq models with strict structured-output support are
+                    available for this key.
+                  </p>
+                )}
+            </section>
+
+            <details className="discovery-source-picker">
+              <summary>
+                <span className="discovery-source-summary-label">Sources</span>
+                <span className="discovery-source-summary-value">
+                  {settingsQuery.isPending
+                    ? "Loading..."
+                    : searchSourcesLabel || "None selected"}
+                </span>
+                <span
+                  className="discovery-source-summary-chevron"
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              </summary>
+              <div
+                aria-busy={settingsQuery.isPending}
+                className="discovery-source-options"
+              >
+                <label className="discovery-source-option">
+                  <input
+                    checked={selectedProviders.includes("tavily")}
+                    disabled={
+                      settingsQuery.isPending ||
+                      userPreferences.isPending ||
+                      userPreferences.saveMutation.isPending ||
+                      (!settingsQuery.data?.tavily_configured &&
+                        !selectedProviders.includes("tavily"))
+                    }
+                    onChange={(event) =>
+                      toggleDiscoveryProvider("tavily", event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    <strong>Tavily</strong>
+                    <small>
+                      {settingsQuery.data?.tavily_configured
+                        ? "Ready"
+                        : "Configure in Settings"}
+                    </small>
+                  </span>
+                </label>
+                <label className="discovery-source-option">
+                  <input
+                    checked={selectedProviders.includes("octoparse")}
+                    disabled={
+                      settingsQuery.isPending ||
+                      userPreferences.isPending ||
+                      userPreferences.saveMutation.isPending ||
+                      ((!settingsQuery.data?.octoparse_configured ||
+                        !settingsQuery.data?.octoparse_template) &&
+                        !selectedProviders.includes("octoparse"))
+                    }
+                    onChange={(event) =>
+                      toggleDiscoveryProvider("octoparse", event.target.checked)
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    <strong>Octoparse</strong>
+                    <small>
+                      {settingsQuery.data?.octoparse_configured &&
+                      settingsQuery.data.octoparse_template
+                        ? settingsQuery.data.octoparse_template.template_name
+                        : "Configure in Settings"}
+                    </small>
+                  </span>
+                </label>
+                <Link className="discovery-source-settings" href="/settings">
+                  Configure sources
+                </Link>
+              </div>
+              </details>
+
             <div className="discovery-filter-grid">
               <label className="discovery-filter-field">
                 Topic
@@ -988,72 +1264,62 @@ export function DiscoveryPage() {
           </div>
         </details>
 
-        <details className="discovery-source-picker">
-          <summary>
-            <span className="discovery-source-summary-label">Sources</span>
-            <span className="discovery-source-summary-value">
-              {settingsQuery.isPending ? "Loading..." : searchSourcesLabel || "None selected"}
-            </span>
-            <span className="discovery-source-summary-chevron" aria-hidden="true">
-              ▾
-            </span>
-          </summary>
-          <div aria-busy={settingsQuery.isPending} className="discovery-source-options">
-            <label className="discovery-source-option">
-              <input
-                checked={selectedProviders.includes("tavily")}
+        <div className="discovery-search-meta">
+          <p
+            className="discovery-keyword-hint"
+            id="discovery-keyword-hint"
+          >
+            Up to {MAX_DISCOVERY_KEYWORDS} searches · comma or new line
+            separated · Ctrl/⌘+Enter to run · AI uses Tavily credits.
+          </p>
+          <span className="discovery-keyword-count">
+            {searchKeywords.length}/{MAX_DISCOVERY_KEYWORDS}
+          </span>
+        </div>
+        {keywordInputError && (
+          <p className="discovery-keyword-error" role="alert">
+            {keywordInputError}
+          </p>
+        )}
+        {suggestionsQuery.data && suggestionsQuery.data.length > 0 && (
+          <div
+            aria-label="Recent matching searches"
+            className="discovery-keyword-suggestions"
+          >
+            <span>Recent matches</span>
+            {suggestionsQuery.data.slice(0, 4).map(({ id, keyword }) => (
+              <button
                 disabled={
-                  settingsQuery.isPending ||
-                  userPreferences.isPending ||
-                  userPreferences.saveMutation.isPending ||
-                  (!settingsQuery.data?.tavily_configured &&
-                    !selectedProviders.includes("tavily"))
+                  searchKeywords.length >= MAX_DISCOVERY_KEYWORDS &&
+                  !searchKeywords.some(
+                    (currentKeyword) =>
+                      currentKeyword.toLowerCase() === keyword.toLowerCase(),
+                  )
                 }
-                onChange={(event) =>
-                  toggleDiscoveryProvider("tavily", event.target.checked)
+                key={id}
+                onClick={() =>
+                  setSearchText((current) => {
+                    const currentKeywords = parseSearchKeywords(current);
+                    if (
+                      currentKeywords.some(
+                        (currentKeyword) =>
+                          currentKeyword.toLowerCase() ===
+                          keyword.toLowerCase(),
+                      )
+                    ) {
+                      return current;
+                    }
+                    const nextValue = [...currentKeywords, keyword].join("\n");
+                    return nextValue.length <= 300 ? nextValue : current;
+                  })
                 }
-                type="checkbox"
-              />
-              <span>
-                <strong>Tavily</strong>
-                <small>
-                  {settingsQuery.data?.tavily_configured
-                    ? "Ready"
-                    : "Configure in Settings"}
-                </small>
-              </span>
-            </label>
-            <label className="discovery-source-option">
-              <input
-                checked={selectedProviders.includes("octoparse")}
-                disabled={
-                  settingsQuery.isPending ||
-                  userPreferences.isPending ||
-                  userPreferences.saveMutation.isPending ||
-                  ((!settingsQuery.data?.octoparse_configured ||
-                    !settingsQuery.data?.octoparse_template) &&
-                    !selectedProviders.includes("octoparse"))
-                }
-                onChange={(event) =>
-                  toggleDiscoveryProvider("octoparse", event.target.checked)
-                }
-                type="checkbox"
-              />
-              <span>
-                <strong>Octoparse</strong>
-                <small>
-                  {settingsQuery.data?.octoparse_configured &&
-                  settingsQuery.data.octoparse_template
-                    ? settingsQuery.data.octoparse_template.template_name
-                    : "Configure in Settings"}
-                </small>
-              </span>
-            </label>
-            <Link className="discovery-source-settings" href="/settings">
-              Configure sources
-            </Link>
+                type="button"
+              >
+                {keyword}
+              </button>
+            ))}
           </div>
-        </details>
+        )}
 
         {suggestedQueries.length > 0 && !searchData && (
           <div className="discovery-examples">
@@ -1100,7 +1366,11 @@ export function DiscoveryPage() {
       {searchMutation.isPending && (
         <div className="discovery-search-progress" role="status">
           <span className="discovery-spinner" aria-hidden="true" />
-          <span>Searching selected sources...</span>
+          <span>
+            {searchMutation.variables?.aiProvider
+              ? "Expanding keywords and searching Tavily..."
+              : "Searching selected sources..."}
+          </span>
         </div>
       )}
       {searchMutation.isError && (
@@ -1204,9 +1474,15 @@ export function DiscoveryPage() {
             <div>
               <strong>Results</strong>
               <span>
-                {combinedResults.length} found for “{searchData.query}”
+                {combinedResults.length} found for “
+                {searchData.query.replace(/\n/g, " · ")}”
                 {providerJobsPending ? " · searching..." : ""}
               </span>
+              {searchData.search_queries.length > 0 && (
+                <span className="discovery-ai-query-summary">
+                  Searches used: {searchData.search_queries.join(" · ")}
+                </span>
+              )}
               {(searchData.credits_used !== null ||
                 additionalCredits > 0) && (
                 <span className="discovery-credits-badge">
@@ -1245,8 +1521,7 @@ export function DiscoveryPage() {
 
           <div className="discovery-dr-filter">
             <div className="discovery-dr-filter-copy">
-              <strong>Filter registry additions by DR</strong>
-              <span>Only matching results will be added.</span>
+              <strong>Filter by DR</strong>
             </div>
             <label>
               Min
