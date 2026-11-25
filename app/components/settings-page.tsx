@@ -12,6 +12,7 @@ import {
   assignGmailAccount,
   changePassword,
   deleteProfilePhoto,
+  getGroqModels,
   getAhrefsUsage,
   getApplicationSettings,
   getAuthSession,
@@ -29,6 +30,7 @@ import {
   type AuthSession,
   type AhrefsUsage,
   type ConnectedGmailAccount,
+  type GroqRequestUsageSnapshot,
   type HypeStatUsage,
   type OctoparseTemplateConfiguration,
   type OctoparseTemplateOption,
@@ -76,6 +78,7 @@ type SettingsSection =
   | "hypestat"
   | "pagespeed"
   | "gemini"
+  | "groq"
   | "gmail"
   | "crawler"
   | "suppression"
@@ -106,6 +109,7 @@ export function SettingsPage() {
   const [pagespeedApiKey, setPagespeedApiKey] = useState("");
   const [ahrefsApiKey, setAhrefsApiKey] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [groqApiKey, setGroqApiKey] = useState("");
   const [hypestatAutoFetchEnabled, setHypestatAutoFetchEnabled] = useState<
     boolean | null
   >(null);
@@ -137,6 +141,22 @@ export function SettingsPage() {
     queryKey: ["auth-session"],
     queryFn: getAuthSession,
     retry: false,
+  });
+  const groqModelsQuery = useQuery({
+    queryKey: ["groq-models", authSessionQuery.data?.user.id],
+    queryFn: getGroqModels,
+    enabled:
+      activeSection === "groq" &&
+      settingsQuery.data?.groq_configured === true,
+    retry: false,
+  });
+  const groqUsageQuery = useQuery<GroqRequestUsageSnapshot | null>({
+    queryKey: ["groq-request-usage", authSessionQuery.data?.user.id],
+    queryFn: () => Promise.resolve(null),
+    gcTime: Infinity,
+    initialData: null,
+    staleTime: Infinity,
+    enabled: false,
   });
   const isOrganizationAdmin = authSessionQuery.data?.user.role === "admin";
   useEffect(() => {
@@ -219,6 +239,7 @@ export function SettingsPage() {
       setPagespeedApiKey("");
       setAhrefsApiKey("");
       setGeminiApiKey("");
+      setGroqApiKey("");
       setHypestatAutoFetchEnabled(null);
       setMaxPages(null);
       setMaxDepth(null);
@@ -232,6 +253,7 @@ export function SettingsPage() {
       await queryClient.invalidateQueries({ queryKey: ["tavily-usage"] });
       await queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] });
       await queryClient.invalidateQueries({ queryKey: ["ahrefs-usage"] });
+      await queryClient.invalidateQueries({ queryKey: ["groq-models"] });
     },
   });
 
@@ -401,6 +423,7 @@ export function SettingsPage() {
               <option value="hypestat">HypeStat</option>
               <option value="pagespeed">PageSpeed</option>
               <option value="gemini">Gemini</option>
+              <option value="groq">Groq</option>
               {isOrganizationAdmin && (
                 <option value="gmail">Gmail accounts</option>
               )}
@@ -1362,6 +1385,138 @@ export function SettingsPage() {
               </p>
             )}
           </section>
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "groq"}
+          >
+            <section
+              aria-label="Groq available models and usage"
+              className="settings-groq-details"
+            >
+              <div className="settings-groq-detail">
+                <div className="settings-groq-detail-heading">
+                  <div>
+                    <p className="eyebrow">MODELS</p>
+                    <h3>Available draft models</h3>
+                  </div>
+                  <button
+                    className="button button-secondary"
+                    disabled={
+                      !settingsQuery.data.groq_configured ||
+                      groqModelsQuery.isFetching
+                    }
+                    onClick={() => void groqModelsQuery.refetch()}
+                    type="button"
+                  >
+                    {groqModelsQuery.isFetching ? "Loading…" : "Refresh"}
+                  </button>
+                </div>
+                {!settingsQuery.data.groq_configured && (
+                  <p className="settings-feedback">
+                    Add a Groq API key to load compatible models.
+                  </p>
+                )}
+                {settingsQuery.data.groq_configured &&
+                  groqModelsQuery.isPending && (
+                    <p className="settings-feedback" role="status">
+                      Loading compatible models…
+                    </p>
+                  )}
+                {groqModelsQuery.isError && (
+                  <p
+                    className="settings-feedback settings-feedback-error"
+                    role="alert"
+                  >
+                    Could not load compatible models:{" "}
+                    {groqModelsQuery.error.message}
+                  </p>
+                )}
+                {groqModelsQuery.isSuccess &&
+                  groqModelsQuery.data.models.length === 0 && (
+                    <p className="settings-feedback">
+                      No models with strict structured-output support are
+                      available for this key.
+                    </p>
+                  )}
+                {settingsQuery.data.groq_configured &&
+                groqModelsQuery.data?.models.length ? (
+                  <ul className="settings-groq-model-list">
+                    {groqModelsQuery.data.models.map((model) => (
+                      <li key={model}>{model}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              <div className="settings-groq-detail">
+                <div className="settings-groq-detail-heading">
+                  <div>
+                    <p className="eyebrow">USAGE</p>
+                    <h3>Last draft request</h3>
+                  </div>
+                </div>
+                {groqUsageQuery.data ? (
+                  <>
+                    <p className="settings-feedback">
+                      {groqUsageQuery.data.model} ·{" "}
+                      {new Date(
+                        groqUsageQuery.data.recorded_at,
+                      ).toLocaleString()}
+                    </p>
+                    <div className="settings-groq-usage-grid">
+                      <div>
+                        <span>Input tokens</span>
+                        <strong>
+                          {groqUsageQuery.data.usage.prompt_tokens.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Output tokens</span>
+                        <strong>
+                          {groqUsageQuery.data.usage.completion_tokens.toLocaleString()}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Total tokens</span>
+                        <strong>
+                          {groqUsageQuery.data.usage.total_tokens.toLocaleString()}
+                        </strong>
+                      </div>
+                    </div>
+                    {(typeof groqUsageQuery.data.usage.requests_remaining ===
+                      "number" ||
+                      typeof groqUsageQuery.data.usage.tokens_remaining ===
+                        "number") && (
+                      <p className="settings-feedback">
+                        {typeof groqUsageQuery.data.usage.requests_remaining ===
+                          "number" &&
+                          `Requests remaining today: ${groqUsageQuery.data.usage.requests_remaining.toLocaleString()}${typeof groqUsageQuery.data.usage.requests_limit === "number" ? ` / ${groqUsageQuery.data.usage.requests_limit.toLocaleString()}` : ""}. `}
+                        {typeof groqUsageQuery.data.usage.tokens_remaining ===
+                          "number" &&
+                          `Tokens remaining this minute: ${groqUsageQuery.data.usage.tokens_remaining.toLocaleString()}${typeof groqUsageQuery.data.usage.tokens_limit === "number" ? ` / ${groqUsageQuery.data.usage.tokens_limit.toLocaleString()}` : ""}.`}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="settings-feedback">
+                    Usage appears here after you generate a Groq draft in this
+                    session.
+                  </p>
+                )}
+                <p className="settings-feedback">
+                  Per-request usage, not account totals.{" "}
+                  <a
+                    href="https://console.groq.com/settings/limits"
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    View account limits in Groq Console
+                  </a>
+                  .
+                </p>
+              </div>
+            </section>
+          </section>
 
           <section
             className="panel settings-panel"
@@ -1442,6 +1597,94 @@ export function SettingsPage() {
                 role="alert"
               >
                 Could not save Gemini key: {saveMutation.error.message}
+              </p>
+            )}
+            {notice && (
+              <p className="settings-feedback" role="status">
+                {notice}
+              </p>
+            )}
+          </section>
+
+          <section
+            className="panel settings-panel"
+            hidden={activeSection !== "groq"}
+          >
+            <div className="settings-section-heading">
+              <div>
+                <p className="eyebrow">GROQ</p>
+                <h2>AI template drafts</h2>
+                <p className="panel-subtitle">
+                  Use your own Groq key to create editable drafts from the
+                  Templates page. The key is never returned and is stored as
+                  plaintext in the application database.
+                </p>
+              </div>
+              <span
+                className={`settings-connection-badge${settingsQuery.data.groq_configured ? " is-configured" : ""}`}
+              >
+                {settingsQuery.data.groq_configured
+                  ? "Configured"
+                  : "Not configured"}
+              </span>
+            </div>
+            <form
+              className="settings-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setNotice("");
+                saveMutation.mutate({
+                  groq_api_key: groqApiKey.trim() || null,
+                });
+              }}
+            >
+              <label className="settings-field">
+                Groq API key
+                <input
+                  autoComplete="new-password"
+                  onChange={(event) => setGroqApiKey(event.target.value)}
+                  placeholder={
+                    settingsQuery.data.groq_configured
+                      ? "Leave blank to keep the saved key"
+                      : "Paste your Groq API key"
+                  }
+                  type="password"
+                  value={groqApiKey}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="button button-primary"
+                  disabled={saveMutation.isPending || !groqApiKey.trim()}
+                  type="submit"
+                >
+                  {saveMutation.isPending
+                    ? "Saving…"
+                    : settingsQuery.data.groq_configured
+                      ? "Update key"
+                      : "Save key"}
+                </button>
+                {settingsQuery.data.groq_configured && (
+                  <button
+                    className="button button-secondary"
+                    disabled={saveMutation.isPending}
+                    onClick={() => {
+                      setNotice("");
+                      saveMutation.mutate({ groq_api_key: "" });
+                    }}
+                    type="button"
+                  >
+                    Remove key
+                  </button>
+                )}
+              </div>
+            </form>
+            {saveMutation.isError && (
+              <p
+                className="settings-feedback settings-feedback-error"
+                role="alert"
+              >
+                Could not save Groq key: {saveMutation.error.message}
               </p>
             )}
             {notice && (
@@ -1699,6 +1942,7 @@ function isSettingsSection(value: string): value is SettingsSection {
     value === "hypestat" ||
     value === "pagespeed" ||
     value === "gemini" ||
+    value === "groq" ||
     value === "gmail" ||
     value === "crawler" ||
     value === "suppression" ||

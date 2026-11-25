@@ -4,12 +4,23 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Plus, Search, Sparkles, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Eye,
+  Info,
+  LoaderCircle,
+  Plus,
+  Search,
+  Sparkles,
+  X,
+} from "lucide-react";
 import {
   createEmailTemplate,
   deleteEmailTemplate,
   getAssignedGmailAccounts,
   getApplicationSettings,
+  getGroqModels,
   getAuthSession,
   getCompanies,
   getEmailTemplateVariables,
@@ -20,6 +31,8 @@ import {
   updateEmailTemplate,
   type EmailTemplate,
   type EmailTemplateInput,
+  type GroqCompletionUsage,
+  type GroqRequestUsageSnapshot,
 } from "@/lib/api";
 import { useToast } from "./toast-provider";
 
@@ -30,6 +43,7 @@ const emptyDraft: EmailTemplateInput = {
 };
 
 type TemplateInsertTarget = "subject" | "body_content";
+type EmailDraftProvider = "gemini" | "groq";
 
 export function EmailTemplatesPage() {
   const router = useRouter();
@@ -40,7 +54,8 @@ export function EmailTemplatesPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
-  const geminiDialogRef = useRef<HTMLDialogElement>(null);
+  const draftDialogRef = useRef<HTMLDialogElement>(null);
+  const templatePreviewDialogRef = useRef<HTMLDialogElement>(null);
   const generationPromptRef = useRef<HTMLTextAreaElement>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -49,7 +64,15 @@ export function EmailTemplatesPage() {
   );
   const [draft, setDraft] = useState<EmailTemplateInput>(emptyDraft);
   const [generationPrompt, setGenerationPrompt] = useState("");
-  const [geminiPanelOpen, setGeminiPanelOpen] = useState(false);
+  const [draftPanelOpen, setDraftPanelOpen] = useState(false);
+  const [templatePreviewOpen, setTemplatePreviewOpen] = useState(false);
+  const [generationProvider, setGenerationProvider] =
+    useState<EmailDraftProvider>("gemini");
+  const [groqModel, setGroqModel] = useState("openai/gpt-oss-20b");
+  const [lastGroqUsage, setLastGroqUsage] = useState<{
+    model: string;
+    usage: GroqCompletionUsage;
+  } | null>(null);
   const [variableTarget, setVariableTarget] =
     useState<TemplateInsertTarget>("body_content");
   const [variableSearch, setVariableSearch] = useState("");
@@ -85,12 +108,27 @@ export function EmailTemplatesPage() {
     enabled: Boolean(organizationId),
     retry: false,
   });
-  const geminiSettingsQuery = useQuery({
+  const draftSettingsQuery = useQuery({
     queryKey: ["application-settings"],
     queryFn: getApplicationSettings,
     enabled: Boolean(organizationId),
     retry: false,
   });
+  const groqModelsQuery = useQuery({
+    queryKey: ["groq-models", sessionQuery.data?.user.id],
+    queryFn: getGroqModels,
+    enabled:
+      draftPanelOpen &&
+      generationProvider === "groq" &&
+      draftSettingsQuery.data?.groq_configured === true,
+    retry: false,
+  });
+  const availableGroqModels = groqModelsQuery.data?.models ?? [];
+  const selectedGroqModel = availableGroqModels.includes(groqModel)
+    ? groqModel
+    : availableGroqModels.includes("openai/gpt-oss-20b")
+      ? "openai/gpt-oss-20b"
+      : availableGroqModels[0] ?? "";
   const companiesQuery = useQuery({
     queryKey: ["companies"],
     queryFn: getCompanies,
@@ -107,31 +145,78 @@ export function EmailTemplatesPage() {
     mutationFn: () =>
       generateEmailTemplateDraft(organizationId, {
         prompt: generationPrompt.trim(),
+        provider: generationProvider,
+        ...(generationProvider === "groq" && selectedGroqModel
+          ? { model: selectedGroqModel }
+          : {}),
       }),
     onSuccess: (generatedDraft) => {
-      setDraft(generatedDraft);
+      setDraft({
+        name: generatedDraft.name,
+        subject: generatedDraft.subject,
+        body_content: generatedDraft.body_content,
+      });
+      const usage =
+        generationProvider === "groq" ? generatedDraft.usage : undefined;
+      setLastGroqUsage(
+        usage && generatedDraft.model
+          ? { model: generatedDraft.model, usage }
+          : null,
+      );
+      if (
+        usage &&
+        generatedDraft.model &&
+        sessionQuery.data?.user.id
+      ) {
+        queryClient.setQueryData<GroqRequestUsageSnapshot>(
+          ["groq-request-usage", sessionQuery.data.user.id],
+          {
+            model: generatedDraft.model,
+            usage,
+            recorded_at: new Date().toISOString(),
+          },
+        );
+      }
       setPreview(null);
       setSendResult(null);
-      setGeminiPanelOpen(false);
+      setDraftPanelOpen(false);
       showToast({
         type: "success",
         title: "Draft generated",
-        message: "Review and edit the template before saving.",
+        message: usage
+          ? `Groq used ${usage.total_tokens} tokens. Review and edit the template before saving.`
+          : "Review and edit the template before saving.",
       });
     },
   });
   const resetGenerateMutation = generateMutation.reset;
 
   useEffect(() => {
-    const dialog = geminiDialogRef.current;
+    const dialog = draftDialogRef.current;
     if (!dialog) return;
-    if (geminiPanelOpen && !dialog.open) {
+    if (draftPanelOpen && !dialog.open) {
       dialog.showModal();
       generationPromptRef.current?.focus();
-    } else if (!geminiPanelOpen && dialog.open) {
+    } else if (!draftPanelOpen && dialog.open) {
       dialog.close();
     }
-  }, [geminiPanelOpen]);
+  }, [draftPanelOpen]);
+
+  useEffect(() => {
+    const dialog = templatePreviewDialogRef.current;
+    if (!dialog) return;
+    if (templatePreviewOpen && !dialog.open) {
+      dialog.showModal();
+    } else if (!templatePreviewOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [templatePreviewOpen]);
+
+  const providerName = generationProvider === "groq" ? "Groq" : "Gemini";
+  const providerConfigured =
+    generationProvider === "groq"
+      ? draftSettingsQuery.data?.groq_configured === true
+      : draftSettingsQuery.data?.gemini_configured === true;
 
   const templates = templatesQuery.data ?? [];
   const activeTemplate =
@@ -267,7 +352,7 @@ export function EmailTemplatesPage() {
     setVariableSearch("");
     resetGenerateMutation();
     setEditorOpen(true);
-    setGeminiPanelOpen(false);
+    setDraftPanelOpen(false);
     setPreview(null);
     setSendResult(null);
     resetSaveMutation();
@@ -308,7 +393,7 @@ export function EmailTemplatesPage() {
     setVariableSearch("");
     resetGenerateMutation();
     setEditorOpen(true);
-    setGeminiPanelOpen(false);
+    setDraftPanelOpen(false);
     setPreview(null);
     setSendResult(null);
     saveMutation.reset();
@@ -323,7 +408,7 @@ export function EmailTemplatesPage() {
     setVariableTarget("body_content");
     setVariableSearch("");
     resetGenerateMutation();
-    setGeminiPanelOpen(false);
+    setDraftPanelOpen(false);
     saveMutation.reset();
   }
 
@@ -378,6 +463,16 @@ export function EmailTemplatesPage() {
     });
   }
 
+  function selectDraftProvider(provider: EmailDraftProvider) {
+    setGenerationProvider(provider);
+    setLastGroqUsage(null);
+    generateMutation.reset();
+  }
+
+  function openDraftPanel() {
+    setDraftPanelOpen(true);
+  }
+
   function requestSend() {
     if (!activeTemplate || !activeCompanyId || !contactId || !activeGmailAccountId) {
       return;
@@ -407,13 +502,7 @@ export function EmailTemplatesPage() {
     }))
     .filter(({ items }) => items.length > 0);
   const previewDocument = preview
-    ? [
-        "<!doctype html><html><head><meta charset=\"utf-8\">",
-        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; font-src data:">',
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
-        "<style>body{margin:0;padding:24px;color:#23263a;font:14px/1.6 Arial,sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>",
-        `</head><body>${preview.body_content}</body></html>`,
-      ].join("")
+    ? buildEmailPreviewDocument(preview.body_content)
     : "";
   const canSend =
     Boolean(
@@ -686,17 +775,27 @@ export function EmailTemplatesPage() {
                 <div className="template-form-actions">
                   {isAdmin && (
                     <button
-                      aria-controls="template-gemini-panel"
-                      aria-expanded={geminiPanelOpen}
-                      className={`template-ai-action${geminiPanelOpen ? " is-open" : ""}`}
-                      onClick={() => setGeminiPanelOpen((open) => !open)}
+                      aria-controls="template-ai-panel"
+                      aria-haspopup="dialog"
+                      className="template-ai-action"
+                      onClick={openDraftPanel}
                       type="button"
                     >
                       <Sparkles aria-hidden="true" size={16} />
-                      Draft with Gemini
+                      Ask AI
+                      <ChevronDown aria-hidden="true" size={14} />
                     </button>
                   )}
                   <div className="template-form-action-buttons">
+                    <button
+                      className="button button-secondary"
+                      disabled={!draft.body_content.trim()}
+                      onClick={() => setTemplatePreviewOpen(true)}
+                      type="button"
+                    >
+                      <Eye aria-hidden="true" size={15} />
+                      Preview rendered email
+                    </button>
                     <button
                       className="button button-secondary"
                       onClick={cancelEditing}
@@ -725,35 +824,128 @@ export function EmailTemplatesPage() {
                 </div>
               </form>
 
+              {lastGroqUsage && (
+                <p className="template-ai-message" role="status">
+                  Last Groq request ({lastGroqUsage.model}):{" "}
+                  {lastGroqUsage.usage.prompt_tokens.toLocaleString()} input +{" "}
+                  {lastGroqUsage.usage.completion_tokens.toLocaleString()} output
+                  = {lastGroqUsage.usage.total_tokens.toLocaleString()} tokens.
+                  {typeof lastGroqUsage.usage.requests_remaining === "number" &&
+                    ` ${lastGroqUsage.usage.requests_remaining.toLocaleString()} requests remaining.`}
+                  {typeof lastGroqUsage.usage.tokens_remaining === "number" &&
+                    ` ${lastGroqUsage.usage.tokens_remaining.toLocaleString()} tokens remaining in the rate-limit window.`}
+                  {" "}Per-request usage, not account billing totals.
+                </p>
+              )}
+
+              <dialog
+                aria-labelledby="template-render-preview-title"
+                className="template-ai-dialog template-render-dialog"
+                onClose={() => setTemplatePreviewOpen(false)}
+                ref={templatePreviewDialogRef}
+              >
+                <div className="template-ai-dialog-heading">
+                  <div>
+                    <h2 id="template-render-preview-title">Rendered template</h2>
+                    <p>Live preview of the current subject and HTML body.</p>
+                  </div>
+                  <button
+                    aria-label="Close rendered template preview"
+                    className="template-ai-dialog-close"
+                    onClick={() => setTemplatePreviewOpen(false)}
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={18} />
+                  </button>
+                </div>
+                <div className="template-rendered-preview-heading">
+                  <div>
+                    <p className="eyebrow">SUBJECT</p>
+                    <h3>{draft.subject || "No subject entered"}</h3>
+                  </div>
+                  <span className="template-preview-badge">Live preview</span>
+                </div>
+                <iframe
+                  className="template-preview-frame"
+                  referrerPolicy="no-referrer"
+                  sandbox=""
+                  srcDoc={buildEmailPreviewDocument(draft.body_content)}
+                  title="Rendered template body"
+                />
+                <p className="template-ai-message">
+                  Personalization placeholders remain visible here. Save the
+                  template and use Preview and test to render values for a
+                  company and contact.
+                </p>
+              </dialog>
+
               {isAdmin && (
                 <dialog
-                  aria-labelledby="template-gemini-title"
-                  className="template-ai-dialog"
-                  id="template-gemini-panel"
-                  onClose={() => setGeminiPanelOpen(false)}
+                  aria-labelledby="template-ai-title"
+                  className="template-ai-dialog template-ai-draft-dialog"
+                  id="template-ai-panel"
+                  onClose={() => setDraftPanelOpen(false)}
                   onClick={(event) => {
                     if (event.target === event.currentTarget) {
-                      setGeminiPanelOpen(false);
+                      setDraftPanelOpen(false);
                     }
                   }}
-                  ref={geminiDialogRef}
+                  ref={draftDialogRef}
                 >
                   <div className="template-ai-dialog-heading">
                     <div>
-                      <h2 id="template-gemini-title">Draft with Gemini</h2>
-                      <p>Creates an editable first draft.</p>
+                      <h2 id="template-ai-title">Create an AI draft</h2>
+                      <p>Editable before saving.</p>
                     </div>
                     <button
-                      aria-label="Close Gemini draft dialog"
+                      aria-label="Close AI draft dialog"
                       className="template-ai-dialog-close"
-                      onClick={() => setGeminiPanelOpen(false)}
+                      onClick={() => setDraftPanelOpen(false)}
                       type="button"
                     >
                       <X aria-hidden="true" size={18} />
                     </button>
                   </div>
+                  <div className="template-ai-provider-section">
+                    <p className="template-ai-section-label">Draft provider</p>
+                    <div
+                      aria-label="Draft provider"
+                      className="template-ai-provider-options"
+                      role="group"
+                    >
+                      <button
+                        aria-pressed={generationProvider === "gemini"}
+                        className={`template-ai-provider-option${generationProvider === "gemini" ? " is-selected" : ""}`}
+                        disabled={generateMutation.isPending}
+                        onClick={() => selectDraftProvider("gemini")}
+                        type="button"
+                      >
+                        <span>Gemini</span>
+                        <span className="template-ai-provider-check" aria-hidden="true">
+                          {generationProvider === "gemini" && <Check size={15} />}
+                        </span>
+                      </button>
+                      <button
+                        aria-pressed={generationProvider === "groq"}
+                        className={`template-ai-provider-option${generationProvider === "groq" ? " is-selected" : ""}`}
+                        disabled={generateMutation.isPending}
+                        onClick={() => selectDraftProvider("groq")}
+                        type="button"
+                      >
+                        <span>Groq</span>
+                        <span className="template-ai-provider-check" aria-hidden="true">
+                          {generationProvider === "groq" && <Check size={15} />}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                   <label className="template-ai-prompt">
-                    Brief
+                    <span className="template-ai-prompt-heading">
+                      <span>Your brief</span>
+                      <span aria-hidden="true">
+                        {generationPrompt.length.toLocaleString()}/4,000
+                      </span>
+                    </span>
                     <textarea
                       disabled={generateMutation.isPending}
                       maxLength={4000}
@@ -762,47 +954,108 @@ export function EmailTemplatesPage() {
                         setGenerationPrompt(event.target.value);
                         generateMutation.reset();
                       }}
-                      placeholder="Audience, goal, tone, and next step"
+                      placeholder="Audience, goal, tone, and call to action"
                       ref={generationPromptRef}
-                      rows={4}
+                      rows={3}
                       value={generationPrompt}
                     />
+                    {generationPrompt.trim().length > 0 &&
+                      generationPrompt.trim().length < 8 && (
+                        <span className="template-ai-field-error" role="status">
+                          Enter at least 8 characters.
+                        </span>
+                      )}
                   </label>
-                  {geminiSettingsQuery.isError && (
+                  {generationProvider === "groq" && providerConfigured && (
+                    <>
+                      {groqModelsQuery.isPending && (
+                        <p className="template-ai-message" role="status">
+                          Loading available Groq models…
+                        </p>
+                      )}
+                      {groqModelsQuery.isError && (
+                        <p className="template-ai-message is-error" role="alert">
+                          Could not load Groq models:{" "}
+                          {errorMessage(groqModelsQuery.error)}
+                        </p>
+                      )}
+                      {groqModelsQuery.isSuccess &&
+                        availableGroqModels.length === 0 && (
+                          <p className="template-ai-message is-error" role="alert">
+                            No Groq models with strict structured-output support are available for this key.
+                          </p>
+                        )}
+                      {availableGroqModels.length > 0 && (
+                        <label className="template-ai-prompt">
+                          Model
+                          <select
+                            disabled={generateMutation.isPending}
+                            onChange={(event) => setGroqModel(event.target.value)}
+                            value={selectedGroqModel}
+                          >
+                            {availableGroqModels.map((model) => (
+                              <option key={model} value={model}>
+                                {model}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                    </>
+                  )}
+                  {draftSettingsQuery.isError && (
                     <p className="template-ai-message is-error" role="alert">
-                      Could not check Gemini settings.{" "}
-                      {errorMessage(geminiSettingsQuery.error)}
+                      Could not check {providerName} settings.{" "}
+                      {errorMessage(draftSettingsQuery.error)}
                     </p>
                   )}
-                  {geminiSettingsQuery.data &&
-                    !geminiSettingsQuery.data.gemini_configured && (
-                      <p className="template-ai-message">
-                        Add your key in{" "}
-                        <Link href="/settings?section=gemini">
-                          Gemini settings
+                  {draftSettingsQuery.isPending && (
+                    <p className="template-ai-message" role="status">
+                      Checking {providerName} setup…
+                    </p>
+                  )}
+                  {draftSettingsQuery.data && !providerConfigured && (
+                    <p className="template-ai-config-notice">
+                      <Info aria-hidden="true" size={16} />
+                      <span>
+                        Set up{" "}
+                        <Link href={`/settings?section=${generationProvider}`}>
+                          {providerName}
                         </Link>
-                        .
-                      </p>
-                    )}
+                        {" "}in Settings to generate drafts.
+                      </span>
+                    </p>
+                  )}
                   {generateMutation.isError && (
                     <p className="template-ai-message is-error" role="alert">
                       {errorMessage(generateMutation.error)}
                     </p>
                   )}
                   <div className="template-ai-dialog-footer">
-                    <p>Replaces current fields. No email is sent.</p>
+                    <p>
+                      Current fields will be replaced; nothing is sent.
+                    </p>
                     <button
                       className="button button-primary"
                       disabled={
                         generateMutation.isPending ||
                         generationPrompt.trim().length < 8 ||
-                        geminiSettingsQuery.data?.gemini_configured !== true
+                        !providerConfigured ||
+                        (generationProvider === "groq" &&
+                          (groqModelsQuery.isPending ||
+                            groqModelsQuery.isError ||
+                            !selectedGroqModel))
                       }
                       onClick={() => generateMutation.mutate()}
                       type="button"
                     >
                       {generateMutation.isPending
-                        ? "Generating…"
+                        ? (
+                          <>
+                            <LoaderCircle aria-hidden="true" className="template-ai-spinner" size={16} />
+                            Generating…
+                          </>
+                        )
                         : "Generate draft"}
                     </button>
                   </div>
@@ -1180,6 +1433,16 @@ export function EmailTemplatesPage() {
       )}
     </div>
   );
+}
+
+function buildEmailPreviewDocument(bodyContent: string): string {
+  return [
+    "<!doctype html><html><head><meta charset=\"utf-8\">",
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'; font-src data:">',
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+    "<style>body{margin:0;padding:24px;color:#23263a;font:14px/1.6 Arial,sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>",
+    `</head><body>${bodyContent}</body></html>`,
+  ].join("");
 }
 
 function errorMessage(error: unknown): string {

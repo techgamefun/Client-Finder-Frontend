@@ -67,18 +67,21 @@ export default function PrivacyPolicyPage() {
               information is sent to that provider to fulfill the requested
               action. This can include search terms, website URLs, PageSpeed
               requests, Gmail message content, or a prompt submitted for a
-              Gemini draft. Provider privacy terms and retention practices also
+              Gemini or Groq draft. Provider privacy terms and retention practices also
               apply to information they receive.
             </p>
             <p>
-              Gemini prompts and generated drafts are sent to Google when you
-              use the drafting feature. Google states that data submitted on
-              the Gemini API free tier may be used to improve its products.
-              Avoid including sensitive personal or confidential information
-              in prompts unless you are authorized to share it and accept
-              Google’s terms. See{" "}
+              Draft prompts are sent to the provider you select. Gemini
+              prompts and generated drafts are sent to Google; Groq prompts
+              and generated drafts are sent to Groq. Review the applicable
+              provider terms before including sensitive personal or
+              confidential information. See{" "}
               <Link href="https://ai.google.dev/gemini-api/docs/terms">
                 Google Gemini API terms
+              </Link>{" "}
+              and{" "}
+              <Link href="https://groq.com/privacy-policy/">
+                Groq&apos;s privacy policy
               </Link>
               .
             </p>

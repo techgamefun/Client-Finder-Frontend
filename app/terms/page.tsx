@@ -58,7 +58,7 @@ export default function TermsPage() {
           <section>
             <h2>Third-party services and credentials</h2>
             <p>
-              Search, crawling, PageSpeed, Gemini, and Gmail features rely on
+              Search, crawling, PageSpeed, Gemini, Groq, and Gmail features rely on
               third-party services that you or your organization configure.
               Those services are governed by their own terms, limits, and
               privacy practices. You are responsible for your provider keys,

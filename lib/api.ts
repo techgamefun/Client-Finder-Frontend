@@ -980,6 +980,7 @@ export interface ApplicationSettings {
   pagespeed_key_source: "database" | "unset";
   ahrefs_configured: boolean;
   gemini_configured: boolean;
+  groq_configured: boolean;
   selected_discovery_tools: DiscoveryProviderId[];
   tavily_default_search_depth: TavilySearchDepth;
   tavily_default_country: string | null;
@@ -1420,6 +1421,33 @@ export interface EmailTemplateInput {
 
 export interface EmailTemplateDraftInput {
   prompt: string;
+  provider?: "gemini" | "groq";
+  model?: string;
+}
+
+export interface GroqCompletionUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  requests_remaining?: number | null;
+  requests_limit?: number | null;
+  tokens_remaining?: number | null;
+  tokens_limit?: number | null;
+}
+
+export interface EmailTemplateDraftResult extends EmailTemplateInput {
+  model?: string;
+  usage?: GroqCompletionUsage;
+}
+
+export interface GroqModelsResponse {
+  models: string[];
+}
+
+export interface GroqRequestUsageSnapshot {
+  model: string;
+  usage: GroqCompletionUsage;
+  recorded_at: string;
 }
 
 export interface EmailTemplatePreview {
@@ -1833,6 +1861,10 @@ export function getApplicationSettings(): Promise<ApplicationSettings> {
   return request<ApplicationSettings>("/settings");
 }
 
+export function getGroqModels(): Promise<GroqModelsResponse> {
+  return request<GroqModelsResponse>("/settings/groq/models");
+}
+
 export function updateApplicationSettings(
   input: {
     crawl_max_pages?: number;
@@ -1843,6 +1875,7 @@ export function updateApplicationSettings(
     pagespeed_api_key?: string | null;
     ahrefs_api_key?: string | null;
     gemini_api_key?: string | null;
+    groq_api_key?: string | null;
     hypestat_auto_fetch_enabled?: boolean;
     selected_discovery_tools?: DiscoveryProviderId[];
     tavily_default_search_depth?: TavilySearchDepth;
@@ -2038,8 +2071,8 @@ export function createEmailTemplate(
 export function generateEmailTemplateDraft(
   orgId: string,
   input: EmailTemplateDraftInput,
-): Promise<EmailTemplateInput> {
-  return request<EmailTemplateInput>(
+): Promise<EmailTemplateDraftResult> {
+  return request<EmailTemplateDraftResult>(
     `/orgs/${encodeURIComponent(orgId)}/templates/generate-draft`,
     {
       method: "POST",
