@@ -12,6 +12,7 @@ export type PageLoadingVariant =
   | "website-analytics"
   | "leads"
   | "companies"
+  | "discovery"
   | "table";
 
 export function TableLoading({
@@ -72,6 +73,9 @@ export function PageLoading({
   }
   if (variant === "companies") {
     return <PipelineLoading isCompanies label={label} />;
+  }
+  if (variant === "discovery") {
+    return <DiscoveryLoading label={label} />;
   }
 
   return (
@@ -145,6 +149,33 @@ export function PageLoading({
             <span className="page-loading-block is-setting is-short" />
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function DiscoveryLoading({ label }: { label: string }) {
+  return (
+    <section
+      aria-busy="true"
+      aria-label={label}
+      className="page-loading is-discovery"
+      role="status"
+    >
+      <span className="sr-only">{label}</span>
+      <div aria-hidden="true" className="discovery-loading">
+        <span className="page-loading-block discovery-loading-title" />
+        <span className="page-loading-block discovery-loading-subtitle" />
+        <div className="discovery-loading-search">
+          <span className="page-loading-block discovery-loading-icon" />
+          <span className="page-loading-block discovery-loading-query" />
+          <span className="page-loading-block discovery-loading-gear" />
+        </div>
+        <span className="page-loading-block discovery-loading-hint" />
+        <div className="discovery-loading-actions">
+          <span className="page-loading-block discovery-loading-button is-ai" />
+          <span className="page-loading-block discovery-loading-button" />
+        </div>
       </div>
     </section>
   );

@@ -1792,16 +1792,12 @@ export function WebsitesPage() {
             <strong>
               {websiteCount === 0
                 ? "No websites registered yet"
-                : indexedWebsiteCount === 0
-                  ? "No successfully indexed websites yet"
-                  : "No websites match your filters"}
+                : "No websites match your filters"}
             </strong>
             <span>
               {websiteCount === 0
                 ? "Websites are added through discovery or indexing jobs."
-                : indexedWebsiteCount === 0
-                  ? "Websites appear here after indexing succeeds."
-                  : "Try another search or site type."}
+                : "Try another search or site type."}
             </span>
           </div>
         ) : (
@@ -2348,8 +2344,8 @@ export function WebsitesPage() {
                   : (visiblePage - 1) * pageSize + 1}
                 –{Math.min(visiblePage * pageSize, filteredWebsiteCount)} of{" "}
                 {filteredWebsiteCount} websites
-                {filteredWebsiteCount !== indexedWebsiteCount &&
-                  ` (from ${indexedWebsiteCount} total)`}
+                {websiteCount !== indexedWebsiteCount &&
+                  ` (${indexedWebsiteCount} crawled overall)`}
               </span>
               <div className="pagination-controls">
                 <label>

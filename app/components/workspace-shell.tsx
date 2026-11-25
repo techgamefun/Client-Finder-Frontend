@@ -463,7 +463,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           role={sessionQuery.data.user.role}
         />
         <div
-          className={`content-wrap${pathname === "/templates" ? " is-templates-page" : ""}`}
+          className={`content-wrap${pathname === "/templates" ? " is-templates-page" : pathname === "/websites" ? " is-websites-page" : ""}`}
         >
           {children}
           <footer className="page-footer">
@@ -1729,6 +1729,7 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
     return "dashboard";
   }
   if (pathname === "/overview") return "overview";
+  if (pathname === "/discovery") return "discovery";
   if (pathname === "/website-analytics") return "website-analytics";
   if (pathname === "/organization") return "organization";
   if (pathname === "/organization/settings") {
@@ -1751,7 +1752,6 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
     pathname === "/pagespeed-queue" ||
     pathname === "/campaigns" ||
     pathname === "/gmail" ||
-    pathname === "/discovery" ||
     pathname === "/excluded-domains" ||
     pathname === "/templates"
   ) {
