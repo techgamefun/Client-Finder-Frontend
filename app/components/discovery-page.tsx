@@ -16,7 +16,6 @@ import {
   getDiscoveryDomainRatings,
   getDiscoveryProviderJob,
   getGroqModels,
-  getSearchKeywordSuggestions,
   getWebsites,
   saveDiscoveryWebsites,
   searchCompanies,
@@ -37,13 +36,9 @@ import type {
 } from "@/lib/api";
 import { TAVILY_COUNTRIES, TAVILY_DIRECTORY_BLOCKLIST } from "@/lib/discovery-options";
 import { DomainChipInput } from "./domain-chip-input";
+import { useToast } from "./toast-provider";
 import { useUserPreferences } from "@/lib/user-preferences";
 
-const suggestedQueries = [
-  "B2B SaaS companies in Austin",
-  "Independent dental clinics in Chicago",
-  "Commercial cleaning companies in Seattle",
-];
 const MAX_DISCOVERY_KEYWORDS = 5;
 
 function parseSearchKeywords(value: string) {
@@ -87,6 +82,7 @@ type DiscoveryFilterState = {
 
 export function DiscoveryPage() {
   const queryClient = useQueryClient();
+  const showToast = useToast();
   const [searchText, setSearchText] = useState("");
   const discoveryQueryRef = useRef<HTMLTextAreaElement>(null);
   const searchKeywords = parseSearchKeywords(searchText);
@@ -96,6 +92,8 @@ export function DiscoveryPage() {
       : searchKeywords.some((keyword) => keyword.length < 3)
         ? "Each keyword must contain at least 3 characters."
         : "";
+  const aiSearchPrompt = searchText.trim();
+  const hasValidAiSearchPrompt = aiSearchPrompt.length >= 3;
   const hasValidSearchKeywords =
     searchKeywords.length > 0 && !keywordInputError;
   const [selectedAiProvider, setSelectedAiProvider] =
@@ -164,6 +162,14 @@ export function DiscoveryPage() {
       ? settingsQuery.data?.gemini_configured === true
       : settingsQuery.data?.groq_configured === true;
   const userPreferences = useUserPreferences(authSessionQuery.data?.user.id);
+  useEffect(() => {
+    if (!userPreferences.isError) return;
+    showToast({
+      type: "error",
+      title: "Could not load search preferences",
+      message: userPreferences.error.message,
+    });
+  }, [showToast, userPreferences.error, userPreferences.isError]);
   const saveUserPreferences = userPreferences.save;
   const storedTavilyFilters = userPreferences.data?.search.tavily;
   const filters = useMemo<DiscoveryFilterState>(
@@ -289,12 +295,6 @@ export function DiscoveryPage() {
     preferenceSaveAttempt.current = null;
     setFilterOverrides((current) => ({ ...current, [key]: value }));
   }
-  const suggestionQuery = searchText.trim();
-  const suggestionsQuery = useQuery({
-    queryKey: ["discovery-keyword-suggestions", suggestionQuery],
-    queryFn: () => getSearchKeywordSuggestions(suggestionQuery),
-    enabled: suggestionQuery.length >= 2,
-  });
   const findMoreMutation = useMutation({
     mutationFn: async ({
       input,
@@ -342,6 +342,21 @@ export function DiscoveryPage() {
         mergeUniqueResults([...current, ...response.results]),
       );
       setAdditionalCredits((current) => current + response.creditsUsed);
+      showToast({
+        type: "success",
+        title: "Search complete",
+        message:
+          response.results.length > 0
+            ? `Found ${response.results.length} more websites.`
+            : "No additional websites were found.",
+      });
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not find more websites",
+        message: error.message,
+      });
     },
   });
   const searchMutation = useMutation({
@@ -363,15 +378,41 @@ export function DiscoveryPage() {
           })
         : searchCompanies(input),
     onSuccess: (response, variables) => {
+      const followUpInput = variables.aiProvider
+        ? { ...variables.input, query: response.search_queries.join("\n") }
+        : variables.input;
+      setLastSearchInput(followUpInput);
+      const fallbackMessage = response.ai_fallback_reason
+        ? " Gemini was temporarily unavailable, so Groq generated the keywords."
+        : "";
+      showToast({
+        type: response.provider_failures.length > 0 ? "warning" : "success",
+        title: variables.aiProvider ? "AI search complete" : "Search complete",
+        message:
+          response.results.length > 0
+            ? `Found ${response.results.length} websites${
+                response.provider_failures.length > 0
+                  ? `; ${response.provider_failures.length} source(s) had errors.`
+                  : "."
+              }${fallbackMessage}`
+            : `No matching websites were found.${fallbackMessage}`,
+      });
       if (variables.autoFindMore && settingsQuery.data?.tavily_configured) {
         findMoreMutation.mutate({
-          input: variables.input,
+          input: followUpInput,
           visibleDomains: response.results.map((result) =>
             getResultDomain(result.url),
           ),
           fetchAll: true,
         });
       }
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Search failed",
+        message: error.message,
+      });
     },
   });
   const saveMutation = useMutation({
@@ -417,12 +458,26 @@ export function DiscoveryPage() {
           : Promise.resolve(),
       ]);
       setSaveResult(result);
+      showToast({
+        type: "success",
+        title: "Websites added",
+        message: `${result.websites_saved} ${
+          result.websites_saved === 1 ? "website was" : "websites were"
+        } added to the registry.`,
+      });
     },
-    onError: async () => {
+    onError: async (error: Error) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["websites"] }),
         queryClient.invalidateQueries({ queryKey: ["hypestat-usage"] }),
       ]);
+      showToast({
+        type: "error",
+        title: "Could not add websites",
+        message: saveProgress && saveProgress.completed > 0
+          ? `Added ${saveProgress.completed} of ${saveProgress.total} websites before the next batch failed. ${error.message}`
+          : error.message,
+      });
     },
   });
   const searchData = searchMutation.data;
@@ -614,9 +669,15 @@ export function DiscoveryPage() {
     ),
   ];
   function runSearch(aiProvider: DiscoveryAiProvider | null = null) {
-    if (!hasValidSearchKeywords) return;
+    if (
+      aiProvider
+        ? !hasValidAiSearchPrompt
+        : !hasValidSearchKeywords
+    ) {
+      return;
+    }
     const request: DiscoverySearchInput = {
-      query: searchKeywords.join("\n"),
+      query: aiProvider ? aiSearchPrompt : searchKeywords.join("\n"),
       max_results: filters.max_results,
       search_depth: filters.search_depth,
       topic: filters.topic,
@@ -762,7 +823,7 @@ export function DiscoveryPage() {
                   runSearch();
                 }
               }}
-              placeholder="Search businesses or websites..."
+              placeholder="Describe the businesses or websites you want to find..."
               ref={discoveryQueryRef}
               required
               rows={1}
@@ -779,11 +840,17 @@ export function DiscoveryPage() {
               </button>
             )}
           </div>
+          <div className="discovery-search-meta">
+            <p className="discovery-keyword-hint" id="discovery-keyword-hint">
+              AI Search: describe what you need · Search: up to{" "}
+              {MAX_DISCOVERY_KEYWORDS} keywords · Ctrl/⌘+Enter to search
+            </p>
+          </div>
           <div className="discovery-search-actions">
             <button
               className="button button-secondary discovery-ai-search-button"
               disabled={
-                !hasValidSearchKeywords ||
+                !hasValidAiSearchPrompt ||
                 !activeAiProviderConfigured ||
                 !settingsQuery.data?.tavily_configured ||
                 searchMutation.isPending ||
@@ -795,7 +862,7 @@ export function DiscoveryPage() {
                     !selectedGroqModel))
               }
               onClick={() => runSearch(activeAiProvider)}
-              title="Expands related searches and may use additional Tavily credits."
+              title="Turns your prompt into search keywords, then searches with Tavily. May use additional credits."
               type="button"
             >
               <Sparkles aria-hidden="true" size={15} />
@@ -1264,77 +1331,12 @@ export function DiscoveryPage() {
           </div>
         </details>
 
-        <div className="discovery-search-meta">
-          <p
-            className="discovery-keyword-hint"
-            id="discovery-keyword-hint"
-          >
-            Up to {MAX_DISCOVERY_KEYWORDS} searches · comma or new line
-            separated · Ctrl/⌘+Enter to run · AI uses Tavily credits.
-          </p>
-          <span className="discovery-keyword-count">
-            {searchKeywords.length}/{MAX_DISCOVERY_KEYWORDS}
-          </span>
-        </div>
         {keywordInputError && (
           <p className="discovery-keyword-error" role="alert">
-            {keywordInputError}
+            {hasValidAiSearchPrompt
+              ? `Regular Search only: ${keywordInputError}`
+              : keywordInputError}
           </p>
-        )}
-        {suggestionsQuery.data && suggestionsQuery.data.length > 0 && (
-          <div
-            aria-label="Recent matching searches"
-            className="discovery-keyword-suggestions"
-          >
-            <span>Recent matches</span>
-            {suggestionsQuery.data.slice(0, 4).map(({ id, keyword }) => (
-              <button
-                disabled={
-                  searchKeywords.length >= MAX_DISCOVERY_KEYWORDS &&
-                  !searchKeywords.some(
-                    (currentKeyword) =>
-                      currentKeyword.toLowerCase() === keyword.toLowerCase(),
-                  )
-                }
-                key={id}
-                onClick={() =>
-                  setSearchText((current) => {
-                    const currentKeywords = parseSearchKeywords(current);
-                    if (
-                      currentKeywords.some(
-                        (currentKeyword) =>
-                          currentKeyword.toLowerCase() ===
-                          keyword.toLowerCase(),
-                      )
-                    ) {
-                      return current;
-                    }
-                    const nextValue = [...currentKeywords, keyword].join("\n");
-                    return nextValue.length <= 300 ? nextValue : current;
-                  })
-                }
-                type="button"
-              >
-                {keyword}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {suggestedQueries.length > 0 && !searchData && (
-          <div className="discovery-examples">
-            <span>Try</span>
-            {suggestedQueries.map((query) => (
-              <button
-                className="discovery-example-chip"
-                key={query}
-                onClick={() => setSearchText(query)}
-                type="button"
-              >
-                {query}
-              </button>
-            ))}
-          </div>
         )}
       </section>
 
@@ -1343,16 +1345,9 @@ export function DiscoveryPage() {
           Could not load search settings: {settingsQuery.error.message}
         </div>
       )}
-      {(preferenceError || userPreferences.saveMutation.isError) && (
+      {preferenceError && (
         <div className="alert alert-warning discovery-alert" role="status">
-          {preferenceError ||
-            `Your search preferences are available locally, but cloud sync failed: ${userPreferences.saveMutation.error?.message ?? "Unknown error."}`}
-        </div>
-      )}
-      {userPreferences.isError && (
-        <div className="alert alert-error discovery-alert" role="alert">
-          Could not load your search preferences:{" "}
-          {userPreferences.error.message}
+          {preferenceError}
         </div>
       )}
       {settingsQuery.isSuccess &&
@@ -1368,14 +1363,9 @@ export function DiscoveryPage() {
           <span className="discovery-spinner" aria-hidden="true" />
           <span>
             {searchMutation.variables?.aiProvider
-              ? "Expanding keywords and searching Tavily..."
+              ? "Generating search keywords and searching Tavily..."
               : "Searching selected sources..."}
           </span>
-        </div>
-      )}
-      {searchMutation.isError && (
-        <div className="alert alert-error discovery-alert" role="alert">
-          {searchMutation.error.message}
         </div>
       )}
       {providerFailures.map(({ provider, detail }, index) => (
@@ -1397,19 +1387,6 @@ export function DiscoveryPage() {
             Could not refresh Octoparse status: {query.error.message}
           </div>
         ) : null,
-      )}
-      {saveMutation.isError && (
-        <div className="alert alert-error discovery-alert" role="alert">
-          {saveProgress && saveProgress.completed > 0
-            ? `Added ${saveProgress.completed} of ${saveProgress.total} websites before the next batch failed. `
-            : ""}
-          {saveMutation.error.message}
-        </div>
-      )}
-      {findMoreMutation.isError && (
-        <div className="alert alert-error discovery-alert" role="alert">
-          Could not find more results: {findMoreMutation.error.message}
-        </div>
       )}
       {saveResult && (
         <section
@@ -1464,6 +1441,19 @@ export function DiscoveryPage() {
               <Link href="/settings">Settings</Link> to fetch Domain Ratings.
             </div>
           )}
+          {searchData.ai_fallback_reason && (
+            <details className="discovery-ai-fallback">
+              <summary>
+                <span className="discovery-ai-fallback-label">
+                  Groq fallback used
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>Gemini temporarily unavailable</span>
+                <span className="discovery-ai-fallback-details">Details</span>
+              </summary>
+              <p>{searchData.ai_fallback_reason}</p>
+            </details>
+          )}
           {searchData.answer && (
             <details className="discovery-answer-card">
               <summary>AI Market Summary</summary>
@@ -1480,7 +1470,10 @@ export function DiscoveryPage() {
               </span>
               {searchData.search_queries.length > 0 && (
                 <span className="discovery-ai-query-summary">
-                  Searches used: {searchData.search_queries.join(" · ")}
+                  {searchMutation.variables?.aiProvider
+                    ? "AI-generated keywords: "
+                    : "Searches used: "}
+                  {searchData.search_queries.join(" · ")}
                 </span>
               )}
               {(searchData.credits_used !== null ||

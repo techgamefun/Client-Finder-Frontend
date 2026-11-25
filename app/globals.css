@@ -24,7 +24,7 @@
   display: grid;
   min-height: 430px;
   align-content: start;
-  gap: 14px;
+  gap: 8px;
   padding: 28px;
 }
 
@@ -1233,7 +1233,7 @@ h1 {
 }
 
 .crawl-page-issues li p {
-  margin: 5px 0 0;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.5;
@@ -6440,7 +6440,7 @@ html[data-theme="dark"] .gmail-reply-error {
   min-height: 0;
   box-sizing: border-box;
   justify-items: center;
-  gap: 14px;
+  gap: 8px;
   margin: 0;
   border: 0;
   background-color: transparent;
@@ -6524,72 +6524,29 @@ html[data-theme="dark"] .gmail-reply-error {
 .discovery-search-meta {
   display: flex;
   width: min(100%, 584px);
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
   gap: 12px;
-  margin: 7px 0 0;
-  text-align: left;
+  margin: 0;
+  text-align: center;
 }
 
 .discovery-keyword-hint,
 .discovery-keyword-error {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
-.discovery-keyword-count {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  background: var(--surface-subtle);
-  padding: 2px 7px;
-  color: var(--text-secondary);
+.discovery-search-meta .discovery-keyword-hint {
   font-size: 9px;
-  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
 }
 
 .discovery-keyword-error {
   color: var(--danger, #b42318);
   margin: 7px 8px 0;
-}
-
-.discovery-keyword-suggestions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin: 8px 8px 0;
-}
-
-.discovery-keyword-suggestions > span {
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.discovery-keyword-suggestions button {
-  max-width: 220px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  padding: 4px 8px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.discovery-keyword-suggestions button:hover {
-  border-color: var(--purple);
-  color: var(--purple);
-}
-
-.discovery-keyword-suggestions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .discovery-clear-search {
@@ -6850,34 +6807,6 @@ html[data-theme="dark"] .gmail-reply-error {
 }
 
 .discovery-source-settings:hover {
-  text-decoration: underline;
-}
-
-.discovery-examples {
-  justify-content: center;
-  gap: 7px;
-  margin-top: 8px;
-}
-
-.discovery-examples > span {
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 500;
-}
-
-.discovery-example-chip {
-  min-height: 25px;
-  border-color: transparent;
-  background: transparent;
-  padding: 0 7px;
-  color: var(--muted);
-  font-size: 9px;
-}
-
-.discovery-example-chip:hover {
-  border-color: transparent;
-  background: transparent;
-  color: var(--purple);
   text-decoration: underline;
 }
 
@@ -7167,11 +7096,6 @@ html[data-theme="dark"] .discovery-search-home .discovery-ai-search-button:hover
   background: #30323c;
 }
 
-html[data-theme="dark"] .discovery-search-home .discovery-keyword-suggestions button {
-  background: var(--surface);
-  color: var(--text-secondary);
-}
-
 html[data-theme="dark"] .discovery-source-options {
   box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
 }
@@ -7206,7 +7130,7 @@ html[data-theme="dark"] .discovery-result > p {
   }
 
   .discovery-search-home .discovery-search-form {
-    gap: 12px;
+    gap: 8px;
   }
 
   .discovery-search-home .discovery-search-field {
@@ -7240,15 +7164,6 @@ html[data-theme="dark"] .discovery-result > p {
 
   .discovery-search-meta {
     gap: 6px;
-  }
-
-  .discovery-examples {
-    justify-content: flex-start;
-  }
-
-  .discovery-example-chip {
-    max-width: 100%;
-    text-align: left;
   }
 
   .discovery-save-summary {
@@ -8541,40 +8456,6 @@ html[data-theme="dark"] .leads-panel > .table-scroll::-webkit-scrollbar-thumb:ho
   border-radius: 8px;
   gap: 8px;
   font-size: 10px;
-}
-
-.discovery-examples {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 12px;
-}
-
-.discovery-examples > span {
-  margin-right: 2px;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.discovery-example-chip {
-  min-height: 27px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  padding: 0 9px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 9px;
-  transition: border-color 140ms ease, color 140ms ease,
-    background 140ms ease;
-}
-
-.discovery-example-chip:hover {
-  border-color: #c9c2f1;
-  background: var(--purple-soft);
-  color: var(--purple-dark);
 }
 
 .discovery-query-footnote {
@@ -12804,15 +12685,6 @@ td:last-child {
     min-height: 40px;
   }
 
-  .discovery-examples {
-    align-items: flex-start;
-  }
-
-  .discovery-example-chip {
-    min-height: 30px;
-    text-align: left;
-  }
-
   .results-heading {
     align-items: stretch;
     flex-direction: column;
@@ -13303,7 +13175,6 @@ html[data-theme="dark"] .discovery-panel {
 
 html[data-theme="dark"] .discovery-heading-note,
 html[data-theme="dark"] .discovery-source-card,
-html[data-theme="dark"] .discovery-example-chip,
 html[data-theme="dark"] .result-card {
   border-color: var(--line);
   background-color: var(--surface);
@@ -19920,6 +19791,48 @@ html[data-theme="dark"] .gmail-mobile-back {
   font-size: 10px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.discovery-ai-fallback {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.discovery-ai-fallback > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.discovery-ai-fallback > summary::-webkit-details-marker {
+  display: none;
+}
+
+.discovery-ai-fallback-label {
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.discovery-ai-fallback-details {
+  color: var(--purple);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.discovery-ai-fallback > p {
+  max-width: 660px;
+  margin: 7px 0 0;
+  border-left: 2px solid var(--line);
+  padding-left: 9px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .discovery-credits-badge {

@@ -447,6 +447,8 @@ export interface DiscoveryResponse {
   query: string;
   results: DiscoveryResult[];
   search_queries: string[];
+  ai_provider_used?: DiscoveryAiProvider | null;
+  ai_fallback_reason?: string | null;
   search_id: string;
   answer: string | null;
   credits_used: number | null;
