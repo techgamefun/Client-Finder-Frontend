@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
   ChevronDown,
   Columns3,
   RotateCcw,
@@ -14,7 +15,6 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import {
-  addExcludedDomain,
   addExcludedDomainsBatch,
   addWebsitesToLeads,
   fetchMissingWebsiteAhrefsDomainRatings,
@@ -47,7 +47,7 @@ import type {
 import { formatSiteType } from "@/lib/site-type";
 import { CrawlWebsiteDialog } from "./crawler-page";
 import { useToast } from "./toast-provider";
-import { TableLoading } from "./page-loading";
+import { WebsiteTableLoading } from "./page-loading";
 import { useUserPreferences } from "@/lib/user-preferences";
 
 const pageTypes: WebsitePageType[] = [
@@ -652,32 +652,6 @@ export function WebsitesPage() {
       });
     },
   });
-  const excludeWebsiteMutation = useMutation({
-    mutationFn: (website: WebsiteRecord) =>
-      addExcludedDomain({
-        domain: website.domain,
-        reason: "Manual Exclusion",
-      }),
-    onSuccess: async (domain) => {
-      showToast({
-        type: "success",
-        title: "Domain excluded",
-        message: `${domain.domain} was excluded and its queued and failed indexing jobs were removed.`,
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["crawler", "queue-jobs"] }),
-        queryClient.invalidateQueries({ queryKey: ["excluded-domains"] }),
-        queryClient.invalidateQueries({ queryKey: ["websites"] }),
-      ]);
-    },
-    onError: (error: Error) => {
-      showToast({
-        type: "error",
-        title: "Could not exclude domain",
-        message: error.message,
-      });
-    },
-  });
   const excludeSelectedWebsitesMutation = useMutation({
     mutationFn: addExcludedDomainsInBatches,
     onSuccess: async (result) => {
@@ -1162,9 +1136,16 @@ export function WebsitesPage() {
               )}
               <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
             </summary>
-            <div className="website-filter-content">
-              {activeFilterCount > 0 && (
-                <div className="website-filter-popover-heading">
+            <div
+              aria-label="Website filters"
+              className="website-filter-content"
+              role="group"
+            >
+              <div className="website-filter-popover-heading">
+                <div className="website-filter-popover-copy">
+                  <strong>Filter websites</strong>
+                </div>
+                {activeFilterCount > 0 && (
                   <button
                     className="website-clear-filters"
                     onClick={() => {
@@ -1192,14 +1173,15 @@ export function WebsitesPage() {
                     <RotateCcw aria-hidden="true" size={13} />
                     Clear all
                   </button>
-                </div>
-              )}
+                )}
+              </div>
               <div className="website-filter-group">
                 <h2>Site</h2>
                 <div className="website-registry-primary-filters">
             <label className="website-filter-field select-filter">
               <span className="website-filter-field-label">Type</span>
               <select
+                aria-label="Website type"
                 disabled={
                   batchStatusMutation.isPending || addToLeadMutation.isPending
                 }
@@ -1220,6 +1202,7 @@ export function WebsitesPage() {
             <label className="website-filter-field select-filter">
               <span className="website-filter-field-label">Status</span>
               <select
+                aria-label="Website status"
                 onChange={(event) => {
                   resetPage();
                   const nextStatus = websiteStatuses.find(
@@ -1240,6 +1223,7 @@ export function WebsitesPage() {
             <label className="website-filter-field select-filter">
               <span className="website-filter-field-label">Topic</span>
               <select
+                aria-label="Website topic"
                 onChange={(event) => {
                   resetPage();
                   setCategory(event.target.value);
@@ -1259,6 +1243,7 @@ export function WebsitesPage() {
             <label className="website-filter-field select-filter">
               <span className="website-filter-field-label">Source</span>
               <select
+                aria-label="Discovery source"
                 onChange={(event) => {
                   resetPage();
                   setDiscoverySource(event.target.value);
@@ -1283,6 +1268,7 @@ export function WebsitesPage() {
                   Min. monthly visits
                 </span>
                 <input
+                  aria-label="Minimum monthly visits"
                   min="0"
                   onChange={(event) => {
                     resetPage();
@@ -1298,6 +1284,7 @@ export function WebsitesPage() {
                   Min. referring domains
                 </span>
                 <input
+                  aria-label="Minimum referring domains"
                   min="0"
                   onChange={(event) => {
                     resetPage();
@@ -1313,6 +1300,7 @@ export function WebsitesPage() {
                   Max. global rank
                 </span>
                 <input
+                  aria-label="Maximum global rank"
                   min="1"
                   onChange={(event) => {
                     resetPage();
@@ -1328,6 +1316,7 @@ export function WebsitesPage() {
                   HypeStat country
                 </span>
                 <select
+                  aria-label="HypeStat country"
                   onChange={(event) => {
                     resetPage();
                     setHypestatCountry(event.target.value);
@@ -1347,6 +1336,7 @@ export function WebsitesPage() {
                   Backlink country
                 </span>
                 <select
+                  aria-label="Backlink country"
                   onChange={(event) => {
                     resetPage();
                     setBacklinkCountry(event.target.value);
@@ -1366,6 +1356,7 @@ export function WebsitesPage() {
                   Audience country
                 </span>
                 <select
+                  aria-label="Audience country"
                   onChange={(event) => {
                     resetPage();
                     setAudienceCountry(event.target.value);
@@ -1390,6 +1381,7 @@ export function WebsitesPage() {
                       Min. DR
                     </span>
                     <input
+                      aria-label="Minimum domain rating"
                       max="100"
                       min="0"
                       onChange={(event) => {
@@ -1406,6 +1398,7 @@ export function WebsitesPage() {
                       Max. DR
                     </span>
                     <input
+                      aria-label="Maximum domain rating"
                       max="100"
                       min="0"
                       onChange={(event) => {
@@ -1425,6 +1418,7 @@ export function WebsitesPage() {
                   <label className="website-filter-field select-filter">
                     <span className="website-filter-field-label">Device</span>
                     <select
+                      aria-label="PageSpeed device"
                       onChange={(event) => {
                         resetPage();
                         const strategy = event.target.value;
@@ -1441,6 +1435,7 @@ export function WebsitesPage() {
                   <label className="website-filter-field select-filter">
                     <span className="website-filter-field-label">Category</span>
                     <select
+                      aria-label="PageSpeed category"
                       onChange={(event) => {
                         resetPage();
                         const category = pageSpeedCategories.find(
@@ -1462,6 +1457,7 @@ export function WebsitesPage() {
                       Min. score
                     </span>
                     <input
+                      aria-label="Minimum PageSpeed score"
                       max="100"
                       min="0"
                       onChange={(event) => {
@@ -1478,6 +1474,7 @@ export function WebsitesPage() {
                       Max. score
                     </span>
                     <input
+                      aria-label="Maximum PageSpeed score"
                       max="100"
                       min="0"
                       onChange={(event) => {
@@ -1745,8 +1742,7 @@ export function WebsitesPage() {
                   !bulkStatus ||
                   batchStatusMutation.isPending ||
                   addToLeadMutation.isPending ||
-                  excludeSelectedWebsitesMutation.isPending ||
-                  excludeWebsiteMutation.isPending
+                  excludeSelectedWebsitesMutation.isPending
                 }
                 onClick={changeSelectedWebsiteStatus}
                 type="button"
@@ -1759,8 +1755,7 @@ export function WebsitesPage() {
               disabled={
                 batchStatusMutation.isPending ||
                 addToLeadMutation.isPending ||
-                excludeSelectedWebsitesMutation.isPending ||
-                excludeWebsiteMutation.isPending
+                excludeSelectedWebsitesMutation.isPending
               }
               onClick={() => addToLeadDialogRef.current?.showModal()}
               type="button"
@@ -1774,8 +1769,7 @@ export function WebsitesPage() {
               disabled={
                 batchStatusMutation.isPending ||
                 addToLeadMutation.isPending ||
-                excludeSelectedWebsitesMutation.isPending ||
-                excludeWebsiteMutation.isPending
+                excludeSelectedWebsitesMutation.isPending
               }
               onClick={() =>
                 excludeSelectedWebsitesMutation.mutate(
@@ -1793,8 +1787,7 @@ export function WebsitesPage() {
               disabled={
                 batchStatusMutation.isPending ||
                 addToLeadMutation.isPending ||
-                excludeSelectedWebsitesMutation.isPending ||
-                excludeWebsiteMutation.isPending
+                excludeSelectedWebsitesMutation.isPending
               }
               onClick={() => {
                 setSelectedWebsiteRecords(new Map());
@@ -1918,7 +1911,13 @@ export function WebsitesPage() {
             </button>
           </div>
         ) : websitesQuery.isLoading ? (
-          <TableLoading label="Loading websites" rows={6} />
+          <WebsiteTableLoading
+            hiddenColumns={defaultWebsiteColumns
+              .filter((column) => !visibleWebsiteColumns.includes(column))
+              .join(" ")}
+            label="Loading websites"
+            rows={6}
+          />
         ) : pageWebsites.length === 0 ? (
           <div className="empty-state table-state">
             <span className="empty-symbol" aria-hidden="true">↗</span>
@@ -2159,9 +2158,7 @@ export function WebsitesPage() {
                           >
                             {website.domain}
                           </Link>
-                          <select
-                            aria-label={`Status for ${website.domain}`}
-                            className={`website-status-badge website-status-${website.status}`}
+                          <WebsiteStatusMenu
                             disabled={
                               updateMutation.isPending ||
                               addToLeadMutation.isPending ||
@@ -2169,24 +2166,11 @@ export function WebsitesPage() {
                               reclassifyMutation.isPending ||
                               reclassifyAllMutation.isPending
                             }
-                            onChange={(event) => {
-                              const nextStatus = websiteStatuses.find(
-                                (value) => value === event.target.value,
-                              );
-                              if (nextStatus) {
-                                updateWebsiteField(website.id, {
-                                  status: nextStatus,
-                                });
-                              }
-                            }}
-                            value={website.status}
-                          >
-                            {websiteStatuses.map((value) => (
-                              <option key={value} value={value}>
-                                {formatWebsiteStatus(value)}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(status) =>
+                              updateWebsiteField(website.id, { status })
+                            }
+                            website={website}
+                          />
                           <a
                             aria-label={`Open ${website.domain} in a new tab`}
                             className="website-external-link"
@@ -2197,26 +2181,6 @@ export function WebsitesPage() {
                           >
                             <span aria-hidden="true">↗</span>
                           </a>
-                          <button
-                            aria-label={`Exclude ${website.domain} from indexing`}
-                            className="button button-secondary website-exclude-row-button"
-                            disabled={
-                              excludeWebsiteMutation.isPending ||
-                              excludeSelectedWebsitesMutation.isPending ||
-                              addToLeadMutation.isPending ||
-                              batchStatusMutation.isPending
-                            }
-                            onClick={() =>
-                              excludeWebsiteMutation.mutate(website)
-                            }
-                            title={`Add ${website.domain} to Excluded domains`}
-                            type="button"
-                          >
-                            {excludeWebsiteMutation.isPending &&
-                            excludeWebsiteMutation.variables?.id === website.id
-                              ? "Excluding..."
-                              : "Exclude"}
-                          </button>
                         </span>
                       </td>
                       <td
@@ -2575,6 +2539,106 @@ function formatDiscoverySource(value: string): string {
 
 function formatWebsiteStatus(status: WebsiteStatus): string {
   return status.charAt(0).toLocaleUpperCase() + status.slice(1);
+}
+
+function WebsiteStatusMenu({
+  website,
+  disabled,
+  onChange,
+}: {
+  website: WebsiteRecord;
+  disabled: boolean;
+  onChange: (status: WebsiteStatus) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = `website-status-options-${website.id}`;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !containerRef.current?.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div
+      className={`website-status-menu${isOpen ? " is-open" : ""}`}
+      ref={containerRef}
+    >
+      <button
+        aria-controls={menuId}
+        aria-expanded={isOpen}
+        aria-label={`Change status for ${website.domain}. Current status: ${formatWebsiteStatus(website.status)}`}
+        className={`website-status-badge website-status-${website.status}`}
+        disabled={disabled}
+        onClick={() => setIsOpen((open) => !open)}
+        ref={triggerRef}
+        title={`Change status for ${website.domain}`}
+        type="button"
+      >
+        {formatWebsiteStatus(website.status)}
+      </button>
+      <div
+        aria-label={`Choose status for ${website.domain}`}
+        className="website-status-options"
+        hidden={!isOpen}
+        id={menuId}
+        role="group"
+      >
+        {websiteStatuses.map((status) => {
+          const selected = website.status === status;
+          return (
+            <button
+              aria-pressed={selected}
+              className="website-status-option"
+              disabled={disabled}
+              key={status}
+              onClick={() => {
+                if (!selected) onChange(status);
+                setIsOpen(false);
+                triggerRef.current?.focus();
+              }}
+              type="button"
+            >
+              <span
+                aria-hidden="true"
+                className={`website-status-option-dot is-${status}`}
+              />
+              <span>{formatWebsiteStatus(status)}</span>
+              {selected && (
+                <Check
+                  aria-hidden="true"
+                  className="website-status-option-check"
+                  size={13}
+                  strokeWidth={2.5}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function formatTableNumber(value: number | null): string {

@@ -47,6 +47,126 @@ export function TableLoading({
   );
 }
 
+const websiteSkeletonColumns = [
+  { label: "#" },
+  { label: "Website" },
+  { id: "keywords", label: "Keywords" },
+  { id: "website_type", label: "Website type" },
+  { id: "site_topic", label: "Site topic" },
+  { id: "hypestat_monthly_visits", label: "Monthly visits" },
+  { id: "hypestat_referring_domains", label: "Referring domains" },
+  { id: "hypestat_global_rank", label: "Global rank" },
+  { id: "hypestat_country", label: "Country" },
+  { id: "hypestat_backlink_countries", label: "Backlinks by country" },
+  { id: "hypestat_audience_countries", label: "Audience countries" },
+  { id: "language", label: "Language" },
+  { id: "crawled_at", label: "Crawled at" },
+  { id: "ahrefs_domain_rating", label: "DR" },
+  { id: "pagespeed_desktop_performance", label: "Desktop performance" },
+  { id: "pagespeed_desktop_accessibility", label: "Desktop accessibility" },
+  { id: "pagespeed_desktop_best_practices", label: "Desktop best practices" },
+  { id: "pagespeed_desktop_seo", label: "Desktop SEO" },
+  { id: "pagespeed_mobile_performance", label: "Mobile performance" },
+  { id: "pagespeed_mobile_accessibility", label: "Mobile accessibility" },
+  { id: "pagespeed_mobile_best_practices", label: "Mobile best practices" },
+  { id: "pagespeed_mobile_seo", label: "Mobile SEO" },
+];
+
+export function WebsiteTableLoading({
+  label,
+  rows = 6,
+  hiddenColumns,
+}: {
+  label: string;
+  rows?: number;
+  hiddenColumns?: string;
+}) {
+  return (
+    <div
+      aria-busy="true"
+      aria-label={label}
+      className="table-scroll website-table-scroll website-table-loading"
+      data-hidden-columns={hiddenColumns}
+      role="status"
+    >
+      <span className="sr-only">{label}</span>
+      <WebsiteTableSkeleton rows={rows} />
+    </div>
+  );
+}
+
+function WebsiteTableSkeleton({ rows }: { rows: number }) {
+  return (
+    <table aria-hidden="true" className="website-loading-table">
+      <thead>
+        <tr>
+          {websiteSkeletonColumns.map((column, index) => (
+            <th
+              data-column={column.id}
+              key={column.id ?? column.label}
+              scope="col"
+            >
+              <span
+                className={`page-loading-block website-loading-line${index === 0 ? " is-tiny" : ""}`}
+              />
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: rows }, (_, row) => (
+          <tr className="website-mobile-card website-loading-row" key={row}>
+            {websiteSkeletonColumns.map((column, index) => {
+              if (index === 0) {
+                return (
+                  <td className="website-row-number" key={column.label}>
+                    <span className="website-loading-selection">
+                      <span className="page-loading-block website-loading-checkbox" />
+                      <span className="page-loading-block website-loading-index" />
+                    </span>
+                  </td>
+                );
+              }
+              if (index === 1) {
+                return (
+                  <td
+                    className="website-url-cell"
+                    data-label={column.label}
+                    key={column.label}
+                  >
+                    <span className="website-loading-domain">
+                      <span className="page-loading-block website-loading-favicon" />
+                      <span className="page-loading-block website-loading-domain-line" />
+                      <span className="page-loading-block website-loading-status" />
+                      <span className="website-external-link website-loading-external" />
+                    </span>
+                  </td>
+                );
+              }
+              return (
+                <td
+                  data-column={column.id}
+                  data-label={column.label}
+                  key={column.id}
+                >
+                  {index === 2 ? (
+                    <span className="website-loading-keywords">
+                      <span className="page-loading-block website-loading-chip" />
+                      <span className="page-loading-block website-loading-chip is-short" />
+                    </span>
+                  ) : (
+                    <span className="page-loading-block website-loading-line" />
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export function PageLoading({
   label,
   variant = "generic",
@@ -701,24 +821,11 @@ function WebsitesLoading({ label }: { label: string }) {
           <span className="page-loading-block is-websites-refresh" />
         </div>
       </div>
-      <div aria-hidden="true" className="page-loading-websites-table-wrap">
-        <div className="page-loading-websites-table">
-          <div className="page-loading-websites-table-head">
-            {Array.from({ length: 7 }, (_, index) => (
-              <span className="page-loading-block is-copy" key={index} />
-            ))}
-          </div>
-          {Array.from({ length: 6 }, (_, row) => (
-            <div className="page-loading-websites-table-row" key={row}>
-              {Array.from({ length: 7 }, (_, column) => (
-                <span
-                  className={`page-loading-block${column === 1 ? " is-copy" : " is-table-cell"}`}
-                  key={column}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+      <div
+        aria-hidden="true"
+        className="page-loading-websites-table-wrap table-scroll website-table-scroll"
+      >
+        <WebsiteTableSkeleton rows={6} />
       </div>
     </section>
   );
