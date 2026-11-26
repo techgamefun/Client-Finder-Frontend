@@ -26,6 +26,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   theme: "system",
   sidebar_collapsed: false,
   search: { providers: null, tavily: null },
+  websites: { visible_columns: null },
 };
 
 const LOCAL_PREFERENCE_CACHE_PREFIX = "user-preferences:v1";
@@ -236,11 +237,20 @@ function isUserPreferences(value: unknown): value is UserPreferences {
       search.providers.every(
         (provider) => provider === "tavily" || provider === "octoparse",
       ));
+  const validWebsiteColumns =
+    value.websites === undefined ||
+    (isRecord(value.websites) &&
+      (value.websites.visible_columns === null ||
+        (Array.isArray(value.websites.visible_columns) &&
+          value.websites.visible_columns.every(
+            (column) => typeof column === "string",
+          ))));
   return (
     (theme === "light" || theme === "dark" || theme === "system") &&
     typeof sidebar_collapsed === "boolean" &&
     validProviders &&
-    (search.tavily === null || isRecord(search.tavily))
+    (search.tavily === null || isRecord(search.tavily)) &&
+    validWebsiteColumns
   );
 }
 
@@ -276,6 +286,12 @@ export function mergeUserPreferences(
     search: {
       ...current.search,
       ...patch.search,
+    },
+    websites: {
+      visible_columns:
+        patch.websites?.visible_columns !== undefined
+          ? patch.websites.visible_columns
+          : (current.websites?.visible_columns ?? null),
     },
   };
   if (patch.search?.tavily) {

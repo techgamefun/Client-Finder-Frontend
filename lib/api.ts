@@ -1274,12 +1274,37 @@ export interface UserTavilySearchPreferences {
   auto_find_more?: boolean | null;
 }
 
+export type WebsiteRegistryColumnId =
+  | "keywords"
+  | "website_type"
+  | "site_topic"
+  | "hypestat_monthly_visits"
+  | "hypestat_referring_domains"
+  | "hypestat_global_rank"
+  | "hypestat_country"
+  | "hypestat_backlink_countries"
+  | "hypestat_audience_countries"
+  | "language"
+  | "crawled_at"
+  | "ahrefs_domain_rating"
+  | "pagespeed_desktop_performance"
+  | "pagespeed_desktop_accessibility"
+  | "pagespeed_desktop_best_practices"
+  | "pagespeed_desktop_seo"
+  | "pagespeed_mobile_performance"
+  | "pagespeed_mobile_accessibility"
+  | "pagespeed_mobile_best_practices"
+  | "pagespeed_mobile_seo";
+
 export interface UserPreferences {
   theme: "light" | "dark" | "system";
   sidebar_collapsed: boolean;
   search: {
     providers: DiscoveryProviderId[] | null;
     tavily: UserTavilySearchPreferences | null;
+  };
+  websites?: {
+    visible_columns: WebsiteRegistryColumnId[] | null;
   };
 }
 
@@ -1289,6 +1314,9 @@ export type UserPreferencesUpdate = {
   search?: {
     providers?: DiscoveryProviderId[] | null;
     tavily?: UserTavilySearchPreferences | null;
+  };
+  websites?: {
+    visible_columns?: WebsiteRegistryColumnId[] | null;
   };
 };
 

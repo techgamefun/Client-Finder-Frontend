@@ -694,8 +694,10 @@ function WebsitesLoading({ label }: { label: string }) {
           <span className="page-loading-block is-copy" />
         </div>
         <span className="page-loading-block is-websites-filter-button" />
+        <span className="page-loading-block is-websites-sort" />
         <div className="website-registry-actions">
           <span className="page-loading-block is-websites-action" />
+          <span className="page-loading-block is-websites-columns" />
           <span className="page-loading-block is-websites-refresh" />
         </div>
       </div>

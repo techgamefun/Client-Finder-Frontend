@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
+  Columns3,
   RotateCcw,
   Search,
   Sparkles,
@@ -19,6 +20,7 @@ import {
   fetchMissingWebsiteAhrefsDomainRatings,
   fetchMissingWebsiteHypeStatProfiles,
   fetchMissingWebsitePageSpeedScans,
+  getAuthSession,
   getWebsiteCorpusWords,
   getWebsiteEnrichmentCounts,
   getWebsiteRegistryFacets,
@@ -38,6 +40,7 @@ import type {
   WebsitePageType,
   WebsiteRegistryPageParams,
   WebsiteRegistrySortKey,
+  WebsiteRegistryColumnId,
   WebsiteStatus,
   WebsiteUpdateInput,
 } from "@/lib/api";
@@ -45,6 +48,7 @@ import { formatSiteType } from "@/lib/site-type";
 import { CrawlWebsiteDialog } from "./crawler-page";
 import { useToast } from "./toast-provider";
 import { TableLoading } from "./page-loading";
+import { useUserPreferences } from "@/lib/user-preferences";
 
 const pageTypes: WebsitePageType[] = [
   "business_site",
@@ -62,10 +66,62 @@ const pageTypes: WebsitePageType[] = [
   "other",
 ];
 const pageSizes = [10, 25, 50];
+const websiteColumnGroups: {
+  label: string;
+  columns: { id: WebsiteRegistryColumnId; label: string }[];
+}[] = [
+  {
+    label: "Website details",
+    columns: [
+      { id: "keywords", label: "Keywords" },
+      { id: "website_type", label: "Website type" },
+      { id: "site_topic", label: "Site topic" },
+      { id: "language", label: "Language" },
+      { id: "crawled_at", label: "Crawled at" },
+    ],
+  },
+  {
+    label: "HypeStat",
+    columns: [
+      { id: "hypestat_monthly_visits", label: "Monthly visits" },
+      { id: "hypestat_referring_domains", label: "Referring domains" },
+      { id: "hypestat_global_rank", label: "Global rank" },
+      { id: "hypestat_country", label: "Country" },
+      { id: "hypestat_backlink_countries", label: "Backlinks by country" },
+      { id: "hypestat_audience_countries", label: "Audience countries" },
+    ],
+  },
+  {
+    label: "Ahrefs",
+    columns: [{ id: "ahrefs_domain_rating", label: "Domain Rating (DR)" }],
+  },
+  {
+    label: "PageSpeed",
+    columns: [
+      { id: "pagespeed_desktop_performance", label: "Desktop performance" },
+      { id: "pagespeed_desktop_accessibility", label: "Desktop accessibility" },
+      {
+        id: "pagespeed_desktop_best_practices",
+        label: "Desktop best practices",
+      },
+      { id: "pagespeed_desktop_seo", label: "Desktop SEO" },
+      { id: "pagespeed_mobile_performance", label: "Mobile performance" },
+      { id: "pagespeed_mobile_accessibility", label: "Mobile accessibility" },
+      {
+        id: "pagespeed_mobile_best_practices",
+        label: "Mobile best practices",
+      },
+      { id: "pagespeed_mobile_seo", label: "Mobile SEO" },
+    ],
+  },
+];
+const defaultWebsiteColumns = websiteColumnGroups.flatMap((group) =>
+  group.columns.map(({ id }) => id),
+);
 const websiteStatuses: WebsiteStatus[] = ["new", "lead", "checked"];
 const EXCLUDED_DOMAIN_BATCH_SIZE = 1000;
 const pageSpeedSortOptions: {
-  key: WebsiteRegistrySortKey;
+  key: Extract<WebsiteRegistryColumnId, `pagespeed_${string}`>;
   label: string;
 }[] = [
   { key: "pagespeed_desktop_performance", label: "Desktop performance" },
@@ -208,17 +264,19 @@ function SortableHeader({
   sortKey,
   sort,
   onSort,
+  column,
 }: {
   label: string;
   sortKey: WebsiteSortKey;
   sort: WebsiteSort | null;
   onSort: (key: WebsiteSortKey) => void;
+  column?: WebsiteRegistryColumnId;
 }) {
   const isActive = sort?.key === sortKey;
   const nextDirection =
     isActive && sort.direction === "ascending" ? "descending" : "ascending";
   return (
-    <th aria-sort={isActive ? sort.direction : "none"}>
+    <th aria-sort={isActive ? sort.direction : "none"} data-column={column}>
       <button
         aria-label={`Sort by ${label}, ${nextDirection}`}
         className="website-sort-button"
@@ -238,10 +296,12 @@ function PageSpeedScoreCell({
   label,
   category,
   scan,
+  column,
 }: {
   label: string;
   category: string;
   scan: PageSpeedScanSummary | null;
+  column: WebsiteRegistryColumnId;
 }) {
   const score = scan?.category_scores[category] ?? null;
   const scoreTone =
@@ -260,7 +320,11 @@ function PageSpeedScoreCell({
       })
     : null;
   return (
-    <td className="website-pagespeed-score-cell" data-label={label}>
+    <td
+      className="website-pagespeed-score-cell"
+      data-column={column}
+      data-label={label}
+    >
       <span
         aria-label={
           score === null ? `${label}: not reported` : `${label}: ${score} / 100`
@@ -319,6 +383,27 @@ export function WebsitesPage() {
   const shouldOpenCrawlDialog = searchParams.get("crawl") === "1";
   const queryClient = useQueryClient();
   const showToast = useToast();
+  const authSessionQuery = useQuery({
+    queryKey: ["auth-session"],
+    queryFn: getAuthSession,
+    retry: false,
+  });
+  const userPreferences = useUserPreferences(authSessionQuery.data?.user.id);
+  const saveUserPreferences = userPreferences.save;
+  const visibleWebsiteColumns =
+    userPreferences.data?.websites?.visible_columns ?? defaultWebsiteColumns;
+  useEffect(() => {
+    if (!userPreferences.isError) return;
+    showToast({
+      type: "error",
+      title: "Could not load website table preferences",
+      message: userPreferences.error.message,
+    });
+  }, [
+    showToast,
+    userPreferences.error,
+    userPreferences.isError,
+  ]);
   const websiteScrollTimerRef = useRef<number | null>(null);
   const selectFilteredRef = useRef<HTMLInputElement>(null);
   const addToLeadDialogRef = useRef<HTMLDialogElement>(null);
@@ -389,6 +474,19 @@ export function WebsitesPage() {
   const [languageDrafts, setLanguageDrafts] = useState<Record<string, string>>(
     {},
   );
+  const setWebsiteColumnVisibility = (
+    column: WebsiteRegistryColumnId,
+    visible: boolean,
+  ) => {
+    const nextColumns = visibleWebsiteColumns.filter((item) => item !== column);
+    if (visible) nextColumns.push(column);
+    saveUserPreferences({
+      websites: { visible_columns: nextColumns },
+    });
+  };
+  const resetWebsiteColumns = () => {
+    saveUserPreferences({ websites: { visible_columns: null } });
+  };
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search), 250);
     return () => window.clearTimeout(timer);
@@ -1459,6 +1557,41 @@ export function WebsitesPage() {
             </button>
           </div>
           <div className="website-registry-actions">
+            <details className="website-columns-menu">
+              <summary>
+                <Columns3 aria-hidden="true" size={15} strokeWidth={1.8} />
+                <span>Columns</span>
+                <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
+              </summary>
+              <div aria-label="Choose visible website columns" className="website-columns-popover">
+                <div className="website-columns-heading">
+                  <strong>Visible columns</strong>
+                  <button onClick={resetWebsiteColumns} type="button">
+                    Reset
+                  </button>
+                </div>
+                {websiteColumnGroups.map((group) => (
+                  <fieldset className="website-columns-group" key={group.label}>
+                    <legend>{group.label}</legend>
+                    {group.columns.map(({ id, label }) => (
+                      <label key={id}>
+                        <input
+                          checked={visibleWebsiteColumns.includes(id)}
+                          onChange={(event) =>
+                            setWebsiteColumnVisibility(id, event.target.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                ))}
+                <p className="website-columns-fixed-note">
+                  Website and row actions are always shown.
+                </p>
+              </div>
+            </details>
             <div className="website-enrichment-menu" ref={enrichmentMenuRef}>
               <button
                 aria-controls={
@@ -1816,6 +1949,9 @@ export function WebsitesPage() {
                 }, 120);
               }}
               tabIndex={0}
+              data-hidden-columns={defaultWebsiteColumns
+                .filter((column) => !visibleWebsiteColumns.includes(column))
+                .join(" ")}
             >
               <table>
                 <thead>
@@ -1849,68 +1985,79 @@ export function WebsitesPage() {
                       sort={sort}
                       sortKey="website"
                     />
-                    <th scope="col">Keywords</th>
+                    <th data-column="keywords" scope="col">Keywords</th>
                     <SortableHeader
+                      column="website_type"
                       label="Website type"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="website_type"
                     />
                     <SortableHeader
+                      column="site_topic"
                       label="Site topic"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="site_topic"
                     />
                     <SortableHeader
+                      column="hypestat_monthly_visits"
                       label="Est. monthly visits"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="hypestat_monthly_visits"
                     />
                     <SortableHeader
+                      column="hypestat_referring_domains"
                       label="Referring domains"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="hypestat_referring_domains"
                     />
                     <SortableHeader
+                      column="hypestat_global_rank"
                       label="HypeStat global rank"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="hypestat_global_rank"
                     />
                     <SortableHeader
+                      column="hypestat_country"
                       label="Country"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="hypestat_country"
                     />
                     <SortableHeader
+                      column="hypestat_backlink_countries"
                       label="Referring domains by country"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="hypestat_backlink_countries"
                     />
                     <SortableHeader
+                      column="hypestat_audience_countries"
                       label="Audience countries"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="hypestat_audience_countries"
                     />
                     <SortableHeader
+                      column="language"
                       label="Language"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="language"
                     />
                     <SortableHeader
+                      column="crawled_at"
                       label="Crawled at"
                       onSort={toggleSort}
                       sort={sort}
                       sortKey="crawled_at"
                     />
                     <SortableHeader
+                      column="ahrefs_domain_rating"
                       label="DR"
                       onSort={toggleSort}
                       sort={sort}
@@ -1918,6 +2065,7 @@ export function WebsitesPage() {
                     />
                     {pageSpeedSortOptions.map(({ key, label }) => (
                       <SortableHeader
+                        column={key}
                         key={key}
                         label={label}
                         onSort={toggleSort}
@@ -1976,7 +2124,7 @@ export function WebsitesPage() {
                             }
                             type="button"
                           >
-                            {expandedWebsiteIds.has(website.id) ? "Hide" : "Details"}
+                            {expandedWebsiteIds.has(website.id) ? "Less" : "More"}
                             <span aria-hidden="true">
                               {expandedWebsiteIds.has(website.id) ? "−" : "+"}
                             </span>
@@ -2073,6 +2221,7 @@ export function WebsitesPage() {
                       </td>
                       <td
                         className="website-keywords-cell"
+                        data-column="keywords"
                         data-label="Keywords"
                       >
                         <div
@@ -2119,7 +2268,7 @@ export function WebsitesPage() {
                           )}
                         </div>
                       </td>
-                      <td data-label="Website type">
+                      <td data-column="website_type" data-label="Website type">
                         <div className="website-type-recompute-control">
                           <select
                             aria-label={`Website type for ${website.domain}`}
@@ -2168,7 +2317,7 @@ export function WebsitesPage() {
                           </button>
                         </div>
                       </td>
-                      <td data-label="Site topic">
+                      <td data-column="site_topic" data-label="Site topic">
                         <input
                           aria-label={`Site topic for ${website.domain}`}
                           className="website-review-input"
@@ -2208,20 +2357,30 @@ export function WebsitesPage() {
                           }
                         />
                       </td>
-                      <td data-label="Monthly visits">
+                      <td
+                        data-column="hypestat_monthly_visits"
+                        data-label="Monthly visits"
+                      >
                         {formatTableNumber(website.hypestat_monthly_visits)}
                       </td>
-                      <td data-label="Referring domains">
+                      <td
+                        data-column="hypestat_referring_domains"
+                        data-label="Referring domains"
+                      >
                         {formatTableNumber(website.hypestat_referring_domains)}
                       </td>
-                      <td data-label="Global rank">
+                      <td
+                        data-column="hypestat_global_rank"
+                        data-label="Global rank"
+                      >
                         {formatTableNumber(website.hypestat_global_rank)}
                       </td>
-                      <td data-label="Country">
+                      <td data-column="hypestat_country" data-label="Country">
                         {website.hypestat_country ?? "—"}
                       </td>
                       <td
                         className="website-hypestat-country-cell"
+                        data-column="hypestat_backlink_countries"
                         data-label="Backlinks by country"
                       >
                         {website.hypestat_referring_domains_by_country.length ? (
@@ -2239,13 +2398,14 @@ export function WebsitesPage() {
                       </td>
                       <td
                         className="website-hypestat-country-cell"
+                        data-column="hypestat_audience_countries"
                         data-label="Audience countries"
                       >
                         {website.hypestat_audience_countries.length
                           ? website.hypestat_audience_countries.join(", ")
                           : "—"}
                       </td>
-                      <td data-label="Language">
+                      <td data-column="language" data-label="Language">
                         <input
                           aria-label={`Language for ${website.domain}`}
                           className="website-review-input website-language-input"
@@ -2281,53 +2441,65 @@ export function WebsitesPage() {
                           }
                         />
                       </td>
-                      <td data-label="Crawled at">
+                      <td data-column="crawled_at" data-label="Crawled at">
                         {website.crawled_at
                           ? new Date(website.crawled_at).toLocaleString()
                           : "—"}
                       </td>
-                      <td className="website-ahrefs-dr-cell" data-label="DR">
+                      <td
+                        className="website-ahrefs-dr-cell"
+                        data-column="ahrefs_domain_rating"
+                        data-label="DR"
+                      >
                         {website.ahrefs_domain_rating === null
                           ? "—"
                           : website.ahrefs_domain_rating.toFixed(1)}
                       </td>
                       <PageSpeedScoreCell
                         category="performance"
+                        column="pagespeed_desktop_performance"
                         label="Desktop performance"
                         scan={website.pagespeed_desktop}
                       />
                       <PageSpeedScoreCell
                         category="accessibility"
+                        column="pagespeed_desktop_accessibility"
                         label="Desktop accessibility"
                         scan={website.pagespeed_desktop}
                       />
                       <PageSpeedScoreCell
                         category="best-practices"
+                        column="pagespeed_desktop_best_practices"
                         label="Desktop best practices"
                         scan={website.pagespeed_desktop}
                       />
                       <PageSpeedScoreCell
                         category="seo"
+                        column="pagespeed_desktop_seo"
                         label="Desktop SEO"
                         scan={website.pagespeed_desktop}
                       />
                       <PageSpeedScoreCell
                         category="performance"
+                        column="pagespeed_mobile_performance"
                         label="Mobile performance"
                         scan={website.pagespeed_mobile}
                       />
                       <PageSpeedScoreCell
                         category="accessibility"
+                        column="pagespeed_mobile_accessibility"
                         label="Mobile accessibility"
                         scan={website.pagespeed_mobile}
                       />
                       <PageSpeedScoreCell
                         category="best-practices"
+                        column="pagespeed_mobile_best_practices"
                         label="Mobile best practices"
                         scan={website.pagespeed_mobile}
                       />
                       <PageSpeedScoreCell
                         category="seo"
+                        column="pagespeed_mobile_seo"
                         label="Mobile SEO"
                         scan={website.pagespeed_mobile}
                       />
