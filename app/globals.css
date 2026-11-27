@@ -10776,6 +10776,26 @@ td {
   width: 48px;
 }
 
+.website-status-badge.website-status-qualified {
+  width: 58px;
+}
+
+.website-status-badge.website-status-contacted {
+  width: 56px;
+}
+
+.website-status-badge.website-status-converted {
+  width: 58px;
+}
+
+.website-status-badge.website-status-disqualified {
+  width: 68px;
+}
+
+.website-status-badge.website-status-needs_review {
+  width: 74px;
+}
+
 .website-status-badge:hover,
 .website-status-badge[aria-expanded="true"] {
   box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 16%, transparent);
@@ -10861,6 +10881,26 @@ td {
   background: #b56a20;
 }
 
+.website-status-option-dot.is-qualified {
+  background: #3875bd;
+}
+
+.website-status-option-dot.is-contacted {
+  background: #7652b8;
+}
+
+.website-status-option-dot.is-converted {
+  background: #31845b;
+}
+
+.website-status-option-dot.is-disqualified {
+  background: #bd4754;
+}
+
+.website-status-option-dot.is-needs_review {
+  background: #b56a20;
+}
+
 .website-status-option-check {
   margin-left: auto;
   color: var(--purple);
@@ -10877,6 +10917,31 @@ td {
 }
 
 .website-status-checked {
+  background: #fff3e7;
+  color: #a75c1b;
+}
+
+.website-status-qualified {
+  background: #eaf2ff;
+  color: #315f9d;
+}
+
+.website-status-contacted {
+  background: #f0eaff;
+  color: #6845a4;
+}
+
+.website-status-converted {
+  background: #e8f7ef;
+  color: #298253;
+}
+
+.website-status-disqualified {
+  background: #ffebed;
+  color: #a83e4a;
+}
+
+.website-status-needs_review {
   background: #fff3e7;
   color: #a75c1b;
 }
@@ -14480,6 +14545,31 @@ html[data-theme="dark"] .website-status-lead {
 }
 
 html[data-theme="dark"] .website-status-checked {
+  background: #3a3020;
+  color: #f0c16d;
+}
+
+html[data-theme="dark"] .website-status-qualified {
+  background: #202f47;
+  color: #9dc2ff;
+}
+
+html[data-theme="dark"] .website-status-contacted {
+  background: #342747;
+  color: #c9adff;
+}
+
+html[data-theme="dark"] .website-status-converted {
+  background: #1d352a;
+  color: #79d4a3;
+}
+
+html[data-theme="dark"] .website-status-disqualified {
+  background: #3b262a;
+  color: #e99a9d;
+}
+
+html[data-theme="dark"] .website-status-needs_review {
   background: #3a3020;
   color: #f0c16d;
 }

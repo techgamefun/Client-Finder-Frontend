@@ -128,7 +128,16 @@ const websiteColumnGroups: {
 const defaultWebsiteColumns = websiteColumnGroups.flatMap((group) =>
   group.columns.map(({ id }) => id),
 );
-const websiteStatuses: WebsiteStatus[] = ["new", "lead", "checked"];
+const websiteStatuses: WebsiteStatus[] = [
+  "new",
+  "lead",
+  "checked",
+  "qualified",
+  "contacted",
+  "converted",
+  "disqualified",
+  "needs_review",
+];
 const EXCLUDED_DOMAIN_BATCH_SIZE = 1000;
 const pageSpeedSortOptions: {
   key: Extract<WebsiteRegistryColumnId, `pagespeed_${string}`>;
@@ -3280,6 +3289,7 @@ function formatDiscoverySource(value: string): string {
 }
 
 function formatWebsiteStatus(status: WebsiteStatus): string {
+  if (status === "needs_review") return "Needs review";
   return status.charAt(0).toLocaleUpperCase() + status.slice(1);
 }
 

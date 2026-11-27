@@ -954,7 +954,15 @@ export interface WebsiteBatchStatusUpdateResult {
 
 const WEBSITE_ACTION_BATCH_SIZE = 500;
 
-export type WebsiteStatus = "new" | "lead" | "checked";
+export type WebsiteStatus =
+  | "new"
+  | "lead"
+  | "checked"
+  | "qualified"
+  | "contacted"
+  | "converted"
+  | "disqualified"
+  | "needs_review";
 
 export type WebsitePageType =
   | "business_site"

@@ -32,7 +32,16 @@ const pageSpeedCategories = [
   { key: "best-practices", label: "Best practices" },
   { key: "seo", label: "SEO" },
 ];
-const websiteStatuses = ["new", "lead", "checked"];
+const websiteStatuses = [
+  "new",
+  "lead",
+  "checked",
+  "qualified",
+  "contacted",
+  "converted",
+  "disqualified",
+  "needs_review",
+];
 
 export function WebsiteAnalyticsPage() {
   const query = useQuery({

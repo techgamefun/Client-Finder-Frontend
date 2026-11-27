@@ -238,6 +238,11 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
                   <option value="new">New</option>
                   <option value="lead">Lead</option>
                   <option value="checked">Checked</option>
+                  <option value="qualified">Qualified</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="converted">Converted</option>
+                  <option value="disqualified">Disqualified</option>
+                  <option value="needs_review">Needs review</option>
                 </select>
                 <ChevronDown aria-hidden="true" size={13} />
               </label>
@@ -2498,7 +2503,16 @@ function safeId(value: string): string {
 }
 
 function isWebsiteStatus(value: string): value is WebsiteStatus {
-  return value === "new" || value === "lead" || value === "checked";
+  return [
+    "new",
+    "lead",
+    "checked",
+    "qualified",
+    "contacted",
+    "converted",
+    "disqualified",
+    "needs_review",
+  ].includes(value);
 }
 
 function formatDiscoverySource(
