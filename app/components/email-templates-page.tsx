@@ -22,10 +22,11 @@ import {
   getApplicationSettings,
   getGroqModels,
   getAuthSession,
-  getCompanies,
   getEmailTemplateVariables,
   getEmailTemplates,
   generateEmailTemplateDraft,
+  getWebsiteContacts,
+  getWebsites,
   previewEmailTemplate,
   sendEmailTemplate,
   updateEmailTemplate,
@@ -76,7 +77,7 @@ export function EmailTemplatesPage() {
   const [variableTarget, setVariableTarget] =
     useState<TemplateInsertTarget>("body_content");
   const [variableSearch, setVariableSearch] = useState("");
-  const [companyId, setCompanyId] = useState("");
+  const [websiteId, setWebsiteId] = useState("");
   const [contactId, setContactId] = useState("");
   const [gmailAccountId, setGmailAccountId] = useState("");
   const [preview, setPreview] = useState<{
@@ -129,9 +130,9 @@ export function EmailTemplatesPage() {
     : availableGroqModels.includes("openai/gpt-oss-20b")
       ? "openai/gpt-oss-20b"
       : availableGroqModels[0] ?? "";
-  const companiesQuery = useQuery({
-    queryKey: ["companies"],
-    queryFn: getCompanies,
+  const websitesQuery = useQuery({
+    queryKey: ["websites"],
+    queryFn: getWebsites,
     enabled: Boolean(organizationId),
     retry: false,
   });
@@ -225,12 +226,18 @@ export function EmailTemplatesPage() {
       : templates.find((template) => template.id === selectedTemplateId) ??
         templates[0] ??
         null;
-  const companies = companiesQuery.data ?? [];
-  const activeCompanyId = companyId;
-  const activeCompany = companies.find(
-    (company) => company.id === activeCompanyId,
+  const websites = websitesQuery.data ?? [];
+  const activeWebsiteId = websiteId;
+  const activeWebsite = websites.find(
+    (website) => website.id === activeWebsiteId,
   );
-  const contacts = activeCompany?.contacts ?? [];
+  const contactsQuery = useQuery({
+    queryKey: ["website-contacts", activeWebsiteId],
+    queryFn: () => getWebsiteContacts(activeWebsiteId),
+    enabled: Boolean(activeWebsiteId),
+    retry: false,
+  });
+  const contacts = contactsQuery.data ?? [];
   const accounts = accountsQuery.data ?? [];
   const activeGmailAccountId = gmailAccountId;
   const selectedContact = contacts.find((contact) => contact.id === contactId);
@@ -287,17 +294,17 @@ export function EmailTemplatesPage() {
   const previewMutation = useMutation({
     mutationFn: ({
       templateId,
-      selectedCompanyId,
+      selectedWebsiteId,
       selectedContactId,
       selectedGmailAccountId,
     }: {
       templateId: string;
-      selectedCompanyId: string;
+      selectedWebsiteId: string;
       selectedContactId: string;
       selectedGmailAccountId: string;
     }) =>
       previewEmailTemplate(organizationId, templateId, {
-        company_id: selectedCompanyId,
+        website_id: selectedWebsiteId,
         contact_id: selectedContactId || undefined,
         gmail_account_id: selectedGmailAccountId || undefined,
       }),
@@ -309,17 +316,17 @@ export function EmailTemplatesPage() {
   const sendMutation = useMutation({
     mutationFn: ({
       templateId,
-      selectedCompanyId,
+      selectedWebsiteId,
       selectedContactId,
       selectedGmailAccountId,
     }: {
       templateId: string;
-      selectedCompanyId: string;
+      selectedWebsiteId: string;
       selectedContactId: string;
       selectedGmailAccountId: string;
     }) =>
       sendEmailTemplate(organizationId, templateId, {
-        company_id: selectedCompanyId,
+        website_id: selectedWebsiteId,
         contact_id: selectedContactId,
         gmail_account_id: selectedGmailAccountId,
       }),
@@ -452,12 +459,12 @@ export function EmailTemplatesPage() {
   }
 
   function requestPreview() {
-    if (!activeTemplate || !activeCompanyId) return;
+    if (!activeTemplate || !activeWebsiteId) return;
     setPreview(null);
     setSendResult(null);
     previewMutation.mutate({
       templateId: activeTemplate.id,
-      selectedCompanyId: activeCompanyId,
+      selectedWebsiteId: activeWebsiteId,
       selectedContactId: contactId,
       selectedGmailAccountId: activeGmailAccountId,
     });
@@ -474,12 +481,12 @@ export function EmailTemplatesPage() {
   }
 
   function requestSend() {
-    if (!activeTemplate || !activeCompanyId || !contactId || !activeGmailAccountId) {
+    if (!activeTemplate || !activeWebsiteId || !contactId || !activeGmailAccountId) {
       return;
     }
     sendMutation.mutate({
       templateId: activeTemplate.id,
-      selectedCompanyId: activeCompanyId,
+      selectedWebsiteId: activeWebsiteId,
       selectedContactId: contactId,
       selectedGmailAccountId: activeGmailAccountId,
     });
@@ -487,7 +494,7 @@ export function EmailTemplatesPage() {
 
   const variables = variablesQuery.data ?? [];
   const normalizedVariableSearch = variableSearch.trim().toLowerCase();
-  const variableGroups = ["company", "contact", "sender"]
+  const variableGroups = ["website", "contact", "sender"]
     .map((group) => ({
       group,
       items: variables.filter((variable) => {
@@ -507,7 +514,7 @@ export function EmailTemplatesPage() {
   const canSend =
     Boolean(
       activeTemplate &&
-        activeCompanyId &&
+        activeWebsiteId &&
         contactId &&
         selectedContact?.business_email &&
         activeGmailAccountId &&
@@ -658,7 +665,7 @@ export function EmailTemplatesPage() {
                       maxLength={200_000}
                       onFocus={() => setVariableTarget("body_content")}
                       onChange={(event) => updateDraft("body_content", event.target.value)}
-                      placeholder={"<p>Hi {{ contact.first_name | default(\"there\") }},</p>\n<p>I noticed {{ company.name }}...</p>"}
+                      placeholder={"<p>Hi {{ contact.first_name | default(\"there\") }},</p>\n<p>I noticed {{ website.name }}...</p>"}
                       ref={bodyInputRef}
                       required
                       rows={16}
@@ -875,7 +882,7 @@ export function EmailTemplatesPage() {
                 <p className="template-ai-message">
                   Personalization placeholders remain visible here. Save the
                   template and use Preview and test to render values for a
-                  company and contact.
+                  website and contact.
                 </p>
               </dialog>
 
@@ -1168,9 +1175,9 @@ export function EmailTemplatesPage() {
                     </div>
                   </div>
 
-                  {companiesQuery.isError && (
+                  {websitesQuery.isError && (
                     <div className="template-inline-error" role="alert">
-                      Could not load companies: {errorMessage(companiesQuery.error)}
+                      Could not load websites: {errorMessage(websitesQuery.error)}
                     </div>
                   )}
                   {accountsQuery.isError && (
@@ -1181,39 +1188,39 @@ export function EmailTemplatesPage() {
 
                   <div className="template-select-grid">
                     <label className="template-field">
-                      Company
+                      Website
                       <select
                         onChange={(event) => {
-                          setCompanyId(event.target.value);
+                          setWebsiteId(event.target.value);
                           setContactId("");
                           setPreview(null);
                           setSendResult(null);
                         }}
-                        value={activeCompanyId}
+                        value={activeWebsiteId}
                       >
                         <option value="">
-                          {companiesQuery.isPending
-                            ? "Loading companies…"
-                            : companies.length
-                              ? "Select a company"
-                              : "No companies available"}
+                          {websitesQuery.isPending
+                            ? "Loading websites…"
+                            : websites.length
+                              ? "Select a website"
+                              : "No websites available"}
                         </option>
-                        {companies.map((company) => (
-                          <option key={company.id} value={company.id}>
-                            {company.name}
+                        {websites.map((website) => (
+                          <option key={website.id} value={website.id}>
+                            {website.business_name || website.domain}
                           </option>
                         ))}
                       </select>
-                      {companiesQuery.isSuccess && companies.length === 0 && (
+                      {websitesQuery.isSuccess && websites.length === 0 && (
                         <span className="template-field-hint">
-                          Add a company before rendering a personalized preview.
+                          Add a website before rendering a personalized preview.
                         </span>
                       )}
                     </label>
                     <label className="template-field">
                       Contact
                       <select
-                        disabled={!activeCompanyId}
+                        disabled={!activeWebsiteId || contactsQuery.isPending}
                         onChange={(event) => {
                           setContactId(event.target.value);
                           setPreview(null);
@@ -1229,9 +1236,14 @@ export function EmailTemplatesPage() {
                           </option>
                         ))}
                       </select>
-                      {activeCompany && contacts.length === 0 && (
+                      {activeWebsite && contactsQuery.isSuccess && contacts.length === 0 && (
                         <span className="template-field-hint">
-                          No contacts are listed for this company. You can still preview the message.
+                          No contacts are listed for this website. You can still preview the message.
+                        </span>
+                      )}
+                      {contactsQuery.isError && (
+                        <span className="template-field-hint" role="alert">
+                          Could not load contacts: {errorMessage(contactsQuery.error)}
                         </span>
                       )}
                     </label>
@@ -1276,9 +1288,10 @@ export function EmailTemplatesPage() {
                     <button
                       className="button button-primary"
                       disabled={
-                        !activeCompanyId ||
+                        !activeWebsiteId ||
                         previewMutation.isPending ||
-                        companiesQuery.isPending
+                        websitesQuery.isPending ||
+                        contactsQuery.isPending
                       }
                       onClick={requestPreview}
                       type="button"
@@ -1332,7 +1345,7 @@ export function EmailTemplatesPage() {
                   ) : (
                     <div className="template-preview-empty">
                       <span aria-hidden="true">✉</span>
-                      <p>Select a company to preview this email.</p>
+                      <p>Select a website to preview this email.</p>
                     </div>
                   )}
                 </section>
@@ -1375,7 +1388,7 @@ export function EmailTemplatesPage() {
               <h2>Create a reusable email</h2>
               <p>
                 Add a subject and HTML body, insert database-backed variables,
-                then preview and send to a contact from your company records.
+                then preview and send to a contact from your website records.
               </p>
               {isAdmin ? (
                 <button

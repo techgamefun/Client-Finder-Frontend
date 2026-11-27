@@ -9,13 +9,12 @@ import {
   LayoutDashboard,
   Mail,
   Megaphone,
-  UsersRound,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
 
 export type NavigationRole = "admin" | "user";
-export type NavigationBadgeKey = "leads" | "jobs";
+export type NavigationBadgeKey = "jobs";
 
 export interface NavigationItem {
   id: string;
@@ -88,25 +87,6 @@ export const navigationSections: NavigationSection[] = [
         label: "Website analytics",
         href: "/website-analytics",
         icon: BarChart3,
-      },
-    ],
-  },
-  {
-    id: "leads",
-    label: "Leads",
-    items: [
-      {
-        id: "companies",
-        label: "Companies",
-        href: "/companies",
-        icon: Building2,
-      },
-      {
-        id: "lead-pipeline",
-        label: "Lead pipeline",
-        href: "/leads",
-        icon: UsersRound,
-        badgeKey: "leads",
       },
     ],
   },

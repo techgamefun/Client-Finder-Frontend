@@ -7,22 +7,21 @@ export const metrics = {
     timeField: "Website creation time",
     orgScope: "The active organization",
   },
-  leads_created: {
-    label: "Leads created",
+  websites_created: {
+    label: "Websites created",
     definition:
-      "Companies created during the selected interval that currently have at least one contact. A contact added later can therefore qualify an older company.",
-    source: "companies.created_at; contacts.company_id",
-    timeField: "Company creation time",
-    orgScope: "Companies and contacts in the active organization",
+      "Website records created during the selected interval. The comparison uses the immediately preceding interval of equal duration.",
+    source: "websites.created_at",
+    timeField: "Website creation time",
+    orgScope: "Websites in the active organization",
   },
-  reachable_leads: {
-    label: "Reachable leads",
+  reachable_websites: {
+    label: "Websites with contact details",
     definition:
-      "Leads created during the selected interval with at least one contact that has a nonblank business email or phone. The card shows the count out of all companies created in that interval.",
-    source:
-      "companies.created_at; contacts.business_email; contacts.business_phone",
-    timeField: "Company creation time",
-    orgScope: "Companies and contacts in the active organization",
+      "Websites created during the selected interval with at least one contact that has a nonblank business email or phone. The card shows the count out of websites created in that interval.",
+    source: "websites.created_at; contacts.website_id; contact details",
+    timeField: "Website creation time",
+    orgScope: "Websites and contacts in the active organization",
   },
   emails_sent: {
     label: "Emails sent",
@@ -49,68 +48,68 @@ export const metrics = {
     orgScope: "Websites and indexing jobs in the active organization",
   },
   funnel_added: {
-    label: "Websites added to leads",
+    label: "Qualified websites",
     definition:
-      "Indexed websites whose registry status is Lead.",
+      "Discovered websites whose registry status is qualified or later in the workflow.",
     source: "websites.status",
     timeField: "Website creation time defines the cohort",
     orgScope: "Websites in the active organization",
   },
   funnel_has_contact: {
-    label: "Leads with a contact",
+    label: "Websites with a contact",
     definition:
-      "Websites in the cohort that are added to Leads and have a domain-matched company with at least one contact.",
-    source: "websites.domain; companies.domain; contacts.company_id",
+      "Qualified websites in the cohort that have at least one saved contact.",
+    source: "websites.id; contacts.website_id",
     timeField: "Website creation time defines the cohort",
-    orgScope: "Websites, companies, and contacts in the active organization",
+    orgScope: "Websites and contacts in the active organization",
   },
   funnel_emailed: {
-    label: "Leads emailed",
+    label: "Websites emailed",
     definition:
-      "Leads in the cohort with at least one successful campaign-recipient record, regardless of when that send occurred.",
-    source: "email_campaign_recipients.company_id; status",
+      "Websites in the cohort with at least one successful campaign recipient, regardless of when that send occurred.",
+    source: "email_campaign_recipients.website_id; status",
     timeField: "Current state; successful send can be from any date",
-    orgScope: "Websites, companies, contacts, and recipients in the active organization",
+    orgScope: "Websites, contacts, and recipients in the active organization",
   },
   pipeline_status: {
-    label: "Lead status",
+    label: "Website status",
     definition:
-      "Current count and share of companies that have at least one contact, grouped by the stored lead_status value.",
-    source: "companies.lead_status; contacts.company_id",
+      "Current count and share of websites, grouped by their stored workflow status.",
+    source: "websites.status",
     timeField: "Current state; no time filter",
-    orgScope: "Companies and contacts in the active organization",
+    orgScope: "Websites in the active organization",
   },
   with_email: {
-    label: "Companies with email",
+    label: "Websites with email",
     definition:
-      "Companies with at least one contact whose business email is nonblank, shown out of all current companies.",
-    source: "contacts.business_email",
+      "Websites with at least one contact whose business email is nonblank, shown out of all current websites.",
+    source: "contacts.website_id; contacts.business_email",
     timeField: "Current state; no time filter",
-    orgScope: "Companies and contacts in the active organization",
+    orgScope: "Websites and contacts in the active organization",
   },
   with_phone: {
-    label: "Companies with phone",
+    label: "Websites with phone",
     definition:
-      "Companies with at least one contact whose business phone is nonblank, shown out of all current companies.",
-    source: "contacts.business_phone",
+      "Websites with at least one contact whose business phone is nonblank, shown out of all current websites.",
+    source: "contacts.website_id; contacts.business_phone",
     timeField: "Current state; no time filter",
-    orgScope: "Companies and contacts in the active organization",
+    orgScope: "Websites and contacts in the active organization",
   },
   with_website: {
-    label: "Companies with website",
+    label: "Websites with a URL",
     definition:
-      "Companies with a nonblank website URL or domain, shown out of all current companies.",
-    source: "companies.website; companies.domain",
+      "Websites with a nonblank URL or domain, shown out of all current websites.",
+    source: "websites.website_url; websites.domain",
     timeField: "Current state; no time filter",
-    orgScope: "Companies in the active organization",
+    orgScope: "Websites in the active organization",
   },
   with_industry: {
-    label: "Companies with industry",
+    label: "Websites with industry",
     definition:
-      "Companies with a nonblank industry value, shown out of all current companies.",
-    source: "companies.industry",
+      "Websites with a nonblank industry value, shown out of all current websites.",
+    source: "websites.industry",
     timeField: "Current state; no time filter",
-    orgScope: "Companies in the active organization",
+    orgScope: "Websites in the active organization",
   },
   crawl_success: {
     label: "Indexing success rate",
@@ -168,9 +167,9 @@ export const metrics = {
     orgScope: "Campaigns in the active organization",
   },
   crawled_websites_not_added: {
-    label: "Indexed websites not added to leads",
+    label: "Indexed websites needing qualification",
     definition:
-      "Indexed non-listing websites whose current registry status is not Lead.",
+      "Indexed non-listing websites whose current registry status is not qualified.",
     source: "websites.crawl_id; websites.status; websites.page_type",
     timeField: "Current state; no time filter",
     orgScope: "Websites in the active organization",
@@ -191,20 +190,20 @@ export const metrics = {
     timeField: "Current provider usage snapshot",
     orgScope: "The signed-in user's configured Tavily key",
   },
-  leads_without_contact_details: {
-    label: "Leads without contact details",
+  websites_without_contact_details: {
+    label: "Websites without contact details",
     definition:
-      "Companies with at least one contact, but no contact with a nonblank business email or phone.",
-    source: "contacts.business_email; contacts.business_phone",
+      "Websites with at least one contact, but no contact with a nonblank business email or phone.",
+    source: "contacts.website_id; contacts.business_email; contacts.business_phone",
     timeField: "Current state; no time filter",
-    orgScope: "Companies and contacts in the active organization",
+    orgScope: "Websites and contacts in the active organization",
   },
-  recent_leads: {
-    label: "Recent leads",
+  recent_websites: {
+    label: "Recent websites",
     definition:
-      "The five newest companies that currently have at least one contact. Search keyword is shown only when linked through a Website record.",
-    source: "companies.created_at; contacts.company_id; website_search_keywords",
-    timeField: "Company creation time",
+      "The five newest websites that currently have at least one contact. Search keyword is shown when a Website is linked to a search.",
+    source: "websites.created_at; contacts.website_id; website_search_keywords",
+    timeField: "Website creation time",
     orgScope: "All joined records in the active organization",
   },
   trend_websites: {
@@ -215,13 +214,13 @@ export const metrics = {
     timeField: "Website creation time, grouped in the selected timezone",
     orgScope: "Websites in the active organization",
   },
-  trend_leads: {
-    label: "Leads created per day",
+  trend_websites_created: {
+    label: "Websites created per day",
     definition:
-      "Companies created on each local calendar day in the selected interval that currently have at least one contact.",
-    source: "companies.created_at; contacts.company_id",
-    timeField: "Company creation time, grouped in the selected timezone",
-    orgScope: "Companies and contacts in the active organization",
+      "Website records created on each local calendar day in the selected interval.",
+    source: "websites.created_at",
+    timeField: "Website creation time, grouped in the selected timezone",
+    orgScope: "Websites in the active organization",
   },
   team_websites: {
     label: "Websites discovered by user",
@@ -231,22 +230,13 @@ export const metrics = {
     timeField: "Website creation time",
     orgScope: "Users and websites in the active organization",
   },
-  team_companies: {
-    label: "Companies created by user",
+  team_websites_created: {
+    label: "Websites created by user",
     definition:
-      "Company records created by the user during the selected period.",
-    source: "companies.created_by_user_id; companies.created_at",
-    timeField: "Company creation time",
-    orgScope: "Users and companies in the active organization",
-  },
-  team_leads: {
-    label: "Leads created by user",
-    definition:
-      "Companies created by the user during the selected period that have at least one contact also created by that user.",
-    source:
-      "companies.created_by_user_id; companies.created_at; contacts.created_by_user_id",
-    timeField: "Company creation time",
-    orgScope: "Users, companies, and contacts in the active organization",
+      "Website records created by the user during the selected period.",
+    source: "websites.created_by_user_id; websites.created_at",
+    timeField: "Website creation time",
+    orgScope: "Users and websites in the active organization",
   },
   team_crawls: {
     label: "Indexing jobs completed by user",

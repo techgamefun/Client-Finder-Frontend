@@ -18,8 +18,8 @@ import {
   getGroqModels,
   getWebsites,
   saveDiscoveryWebsites,
-  searchCompanies,
-  searchCompaniesWithAi,
+  searchWebsites,
+  searchWebsitesWithAi,
   type DiscoveryAiProvider,
   type UserTavilySearchPreferences,
 } from "@/lib/api";
@@ -318,7 +318,7 @@ export function DiscoveryPage() {
       let creditsUsed = 0;
 
       while (true) {
-        const response = await searchCompanies({
+        const response = await searchWebsites({
           ...input,
           providers: ["tavily"],
           exclude_domains: [...seenDomains].slice(0, 150),
@@ -371,12 +371,12 @@ export function DiscoveryPage() {
       aiModel: string | null;
     }) =>
       aiProvider
-        ? searchCompaniesWithAi({
+        ? searchWebsitesWithAi({
             ...input,
             ai_provider: aiProvider,
             ...(aiProvider === "groq" && aiModel ? { model: aiModel } : {}),
           })
-        : searchCompanies(input),
+        : searchWebsites(input),
     onSuccess: (response, variables) => {
       const followUpInput = variables.aiProvider
         ? { ...variables.input, query: response.search_queries.join("\n") }

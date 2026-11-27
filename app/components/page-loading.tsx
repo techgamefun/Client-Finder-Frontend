@@ -10,8 +10,6 @@ export type PageLoadingVariant =
   | "members"
   | "websites"
   | "website-analytics"
-  | "leads"
-  | "companies"
   | "discovery"
   | "table";
 
@@ -187,12 +185,6 @@ export function PageLoading({
   if (variant === "websites") return <WebsitesLoading label={label} />;
   if (variant === "website-analytics") {
     return <WebsiteAnalyticsLoading label={label} />;
-  }
-  if (variant === "leads") {
-    return <PipelineLoading isCompanies={false} label={label} />;
-  }
-  if (variant === "companies") {
-    return <PipelineLoading isCompanies label={label} />;
   }
   if (variant === "discovery") {
     return <DiscoveryLoading label={label} />;
@@ -516,7 +508,7 @@ function DashboardLoading({
           {adminDashboard ? (
             <span className="overview-skeleton is-onboarding-control" />
           ) : (
-            <span className="overview-skeleton is-add-company-control" />
+            <span className="overview-skeleton is-index-website-control" />
           )}
           <span className="overview-skeleton is-range-control" />
         </div>
@@ -831,50 +823,3 @@ function WebsitesLoading({ label }: { label: string }) {
   );
 }
 
-function PipelineLoading({
-  isCompanies,
-  label,
-}: {
-  isCompanies: boolean;
-  label: string;
-}) {
-  return (
-    <section
-      aria-busy="true"
-      aria-label={label}
-      className="panel pipeline-panel leads-panel page-loading-pipeline"
-      role="status"
-    >
-      <span className="sr-only">{label}</span>
-      <div aria-hidden="true" className="leads-filter-section">
-        <div className="leads-filter-heading">
-          <div className="page-loading-pipeline-heading">
-            <span className="page-loading-block is-title" />
-            <span className="page-loading-block is-copy" />
-          </div>
-          {!isCompanies && (
-            <span className="page-loading-block is-pipeline-action" />
-          )}
-        </div>
-        <div className="pipeline-tools leads-filter-controls">
-          <span className="filter-input page-loading-pipeline-search">
-            <span className="page-loading-block is-copy" />
-          </span>
-          {Array.from({ length: isCompanies ? 2 : 3 }, (_, index) => (
-            <span className="page-loading-block is-pipeline-filter" key={index} />
-          ))}
-          <span className="page-loading-block is-pipeline-refresh" />
-        </div>
-        {!isCompanies && (
-          <div className="lead-campaign-toolbar">
-            <div className="page-loading-block is-campaign-copy" />
-            <span className="page-loading-block is-campaign-action" />
-          </div>
-        )}
-      </div>
-      <div aria-hidden="true" className="page-loading-pipeline-table">
-        <TableLoading label={label} rows={6} />
-      </div>
-    </section>
-  );
-}

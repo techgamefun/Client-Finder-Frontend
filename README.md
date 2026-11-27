@@ -1,7 +1,7 @@
 # ProspectLoop Frontend
 
-The Next.js dashboard uses TanStack Query to load the company pipeline and
-call the FastAPI company and discovery endpoints.
+The Next.js dashboard uses TanStack Query to manage website research, contacts,
+and outreach through the FastAPI API.
 
 ## Getting Started
 
@@ -23,48 +23,37 @@ Open [http://localhost:3000](http://localhost:3000). The API allows this local
 frontend origin by default; configure `FRONTEND_ORIGINS` in the backend
 environment when using a different origin.
 
-The dashboard supports complete company records, status changes, company
-editing and deletion, manual creation, web discovery, and saving discovery
-results to the backend pipeline. Saving discovery results also requests
-mobile and desktop PageSpeed Insights scans across four Lighthouse categories.
-The Lead pipeline shows scan history and only the four category scores; raw
-Lighthouse audit reports are not retained.
+The **Websites** registry is the source of truth for discovered sites, business
+profile details, workflow status, indexing and PageSpeed data, contacts, and
+outreach activity. Website profiles support editing business details and
+managing saved contacts. Crawled public email addresses and telephone numbers
+are imported as contacts, while raw crawl extractions remain visible on the
+website profile.
 
-Company detail pages include a **Contacts** tab for adding, editing, and
-removing company contacts. Contact changes are saved through the
-organization-scoped contact API and refresh the company and lead data.
-Crawled public email addresses and telephone numbers are imported as separate
-contacts, so contact details are managed in one place instead of a duplicate
-company email list. Raw crawl extractions remain visible on website profiles.
-
-The **Companies** page is the master database and includes companies with or
-without contacts. The **Lead pipeline** is a qualified view that includes only
-companies with at least one contact. Adding a contact from a company profile
-refreshes the shared company data, so that company then appears in the Lead
-pipeline automatically. Both pages apply search, filters, and pagination on
-the backend and request only the current page of company records.
+Discovery results can be explicitly saved to the website registry. Saving
+queues website crawls and background PageSpeed scans. Website status and group
+management, search, filters, and pagination are handled by the backend.
 
 The **Email templates** page lets organization admins create and manage shared
 HTML email templates. Members can render a database-backed preview for a
-company and contact, then send it using a Gmail account assigned to them.
-Available `company`, `contact`, and `sender` placeholders are listed in the
+website and contact, then send it using a Gmail account assigned to them.
+Available `website`, `contact`, and `sender` placeholders are listed in the
 editor and can be inserted directly into the subject or message body.
 
 The **Gmail** page lets assigned members compose and send email from the
 selected account, browse its Inbox and Spam folders, and open user-created
 Gmail labels. It also supports searching, reading, and replying to messages.
 
-On the **Lead pipeline**, admins can select leads individually, by page, or
-across the current filtered results and carry that audience into campaign
-setup. The pipeline also shows whether each company has received a successful
-campaign email and when it was sent; this does not change the company's sales
-pipeline status.
+Campaign audiences are selected from websites and their saved contacts.
+Campaign history remains attached to websites and contacts, and website
+profiles show the latest successful campaign email without changing workflow
+status.
 
 The **Discover websites** page lets you choose configured search providers,
 search with a natural-language query, review provider and relevance details,
 and explicitly add selected results to the website registry. Saving queues
-website crawls; it does not create companies. Tavily searches support
-collapsible advanced filters, and bulk registry saves include every displayed
+website crawls, and PageSpeed scans run in the background. Tavily searches
+support collapsible advanced filters, and bulk registry saves include every displayed
 result. **Auto Find More Results** can continue searching until no new domains
 are found, excluding displayed and already-registered domains; each additional
 Tavily search uses credits. Search depth, default country, and excluded domains

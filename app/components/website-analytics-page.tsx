@@ -34,7 +34,6 @@ const pageSpeedCategories = [
 ];
 const websiteStatuses = [
   "new",
-  "lead",
   "checked",
   "qualified",
   "contacted",

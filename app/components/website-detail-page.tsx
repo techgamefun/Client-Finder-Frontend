@@ -12,24 +12,32 @@ import {
   ExternalLink,
   Mail,
   Phone,
+  Plus,
   RotateCw,
   Search,
+  Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { ReactNode } from "react";
 import {
   crawlWebsite,
+  createWebsiteContact,
+  deleteWebsiteContact,
   fetchWebsiteAhrefsMetrics,
   getApplicationSettings,
   getWebsiteDetail,
   refetchWebsiteHypeStat,
   updateWebsite,
+  updateWebsiteContact,
 } from "@/lib/api";
 import type {
+  Contact,
+  ContactInput,
   CrawlPageClassification,
   PageSpeedScanSummary,
   WebsiteCrawlJobHistory,
   WebsiteDetailResponse,
+  WebsiteRecord,
   WebsiteAhrefsMetrics,
   WebsiteStatus,
 } from "@/lib/api";
@@ -61,7 +69,6 @@ export function WebsiteDetailPage({ websiteId }: { websiteId: string }) {
     },
     enabled: validId,
   });
-
   if (!validId) {
     return (
       <DetailState
@@ -104,6 +111,7 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
     crawl_jobs: crawlJobs,
     discovery_keywords: discoveryKeywords,
   } = data;
+  const [websiteUrlDraft, setWebsiteUrlDraft] = useState(website.website_url);
   const settingsQuery = useQuery({
     queryKey: ["application-settings"],
     queryFn: getApplicationSettings,
@@ -159,6 +167,14 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
       queryClient.invalidateQueries({ queryKey: ["websites"] }),
     ]);
   };
+  const websiteUrlMutation = useMutation({
+    mutationFn: () =>
+      updateWebsite(website.id, { website_url: websiteUrlDraft.trim() }),
+    onSuccess: async (updatedWebsite) => {
+      setWebsiteUrlDraft(updatedWebsite.website_url);
+      await invalidateWebsite();
+    },
+  });
   const statusMutation = useMutation({
     mutationFn: (status: WebsiteStatus) =>
       updateWebsite(website.id, { status }),
@@ -189,7 +205,7 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
   const isCrawled = website.is_crawled || crawlStatus === "succeeded";
 
   return (
-    <div className="company-detail-page website-detail-page">
+    <div className="website-detail-page">
       <Link className="profile-back-link" href="/websites">
         <ArrowLeft aria-hidden="true" size={15} />
         Websites
@@ -203,7 +219,9 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
           />
           <div className="profile-identity-copy">
             <div className="profile-domain-line">
-              <h1 id="website-profile-heading">{website.domain}</h1>
+              <h1 id="website-profile-heading">
+                {website.business_name || website.domain}
+              </h1>
               <a
                 aria-label={`Visit ${website.domain}`}
                 className="profile-external-link"
@@ -215,6 +233,9 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
                 <ExternalLink aria-hidden="true" size={17} />
               </a>
             </div>
+            {website.business_name && (
+              <p className="profile-domain-name">{website.domain}</p>
+            )}
             <div className="profile-status-line">
                   <span
                     className={`profile-status-indicator is-${getStatusTone(isCrawled ? "succeeded" : crawlStatus)}`}
@@ -236,7 +257,6 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
                   value={website.status}
                 >
                   <option value="new">New</option>
-                  <option value="lead">Lead</option>
                   <option value="checked">Checked</option>
                   <option value="qualified">Qualified</option>
                   <option value="contacted">Contacted</option>
@@ -247,6 +267,36 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
                 <ChevronDown aria-hidden="true" size={13} />
               </label>
             </div>
+            {website.domain_resolution_needed && (
+              <form
+                className="profile-domain-resolution"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  websiteUrlMutation.mutate();
+                }}
+              >
+                <p>
+                  This profile uses a placeholder domain. Enter the correct
+                  website URL to resolve it.
+                </p>
+                <div>
+                  <input
+                    aria-label="Correct website URL"
+                    onChange={(event) => setWebsiteUrlDraft(event.target.value)}
+                    required
+                    type="url"
+                    value={websiteUrlDraft}
+                  />
+                  <button
+                    className="profile-button profile-button-primary"
+                    disabled={websiteUrlMutation.isPending}
+                    type="submit"
+                  >
+                    {websiteUrlMutation.isPending ? "Saving…" : "Resolve domain"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
         <div className="profile-header-actions">
@@ -254,7 +304,7 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
             className="profile-button profile-button-secondary"
             disabled={statusMutation.isPending || website.status === "checked"}
             onClick={() => statusMutation.mutate("checked")}
-            title="Mark as checked so it is not treated as a new lead"
+            title="Mark as checked so it is no longer treated as new"
             type="button"
           >
             Exclude
@@ -273,23 +323,27 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
             <button
               className="profile-button profile-button-primary"
               disabled={
-                statusMutation.isPending || website.status === "lead"
+                statusMutation.isPending || website.status === "qualified"
               }
-              onClick={() => statusMutation.mutate("lead")}
+              onClick={() => statusMutation.mutate("qualified")}
               type="button"
             >
-              Keep as lead
+              Mark qualified
             </button>
           )}
         </div>
       </header>
 
-      {(statusMutation.isError || crawlMutation.isError) && (
+      {(statusMutation.isError ||
+        crawlMutation.isError ||
+        websiteUrlMutation.isError) && (
         <InlineError
           message={
-            statusMutation.isError
-              ? `Could not update website status: ${statusMutation.error.message}`
-              : `Could not queue a new indexing job: ${crawlMutation.error?.message ?? "Unknown error"}`
+            websiteUrlMutation.isError
+              ? `Could not resolve website domain: ${websiteUrlMutation.error.message}`
+              : statusMutation.isError
+                ? `Could not update website status: ${statusMutation.error.message}`
+                : `Could not queue a new indexing job: ${crawlMutation.error?.message ?? "Unknown error"}`
           }
         />
       )}
@@ -321,7 +375,7 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
         domain={website.domain}
         isPlausible={prospectStatus.plausible}
         onExclude={() => statusMutation.mutate("checked")}
-        onKeepAsLead={() => statusMutation.mutate("lead")}
+        onQualify={() => statusMutation.mutate("qualified")}
         onRecrawl={() => crawlMutation.mutate()}
         statusPending={statusMutation.isPending}
         status={website.status}
@@ -329,6 +383,8 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
         showCompactHeader={showCompactHeader}
         websiteUrl={website.website_url}
       />
+
+      <WebsiteBusinessProfile onSaved={invalidateWebsite} website={website} />
 
       <SeoOverview
         discoveryKeywords={discoveryKeywords}
@@ -389,6 +445,8 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
             links={socialLinks}
             pageCount={crawlPages.length}
             phones={crawl?.phones ?? []}
+            savedContacts={data.contacts}
+            websiteId={website.id}
           />
 
           <section className="profile-card" id="signals">
@@ -1157,7 +1215,7 @@ function SectionTabs({
   domain,
   isPlausible,
   onExclude,
-  onKeepAsLead,
+  onQualify,
   onRecrawl,
   recrawlPending,
   statusPending,
@@ -1169,7 +1227,7 @@ function SectionTabs({
   domain: string;
   isPlausible: boolean;
   onExclude: () => void;
-  onKeepAsLead: () => void;
+  onQualify: () => void;
   onRecrawl: () => void;
   recrawlPending: boolean;
   statusPending: boolean;
@@ -1211,18 +1269,18 @@ function SectionTabs({
                   className="is-secondary"
                   disabled={statusPending || status === "checked"}
                   onClick={onExclude}
-                  title="Mark as checked so it is not treated as a new lead"
+                  title="Mark as checked so it is no longer treated as new"
                   type="button"
                 >
                   Exclude
                 </button>
                 <button
                   className="is-primary"
-                  disabled={statusPending || status === "lead"}
-                  onClick={onKeepAsLead}
+                  disabled={statusPending || status === "qualified"}
+                  onClick={onQualify}
                   type="button"
                 >
-                  Keep as lead
+                  Mark qualified
                 </button>
               </>
             )}
@@ -1450,16 +1508,139 @@ function HypeStatDetails({ payload }: { payload: Record<string, unknown> }) {
   );
 }
 
+function WebsiteBusinessProfile({
+  onSaved,
+  website,
+}: {
+  onSaved: () => Promise<void>;
+  website: WebsiteRecord;
+}) {
+  const [values, setValues] = useState(() => ({
+    business_name: website.business_name ?? "",
+    industry: website.industry ?? "",
+    city: website.city ?? "",
+    state: website.state ?? "",
+    software_need: website.software_need ?? "",
+    lead_score:
+      website.lead_score === null ? "" : String(website.lead_score),
+  }));
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      updateWebsite(website.id, {
+        business_name: values.business_name.trim() || null,
+        industry: values.industry.trim() || null,
+        city: values.city.trim() || null,
+        state: values.state.trim() || null,
+        software_need: values.software_need.trim() || null,
+        lead_score:
+          values.lead_score.trim() === ""
+            ? null
+            : Number.parseInt(values.lead_score, 10),
+      }),
+    onSuccess: async (updatedWebsite) => {
+      setValues({
+        business_name: updatedWebsite.business_name ?? "",
+        industry: updatedWebsite.industry ?? "",
+        city: updatedWebsite.city ?? "",
+        state: updatedWebsite.state ?? "",
+        software_need: updatedWebsite.software_need ?? "",
+        lead_score:
+          updatedWebsite.lead_score === null
+            ? ""
+            : String(updatedWebsite.lead_score),
+      });
+      await onSaved();
+    },
+  });
+
+  return (
+    <section
+      aria-labelledby="website-business-profile-heading"
+      className="profile-card profile-business-profile"
+    >
+      <div className="profile-section-heading">
+        <h2 id="website-business-profile-heading">Website profile</h2>
+      </div>
+      <form
+        className="profile-business-profile-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          updateMutation.mutate();
+        }}
+      >
+        {(
+          [
+            ["business_name", "Business name"],
+            ["industry", "Industry"],
+            ["city", "City"],
+            ["state", "State / region"],
+            ["software_need", "Software need"],
+          ] as const
+        ).map(([field, label]) => (
+          <label key={field}>
+            {label}
+            <input
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  [field]: event.target.value,
+                }))
+              }
+              value={values[field]}
+            />
+          </label>
+        ))}
+        <label>
+          Website score
+          <input
+            min="0"
+            onChange={(event) =>
+              setValues((current) => ({
+                ...current,
+                lead_score: event.target.value,
+              }))
+            }
+            step="1"
+            type="number"
+            value={values.lead_score}
+          />
+        </label>
+        <button
+          className="profile-button profile-button-primary"
+          disabled={updateMutation.isPending}
+          type="submit"
+        >
+          {updateMutation.isPending ? "Saving…" : "Save profile"}
+        </button>
+      </form>
+      {updateMutation.isError && (
+        <InlineError
+          message={`Could not save website profile: ${updateMutation.error.message}`}
+        />
+      )}
+      {updateMutation.isSuccess && (
+        <p className="profile-action-feedback" role="status">
+          Website profile saved.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function ContactsSection({
   emails,
   links,
   pageCount,
   phones,
+  savedContacts,
+  websiteId,
 }: {
   emails: string[];
   links: NormalizedLink[];
   pageCount: number;
   phones: string[];
+  savedContacts: Contact[];
+  websiteId: string;
 }) {
   const [hideLowPriorityLinks, setHideLowPriorityLinks] = useState(true);
   const [activeCategory, setActiveCategory] = useState<LinkCategory>("all");
@@ -1489,6 +1670,8 @@ function ContactsSection({
           <span>Hide tracking/login/policy links</span>
         </label>
       </div>
+
+      <SavedContactManager contacts={savedContacts} websiteId={websiteId} />
 
       {emails.length || phones.length ? (
         <div className="profile-contact-methods">
@@ -1556,6 +1739,269 @@ function ContactsSection({
       )}
     </section>
   );
+}
+
+function SavedContactManager({
+  contacts,
+  websiteId,
+}: {
+  contacts: Contact[];
+  websiteId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<ContactInput>({
+    name: "",
+    role: "",
+    business_email: "",
+    business_phone: "",
+    is_publicly_listed: false,
+  });
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<ContactInput>(draft);
+  const invalidateContacts = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["website-detail", websiteId],
+    });
+  };
+  const createMutation = useMutation({
+    mutationFn: () =>
+      createWebsiteContact(websiteId, normalizeContactDraft(draft)),
+    onSuccess: async () => {
+      setDraft({
+        name: "",
+        role: "",
+        business_email: "",
+        business_phone: "",
+        is_publicly_listed: false,
+      });
+      await invalidateContacts();
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      if (!editingContactId) {
+        throw new Error("Select a contact to update.");
+      }
+      return updateWebsiteContact(
+        websiteId,
+        editingContactId,
+        normalizeContactDraft(editDraft),
+      );
+    },
+    onSuccess: async () => {
+      setEditingContactId(null);
+      await invalidateContacts();
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (contactId: string) =>
+      deleteWebsiteContact(websiteId, contactId),
+    onSuccess: invalidateContacts,
+  });
+
+  function beginEdit(contact: Contact) {
+    setEditingContactId(contact.id);
+    setEditDraft({
+      name: contact.name ?? "",
+      role: contact.role ?? "",
+      business_email: contact.business_email ?? "",
+      business_phone: contact.business_phone ?? "",
+      is_publicly_listed: contact.is_publicly_listed,
+    });
+    updateMutation.reset();
+  }
+
+  return (
+    <div className="profile-saved-contacts">
+      <div className="profile-saved-contacts-heading">
+        <div>
+          <h3>Saved outreach contacts</h3>
+          <p>These contacts are available to email templates and campaigns.</p>
+        </div>
+      </div>
+      {contacts.length === 0 ? (
+        <p className="profile-empty">No saved contacts for this website yet.</p>
+      ) : (
+        <div className="profile-saved-contact-list">
+          {contacts.map((contact) =>
+            editingContactId === contact.id ? (
+              <ContactEditor
+                key={contact.id}
+                draft={editDraft}
+                isPending={updateMutation.isPending}
+                onCancel={() => setEditingContactId(null)}
+                onChange={setEditDraft}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  updateMutation.mutate();
+                }}
+                submitLabel="Save contact"
+              />
+            ) : (
+              <div className="profile-saved-contact" key={contact.id}>
+                <div>
+                  <strong>
+                    {contact.name || contact.business_email || "Unnamed contact"}
+                  </strong>
+                  <span>{contact.role || "Role not provided"}</span>
+                  <span>
+                    {[contact.business_email, contact.business_phone]
+                      .filter(Boolean)
+                      .join(" · ") || "No email or phone"}
+                  </span>
+                </div>
+                <div>
+                  <button
+                    className="text-button"
+                    onClick={() => beginEdit(contact)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    aria-label={`Delete ${contact.name || "contact"}`}
+                    className="text-button is-danger"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => deleteMutation.mutate(contact.id)}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ),
+          )}
+        </div>
+      )}
+      {createMutation.isError && (
+        <InlineError message={`Could not save contact: ${createMutation.error.message}`} />
+      )}
+      {updateMutation.isError && (
+        <InlineError message={`Could not update contact: ${updateMutation.error.message}`} />
+      )}
+      {deleteMutation.isError && (
+        <InlineError message={`Could not delete contact: ${deleteMutation.error.message}`} />
+      )}
+      {createMutation.isSuccess && (
+        <p className="profile-action-feedback" role="status">
+          Contact saved.
+        </p>
+      )}
+      <ContactEditor
+        draft={draft}
+        isPending={createMutation.isPending}
+        onChange={setDraft}
+        onSubmit={(event) => {
+          event.preventDefault();
+          createMutation.mutate();
+        }}
+        submitLabel="Add contact"
+      />
+    </div>
+  );
+}
+
+function ContactEditor({
+  draft,
+  isPending,
+  onCancel,
+  onChange,
+  onSubmit,
+  submitLabel,
+}: {
+  draft: ContactInput;
+  isPending: boolean;
+  onCancel?: () => void;
+  onChange: (draft: ContactInput) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  submitLabel: string;
+}) {
+  return (
+    <form className="profile-contact-editor" onSubmit={onSubmit}>
+      <label>
+        Name
+        <input
+          onChange={(event) => onChange({ ...draft, name: event.target.value })}
+          value={draft.name ?? ""}
+        />
+      </label>
+      <label>
+        Role
+        <input
+          onChange={(event) => onChange({ ...draft, role: event.target.value })}
+          value={draft.role ?? ""}
+        />
+      </label>
+      <label>
+        Business email
+        <input
+          onChange={(event) =>
+            onChange({ ...draft, business_email: event.target.value })
+          }
+          type="email"
+          value={draft.business_email ?? ""}
+        />
+      </label>
+      <label>
+        Business phone
+        <input
+          onChange={(event) =>
+            onChange({ ...draft, business_phone: event.target.value })
+          }
+          type="tel"
+          value={draft.business_phone ?? ""}
+        />
+      </label>
+      <label className="profile-contact-public">
+        <input
+          checked={draft.is_publicly_listed}
+          onChange={(event) =>
+            onChange({ ...draft, is_publicly_listed: event.target.checked })
+          }
+          type="checkbox"
+        />
+        Publicly listed
+      </label>
+      <div className="profile-contact-editor-actions">
+        {onCancel && (
+          <button
+            className="text-button"
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          className="profile-button profile-button-primary"
+          disabled={
+            isPending ||
+            ![
+              draft.name,
+              draft.role,
+              draft.business_email,
+              draft.business_phone,
+            ].some((value) => value?.trim())
+          }
+          type="submit"
+        >
+          <Plus aria-hidden="true" size={14} />
+          {isPending ? "Saving…" : submitLabel}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function normalizeContactDraft(draft: ContactInput): ContactInput {
+  return {
+    name: draft.name?.trim() || null,
+    role: draft.role?.trim() || null,
+    business_email: draft.business_email?.trim() || null,
+    business_phone: draft.business_phone?.trim() || null,
+    is_publicly_listed: draft.is_publicly_listed,
+  };
 }
 
 function ContactMethod({
@@ -1953,7 +2399,7 @@ function WebsiteProfileSkeleton() {
     <div
       aria-busy="true"
       aria-label="Loading website profile"
-      className="company-detail-page website-detail-page profile-skeleton"
+      className="website-detail-page profile-skeleton"
       role="status"
     >
       <span className="profile-skeleton-line" />
@@ -1976,7 +2422,7 @@ function DetailState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="company-detail-page website-detail-page">
+    <div className="website-detail-page">
       <Link className="profile-back-link" href="/websites">
         <ArrowLeft aria-hidden="true" size={15} />
         Websites
@@ -2244,7 +2690,7 @@ function assessProspect(
       plausible: false,
       title: "Not a prospect: social platform",
       reason:
-        "This site is a social platform, not the business represented by a lead.",
+        "This site is a social platform, not a business website.",
     };
   }
   if (["article", "blog", "news", "documentation"].includes(pageType ?? "")) {
@@ -2505,7 +2951,6 @@ function safeId(value: string): string {
 function isWebsiteStatus(value: string): value is WebsiteStatus {
   return [
     "new",
-    "lead",
     "checked",
     "qualified",
     "contacted",

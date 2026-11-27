@@ -31,7 +31,6 @@ import {
   getAuthSession,
   getOverview,
   getTavilyUsage,
-  type Company,
   type OverviewKpi,
   type OverviewRange,
   type OverviewResponse,
@@ -52,7 +51,7 @@ const attentionPriority: Record<string, number> = {
   paused_campaigns: 2,
   crawled_websites_not_added: 3,
   gmail_not_assigned: 4,
-  leads_without_contact_details: 5,
+  websites_without_contact_details: 5,
   tavily_credits_low: 6,
 };
 
@@ -73,8 +72,7 @@ type OverviewQuery = UseQueryResult<OverviewDashboardData, Error>;
 type TeamActivityMetric =
   | "searches_run"
   | "websites_discovered"
-  | "companies_created"
-  | "leads_created"
+  | "websites_created"
   | "crawls_completed"
   | "emails_sent";
 
@@ -82,10 +80,9 @@ const teamActivityMetrics: {
   value: TeamActivityMetric;
   label: string;
 }[] = [
-  { value: "leads_created", label: "Leads created" },
+  { value: "websites_created", label: "Websites created" },
   { value: "websites_discovered", label: "Websites discovered" },
   { value: "searches_run", label: "Searches run" },
-  { value: "companies_created", label: "Companies created" },
   { value: "crawls_completed", label: "Crawls completed" },
   { value: "emails_sent", label: "Emails sent" },
 ];
@@ -265,8 +262,8 @@ export function OverviewPage({
         />
       )}
       {!adminDashboard && (
-        <Link className="button button-primary" href="/companies?add=1">
-          Add a company
+        <Link className="button button-primary" href="/websites?crawl=1">
+          Index a website
         </Link>
       )}
     </div>
@@ -382,16 +379,16 @@ export function OverviewPage({
         />
         <MetricCard
           icon={Users}
-          label="Leads created"
-          metric={overviewQuery.data?.kpis.leads_created}
-          metricKey="leads_created"
+          label="Websites created"
+          metric={overviewQuery.data?.kpis.websites_created}
+          metricKey="websites_created"
           query={overviewQuery}
         />
         <MetricCard
           icon={Mail}
-          label="Reachable leads"
-          metric={overviewQuery.data?.kpis.reachable_leads}
-          metricKey="reachable_leads"
+          label="Websites with contact details"
+          metric={overviewQuery.data?.kpis.reachable_websites}
+          metricKey="reachable_websites"
           query={overviewQuery}
         />
         <MetricCard
@@ -418,7 +415,7 @@ export function OverviewPage({
         <TeamActivityWidget query={overviewQuery} range={range} />
       )}
 
-      <RecentLeadsWidget query={overviewQuery} />
+      <RecentWebsitesWidget query={overviewQuery} />
     </div>
   );
 }
@@ -466,11 +463,11 @@ function MetricCard({
         metric={metric}
         previousRange={query.data?.previous_range}
       />
-      {metricKey === "reachable_leads" && (
+      {metricKey === "reachable_websites" && (
         <p className="overview-kpi-denominator">
           {metric.denominator
-            ? `${formatCount(metric.current)} of ${formatCount(metric.denominator)} companies · ${formatPercentage(metric.percentage)}`
-            : "No companies created in this period"}
+            ? `${formatCount(metric.current)} of ${formatCount(metric.denominator)} websites · ${formatPercentage(metric.percentage)}`
+            : "No websites created in this period"}
         </p>
       )}
       <Sparkline values={metric.sparkline} label={label} />
@@ -559,7 +556,7 @@ function FunnelWidget({ query }: { query: OverviewQuery }) {
     <article className="overview-panel overview-funnel-panel">
       <div className="overview-section-heading">
         <div>
-          <p className="overview-eyebrow">LEAD JOURNEY</p>
+          <p className="overview-eyebrow">WEBSITE JOURNEY</p>
           <h2>Conversion funnel</h2>
         </div>
         <OverviewMetricInfo metricKey="funnel_discovered" />
@@ -640,7 +637,8 @@ function TrendWidget({
   const data = query.data;
   const hasActivity = Boolean(
     data?.series.some(
-      (point) => point.websites_discovered > 0 || point.leads_created > 0,
+      (point) =>
+        point.websites_discovered > 0 || point.websites_created > 0,
     ),
   );
   return (
@@ -648,7 +646,7 @@ function TrendWidget({
       <div className="overview-section-heading">
         <div>
           <p className="overview-eyebrow">DAILY ACTIVITY</p>
-          <h2>Websites and leads</h2>
+          <h2>Website activity</h2>
         </div>
         <OverviewMetricInfo metricKey="trend_websites" />
       </div>
@@ -664,7 +662,7 @@ function TrendWidget({
         <EmptyWidget
           actionHref="/discovery"
           actionLabel="Start a search"
-          message="No website discoveries or leads were created in this period."
+          message="No websites were discovered or created in this period."
         />
       ) : (
         <TrendChart series={data?.series ?? []} timezone={timezone} />
@@ -676,9 +674,9 @@ function TrendWidget({
           Websites discovered
         </span>
         <span>
-          <i className="overview-legend-dot is-leads" />
-          <OverviewMetricInfo metricKey="trend_leads" />
-          Leads created
+          <i className="overview-legend-dot is-created-websites" />
+          <OverviewMetricInfo metricKey="trend_websites_created" />
+          Websites created
         </span>
       </div>
     </article>
@@ -702,7 +700,7 @@ function TrendChart({
   const chartHeight = height - top - bottom;
   const values = series.flatMap((point) => [
     point.websites_discovered,
-    point.leads_created,
+    point.websites_created,
   ]);
   const maxValue = Math.max(1, ...values);
   const pointFor = (value: number, index: number) => {
@@ -712,7 +710,7 @@ function TrendChart({
     const y = top + chartHeight - (value / maxValue) * chartHeight;
     return { x, y };
   };
-  const pathFor = (key: "websites_discovered" | "leads_created") =>
+  const pathFor = (key: "websites_discovered" | "websites_created") =>
     series
       .map((point, index) => {
         const { x, y } = pointFor(point[key], index);
@@ -723,7 +721,7 @@ function TrendChart({
   return (
     <>
       <svg
-        aria-label={`Daily chart of websites discovered and leads created across ${series.length} local dates.`}
+        aria-label={`Daily chart of websites discovered and created across ${series.length} local dates.`}
         className="overview-trend-chart"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
@@ -740,10 +738,10 @@ function TrendChart({
           );
         })}
         <path className="overview-chart-line is-websites" d={pathFor("websites_discovered")} />
-        <path className="overview-chart-line is-leads" d={pathFor("leads_created")} />
+        <path className="overview-chart-line is-created-websites" d={pathFor("websites_created")} />
         {series.map((point, index) => {
           const websitePoint = pointFor(point.websites_discovered, index);
-          const leadPoint = pointFor(point.leads_created, index);
+          const createdWebsitePoint = pointFor(point.websites_created, index);
           const dateLabel = formatShortDate(point.date, timezone);
           return (
             <g key={point.date}>
@@ -756,12 +754,12 @@ function TrendChart({
                 <title>{`${dateLabel}: ${formatCount(point.websites_discovered)} websites discovered`}</title>
               </circle>
               <circle
-                className="overview-chart-point is-leads"
-                cx={leadPoint.x}
-                cy={leadPoint.y}
+                className="overview-chart-point is-created-websites"
+                cx={createdWebsitePoint.x}
+                cy={createdWebsitePoint.y}
                 r="3"
               >
-                <title>{`${dateLabel}: ${formatCount(point.leads_created)} leads created`}</title>
+                <title>{`${dateLabel}: ${formatCount(point.websites_created)} websites created`}</title>
               </circle>
             </g>
           );
@@ -789,12 +787,12 @@ function TrendChart({
       </svg>
       <div className="overview-visually-hidden">
         <table>
-          <caption>Daily website and lead creation counts</caption>
+          <caption>Daily website discovery and creation counts</caption>
           <thead>
             <tr>
               <th>Date</th>
               <th>Websites discovered</th>
-              <th>Leads created</th>
+              <th>Websites created</th>
             </tr>
           </thead>
           <tbody>
@@ -802,7 +800,7 @@ function TrendChart({
               <tr key={point.date}>
                 <td>{formatShortDate(point.date, timezone)}</td>
                 <td>{point.websites_discovered}</td>
-                <td>{point.leads_created}</td>
+                <td>{point.websites_created}</td>
               </tr>
             ))}
           </tbody>
@@ -835,7 +833,7 @@ function PipelineWidget({ query }: { query: OverviewQuery }) {
       <div className="overview-section-heading">
         <div>
           <p className="overview-eyebrow">CURRENT PIPELINE</p>
-          <h2>Lead status mix</h2>
+          <h2>Website status mix</h2>
         </div>
         <OverviewMetricInfo metricKey="pipeline_status" />
       </div>
@@ -845,18 +843,18 @@ function PipelineWidget({ query }: { query: OverviewQuery }) {
         <WidgetError
           error={query.error}
           onRetry={() => void query.refetch()}
-          title="Lead status mix"
+          title="Website status mix"
         />
       ) : total === 0 ? (
         <EmptyWidget
-          actionHref="/companies"
-          actionLabel="Add a company"
-          message="No companies with contacts are in Leads yet."
+          actionHref="/websites?crawl=1"
+          actionLabel="Index a website"
+          message="No websites with contacts are available yet."
         />
       ) : (
         <div className="overview-status-donut-layout">
           <svg
-            aria-label={`Current pipeline status mix: ${formatCount(total)} leads across ${statusSegments.length} statuses. This is not limited to the selected date range.`}
+            aria-label={`Current website status mix: ${formatCount(total)} websites across ${statusSegments.length} statuses. This is not limited to the selected date range.`}
             className="overview-status-donut"
             role="img"
             viewBox="0 0 120 120"
@@ -897,7 +895,7 @@ function PipelineWidget({ query }: { query: OverviewQuery }) {
               x="60"
               y="75"
             >
-              LEADS
+              WEBSITES
             </text>
           </svg>
           <ul className="overview-status-legend">
@@ -947,7 +945,7 @@ function CoverageWidget({ query }: { query: OverviewQuery }) {
         <OverviewMetricInfo metricKey="with_email" />
       </div>
       <p className="overview-coverage-scope">
-        Company coverage is all-time; indexing success uses the selected period.
+        Website coverage is all-time; indexing success uses the selected period.
       </p>
       {query.isLoading ? (
         <PanelSkeleton rows={5} />
@@ -957,11 +955,11 @@ function CoverageWidget({ query }: { query: OverviewQuery }) {
           onRetry={() => void query.refetch()}
           title="Data coverage"
         />
-      ) : data?.companies_total === 0 ? (
+      ) : data?.websites_total === 0 ? (
         <EmptyWidget
-          actionHref="/companies"
-          actionLabel="Add a company"
-          message="Coverage appears after companies are added."
+          actionHref="/websites?crawl=1"
+          actionLabel="Index a website"
+          message="Coverage appears after websites are added."
         />
       ) : (
         <ul className="overview-coverage-list">
@@ -1089,7 +1087,7 @@ function TeamActivityWidget({
   range: OverviewRange;
 }) {
   const [metric, setMetric] =
-    useState<TeamActivityMetric>("leads_created");
+    useState<TeamActivityMetric>("websites_created");
   const users = query.data?.user_progress ?? [];
   const selectedMetric =
     teamActivityMetrics.find((option) => option.value === metric) ??
@@ -1195,26 +1193,26 @@ function TeamActivityWidget({
   );
 }
 
-function RecentLeadsWidget({
+function RecentWebsitesWidget({
   query,
 }: {
   query: OverviewQuery;
 }) {
-  const leads = query.data?.recent_leads ?? [];
+  const websites = query.data?.recent_websites ?? [];
   return (
     <section
-      aria-labelledby="overview-latest-leads-title"
+      aria-labelledby="overview-latest-websites-title"
       className="overview-panel overview-recent-panel"
     >
       <div className="overview-section-heading">
         <div>
           <p className="overview-eyebrow">RECENTLY ADDED</p>
-          <h2 id="overview-latest-leads-title">Latest leads</h2>
+          <h2 id="overview-latest-websites-title">Latest websites</h2>
         </div>
         <div className="overview-recent-actions">
-          <OverviewMetricInfo metricKey="recent_leads" />
-          <Link className="overview-text-link" href="/leads">
-            View pipeline <span aria-hidden="true">→</span>
+          <OverviewMetricInfo metricKey="recent_websites" />
+          <Link className="overview-text-link" href="/websites">
+            View websites <span aria-hidden="true">→</span>
           </Link>
         </div>
       </div>
@@ -1226,22 +1224,22 @@ function RecentLeadsWidget({
         <WidgetError
           error={query.error}
           onRetry={() => void query.refetch()}
-          title="Latest leads"
+          title="Latest websites"
         />
-      ) : leads.length === 0 ? (
+      ) : websites.length === 0 ? (
         <EmptyWidget
-          actionHref="/companies"
-          actionLabel="Add a company"
-          message="Companies appear here after they have at least one contact."
+          actionHref="/websites?crawl=1"
+          actionLabel="Index a website"
+          message="Websites appear here after they have at least one contact."
         />
       ) : (
         <div className="overview-table-scroll">
-          <table className="overview-leads-table">
+          <table className="overview-websites-table">
             <thead>
               <tr>
-                <th scope="col">Company</th>
+                <th scope="col">Website</th>
                 <th scope="col">
-                  Contacts <OverviewMetricInfo metricKey="recent_leads" />
+                  Contacts <OverviewMetricInfo metricKey="recent_websites" />
                 </th>
                 <th scope="col">Source</th>
                 <th scope="col">Status</th>
@@ -1250,83 +1248,85 @@ function RecentLeadsWidget({
               </tr>
             </thead>
             <tbody>
-              {leads.map((lead) => {
-                const companyHref = `/company/${lead.id}`;
+              {websites.map((website) => {
+                const websiteHref = `/websites/${website.id}`;
+                const displayName =
+                  website.business_name || website.domain || "Website";
                 const domainDiffers =
-                  lead.domain !== null &&
-                  lead.domain.toLocaleLowerCase() !==
-                    lead.name.toLocaleLowerCase();
+                  website.domain !== null &&
+                  website.domain.toLocaleLowerCase() !==
+                    displayName.toLocaleLowerCase();
                 return (
                   <tr
-                    className="overview-lead-row"
-                    key={lead.id}
+                    className="overview-website-row"
+                    key={website.id}
                   >
                     <td>
                       <Link
-                        aria-label={`Open ${lead.name}`}
-                        className="overview-company-link"
-                        href={companyHref}
+                        aria-label={`Open ${displayName}`}
+                        className="overview-website-link"
+                        href={websiteHref}
                       >
-                        <strong>{lead.name}</strong>
-                        {domainDiffers && <span>{lead.domain}</span>}
+                        <strong>{displayName}</strong>
+                        {domainDiffers && <span>{website.domain}</span>}
                       </Link>
                     </td>
                     <td>
                       <Link
-                        aria-label={`${formatCount(lead.contact_count)} contacts for ${lead.name}`}
+                        aria-label={`${formatCount(website.contact_count)} contacts for ${displayName}`}
                         className="overview-cell-link"
-                        href={companyHref}
+                        href={websiteHref}
                       >
-                        {formatCount(lead.contact_count)}
+                        {formatCount(website.contact_count)}
                       </Link>
                     </td>
                     <td>
                       <Link
-                        aria-label={`Source for ${lead.name}: ${lead.source_keyword ?? "No search keyword recorded"}`}
+                        aria-label={`Source for ${displayName}: ${website.source_keyword ?? "No search keyword recorded"}`}
                         className="overview-cell-link"
-                        href={companyHref}
+                        href={websiteHref}
                       >
-                        {lead.source_keyword ?? "No keyword recorded"}
+                        {website.source_keyword ?? "No keyword recorded"}
                       </Link>
                     </td>
                     <td>
                       <Link
-                        aria-label={`${lead.name}, status ${lead.lead_status.replaceAll("_", " ")}`}
+                        aria-label={`${displayName}, status ${website.status.replaceAll("_", " ")}`}
                         className="overview-cell-link"
-                        href={companyHref}
+                        href={websiteHref}
                       >
                         <span className="overview-status-pill">
-                          {lead.lead_status.replaceAll("_", " ")}
+                          {website.status.replaceAll("_", " ")}
                         </span>
                       </Link>
                     </td>
                     <td>
                       <Link
-                        aria-label={`Added ${formatAbsoluteDate(lead.created_at)}`}
+                        aria-label={`Added ${formatAbsoluteDate(website.created_at)}`}
                         className="overview-cell-link"
-                        href={companyHref}
-                        title={formatAbsoluteDate(lead.created_at)}
+                        href={websiteHref}
+                        title={formatAbsoluteDate(website.created_at)}
                       >
-                        {formatRelativeTime(lead.created_at)}
+                        {formatRelativeTime(website.created_at)}
                       </Link>
                     </td>
                     <td>
                       <Link
                         aria-label={
-                          lead.last_email_sent_at
-                            ? `Last emailed ${formatAbsoluteDate(lead.last_email_sent_at)}`
+                          website.last_email_sent_at
+                            ? `Last emailed ${formatAbsoluteDate(website.last_email_sent_at)}`
                             : "No campaign email sent"
                         }
                         className="overview-cell-link"
-                        href={companyHref}
+                        href={websiteHref}
                         title={
-                          lead.last_email_sent_at
-                            ? formatAbsoluteDate(lead.last_email_sent_at)
+                          website.last_email_sent_at
+                            ? formatAbsoluteDate(website.last_email_sent_at)
                             : undefined
                         }
                       >
-                        {lead.last_email_sent_at
-                          ? formatRelativeTime(lead.last_email_sent_at)
+                        {website.last_email_sent_at
+                          ? formatRelativeTime(website.last_email_sent_at)
                           : "Never"}
                       </Link>
                     </td>
@@ -1404,7 +1404,7 @@ function OnboardingChecklist({
         <header className="overview-onboarding-dialog-header">
           <div>
             <p className="overview-eyebrow">GET STARTED</p>
-            <h2 id="overview-onboarding-title">Set up your lead workspace</h2>
+            <h2 id="overview-onboarding-title">Set up your website workspace</h2>
             <p>Complete these steps to build your first working pipeline.</p>
           </div>
           <button
@@ -1524,20 +1524,6 @@ function PanelSkeleton({ rows }: { rows: number }) {
   );
 }
 
-export function CompanyName({ company }: { company: Company }) {
-  return (
-    <div className="company-cell">
-      <span className="company-avatar">
-        {company.name.slice(0, 1).toUpperCase()}
-      </span>
-      <span>
-        <strong>{company.name}</strong>
-        <small>{company.domain ?? "No domain provided"}</small>
-      </span>
-    </div>
-  );
-}
-
 function isOverviewRange(value: string | null): value is OverviewRange {
   return value === "7d" || value === "30d" || value === "90d";
 }
@@ -1552,9 +1538,9 @@ function funnelHref(key: string) {
     case "crawled":
       return "/websites";
     case "emailed":
-      return "/leads?email_status=contacted";
+      return "/websites";
     default:
-      return "/leads";
+      return "/websites";
   }
 }
 

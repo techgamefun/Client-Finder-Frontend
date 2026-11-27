@@ -9,13 +9,10 @@ export default function robots(): MetadataRoute.Robots {
       disallow: [
         "/admin",
         "/campaigns",
-        "/companies",
-        "/company/",
         "/crawler",
         "/discovery",
         "/gmail",
         "/jobs",
-        "/leads",
         "/login",
         "/overview",
         "/organization/dashboard",

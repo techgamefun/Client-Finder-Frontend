@@ -24,7 +24,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
   title: `${SITE_NAME} | Business Intelligence Agent`,
-  description: "Discover, manage, and review business leads.",
+  description: "Discover, research, and manage websites for thoughtful outreach.",
   openGraph: {
     title: SITE_NAME,
     description: "Discover, research, and organize business opportunities.",

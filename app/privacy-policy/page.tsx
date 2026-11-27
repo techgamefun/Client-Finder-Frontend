@@ -14,7 +14,7 @@ import {
 export const metadata: Metadata = {
   title: `Privacy policy | ${SITE_NAME}`,
   description:
-    "Read how ProspectLoop handles account, company, website, and outreach information.",
+    "Read how ProspectLoop handles account, website, contact, and outreach information.",
   alternates: { canonical: "/privacy-policy" },
 };
 
@@ -37,7 +37,7 @@ export default function PrivacyPolicyPage() {
             <h2>Information we process</h2>
             <p>
               Depending on how your organization uses ProspectLoop, this may
-              include account and organization details; company, website, and
+              include account and organization details; website profile and
               contact information that you enter or import; website content
               and research results; email templates, campaign details, and
               messages you choose to access or send; and settings or
@@ -54,7 +54,7 @@ export default function PrivacyPolicyPage() {
             <h2>How information is used</h2>
             <p>
               We process information to provide and secure the workspace,
-              organize company research, run searches and website analyses,
+              organize website research, run searches and website analyses,
               render templates, send messages you initiate, and troubleshoot
               service issues. Organization administrators manage provider
               connections and team access.

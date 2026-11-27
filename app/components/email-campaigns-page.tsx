@@ -11,12 +11,12 @@ import {
   deleteEmailCampaign,
   getAssignedGmailAccounts,
   getAuthSession,
-  getCompanies,
   getEmailCampaign,
   getEmailCampaigns,
   getEmailTemplates,
   getGmailAccountHealth,
   getQueueEventsWebSocketUrl,
+  getWebsites,
   pauseEmailCampaign,
   previewEmailCampaign,
   resumeEmailCampaign,
@@ -30,7 +30,7 @@ import { useToast } from "./toast-provider";
 
 interface CampaignPreviewState {
   campaignId: string;
-  companyIds: string[];
+  websiteIds: string[];
   result: EmailCampaignPreview;
 }
 
@@ -61,12 +61,12 @@ export function EmailCampaignsPage() {
   const [campaignInput, setCampaignInput] = useState<EmailCampaignInput>(
     initialCampaignInput,
   );
-  const [companySearch, setCompanySearch] = useState("");
-  const [companySelection, setCompanySelection] = useState<{
+  const [websiteSearch, setWebsiteSearch] = useState("");
+  const [websiteSelection, setWebsiteSelection] = useState<{
     campaignId: string | null;
     ids: string[];
   }>({ campaignId: null, ids: [] });
-  const [companySelectionError, setCompanySelectionError] = useState("");
+  const [websiteSelectionError, setWebsiteSelectionError] = useState("");
   const [pendingAudienceError, setPendingAudienceError] = useState("");
   const [previewState, setPreviewState] =
     useState<CampaignPreviewState | null>(null);
@@ -129,9 +129,9 @@ export function EmailCampaignsPage() {
     refetchInterval: 60_000,
     retry: false,
   });
-  const companiesQuery = useQuery({
-    queryKey: ["companies"],
-    queryFn: getCompanies,
+  const websitesQuery = useQuery({
+    queryKey: ["websites"],
+    queryFn: getWebsites,
     enabled: Boolean(organizationId),
     retry: false,
   });
@@ -142,9 +142,9 @@ export function EmailCampaignsPage() {
     [templatesQuery.data],
   );
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
-  const companies = useMemo(() => companiesQuery.data ?? [], [companiesQuery.data]);
-  const selectedCompanyIds =
-    companySelection.campaignId === activeCampaignId ? companySelection.ids : [];
+  const websites = useMemo(() => websitesQuery.data ?? [], [websitesQuery.data]);
+  const selectedWebsiteIds =
+    websiteSelection.campaignId === activeCampaignId ? websiteSelection.ids : [];
   const selectedCampaign =
     campaignDetailQuery.data ??
     campaigns.find((campaign) => campaign.id === activeCampaignId) ??
@@ -153,15 +153,15 @@ export function EmailCampaignsPage() {
     () => new Map(templates.map((template) => [template.id, template.name])),
     [templates],
   );
-  const filteredCompanies = useMemo(() => {
-    const term = companySearch.trim().toLowerCase();
-    if (!term) return companies;
-    return companies.filter((company) =>
-      [company.name, company.domain, company.website]
+  const filteredWebsites = useMemo(() => {
+    const term = websiteSearch.trim().toLowerCase();
+    if (!term) return websites;
+    return websites.filter((website) =>
+      [website.business_name, website.domain, website.website_url]
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(term)),
     );
-  }, [companies, companySearch]);
+  }, [websites, websiteSearch]);
 
   useEffect(() => {
     if (!organizationId) return;
@@ -251,12 +251,12 @@ export function EmailCampaignsPage() {
       setManualCreateOpen(false);
       setCampaignInput(initialCampaignInput());
       setSelectedCampaignId(campaign.id);
-      setCompanySelection({
+      setWebsiteSelection({
         campaignId: campaign.id,
         ids: variables.audienceIds ?? [],
       });
       setPreviewState(null);
-      setCompanySelectionError("");
+      setWebsiteSelectionError("");
       setPendingAudienceError("");
       router.replace("/campaigns", { scroll: false });
       await invalidateCampaignQueries(campaign.id);
@@ -270,15 +270,15 @@ export function EmailCampaignsPage() {
   const previewMutation = useMutation({
     mutationFn: ({
       campaignId,
-      companyIds,
+      websiteIds,
     }: {
       campaignId: string;
-      companyIds: string[];
-    }) => previewEmailCampaign(organizationId, campaignId, companyIds),
+      websiteIds: string[];
+    }) => previewEmailCampaign(organizationId, campaignId, websiteIds),
     onSuccess: (result, variables) => {
       setPreviewState({
         campaignId: variables.campaignId,
-        companyIds: variables.companyIds,
+        websiteIds: variables.websiteIds,
         result,
       });
     },
@@ -286,14 +286,14 @@ export function EmailCampaignsPage() {
   const startMutation = useMutation({
     mutationFn: ({
       campaignId,
-      companyIds,
+      websiteIds,
     }: {
       campaignId: string;
-      companyIds: string[];
-    }) => startEmailCampaign(organizationId, campaignId, companyIds),
+      websiteIds: string[];
+    }) => startEmailCampaign(organizationId, campaignId, websiteIds),
     onSuccess: async (campaign) => {
       setPreviewState(null);
-      setCompanySelection({ campaignId: campaign.id, ids: [] });
+      setWebsiteSelection({ campaignId: campaign.id, ids: [] });
       await invalidateCampaignQueries(campaign.id);
       showToast({
         type: "success",
@@ -336,8 +336,8 @@ export function EmailCampaignsPage() {
       );
       setConfirmDeleteCampaignId(null);
       setSelectedCampaignId(null);
-      setCompanySelection({ campaignId: null, ids: [] });
-      setCompanySelectionError("");
+      setWebsiteSelection({ campaignId: null, ids: [] });
+      setWebsiteSelectionError("");
       await invalidateCampaignQueries(campaignId);
       showToast({
         type: "success",
@@ -347,11 +347,11 @@ export function EmailCampaignsPage() {
     },
   });
 
-  const selectedCompanyKey = [...selectedCompanyIds].sort().join("|");
+  const selectedWebsiteKey = [...selectedWebsiteIds].sort().join("|");
   const previewMatchesSelection =
     previewState?.campaignId === selectedCampaign?.id &&
-    [...(previewState?.companyIds ?? [])].sort().join("|") ===
-      selectedCompanyKey;
+    [...(previewState?.websiteIds ?? [])].sort().join("|") ===
+      selectedWebsiteKey;
   const liveMutationError =
     createMutation.error ??
     previewMutation.error ??
@@ -402,10 +402,10 @@ export function EmailCampaignsPage() {
     }));
   }
 
-  function updateSelectedCompanyIds(
+  function updateSelectedWebsiteIds(
     update: (current: string[]) => string[],
   ) {
-    setCompanySelection((current) => ({
+    setWebsiteSelection((current) => ({
       campaignId: activeCampaignId,
       ids: update(
         current.campaignId === activeCampaignId ? current.ids : [],
@@ -415,8 +415,8 @@ export function EmailCampaignsPage() {
 
   function selectCampaign(campaignId: string) {
     setSelectedCampaignId(campaignId);
-    setCompanySelection({ campaignId, ids: [] });
-    setCompanySelectionError("");
+    setWebsiteSelection({ campaignId, ids: [] });
+    setWebsiteSelectionError("");
     setPreviewState(null);
     setConfirmDeleteCampaignId(null);
     previewMutation.reset();
@@ -432,45 +432,45 @@ export function EmailCampaignsPage() {
     }));
   }
 
-  function toggleCompany(companyId: string) {
-    setCompanySelectionError("");
+  function toggleWebsite(websiteId: string) {
+    setWebsiteSelectionError("");
     setPreviewState(null);
     if (
-      !selectedCompanyIds.includes(companyId) &&
-      selectedCompanyIds.length >= 5_000
+      !selectedWebsiteIds.includes(websiteId) &&
+      selectedWebsiteIds.length >= 5_000
     ) {
-      setCompanySelectionError(
-        "A campaign can target at most 5,000 companies at a time.",
+      setWebsiteSelectionError(
+        "A campaign can target at most 5,000 websites at a time.",
       );
       return;
     }
-    updateSelectedCompanyIds((current) =>
-      current.includes(companyId)
-        ? current.filter((id) => id !== companyId)
-        : [...current, companyId],
+    updateSelectedWebsiteIds((current) =>
+      current.includes(websiteId)
+        ? current.filter((id) => id !== websiteId)
+        : [...current, websiteId],
     );
   }
 
-  function toggleVisibleCompanies() {
-    const visibleIds = filteredCompanies.map((company) => company.id);
+  function toggleVisibleWebsites() {
+    const visibleIds = filteredWebsites.map((website) => website.id);
     const allVisibleSelected =
       visibleIds.length > 0 &&
-      visibleIds.every((companyId) => selectedCompanyIds.includes(companyId));
+      visibleIds.every((websiteId) => selectedWebsiteIds.includes(websiteId));
     setPreviewState(null);
-    setCompanySelectionError("");
+    setWebsiteSelectionError("");
     if (allVisibleSelected) {
-      updateSelectedCompanyIds((current) =>
+      updateSelectedWebsiteIds((current) =>
         current.filter((id) => !visibleIds.includes(id)),
       );
       return;
     }
-    const next = new Set([...selectedCompanyIds, ...visibleIds]);
+    const next = new Set([...selectedWebsiteIds, ...visibleIds]);
     if (next.size > 5_000) {
-      setCompanySelectionError(
-        "A campaign can target at most 5,000 companies at a time.",
+      setWebsiteSelectionError(
+        "A campaign can target at most 5,000 websites at a time.",
       );
     }
-    updateSelectedCompanyIds(() => [...next].slice(0, 5_000));
+    updateSelectedWebsiteIds(() => [...next].slice(0, 5_000));
   }
 
   function submitCampaign(event: FormEvent<HTMLFormElement>) {
@@ -501,7 +501,7 @@ export function EmailCampaignsPage() {
       } catch (error) {
         console.error("Could not load the selected campaign audience.", error);
         setPendingAudienceError(
-          "Could not load the selected leads. Return to Leads and select them again.",
+          "Could not load the selected websites. Return to Websites and select them again.",
         );
         return;
       }
@@ -517,25 +517,25 @@ export function EmailCampaignsPage() {
   }
 
   function requestPreview() {
-    if (!selectedCampaign || selectedCompanyIds.length === 0) return;
+    if (!selectedCampaign || selectedWebsiteIds.length === 0) return;
     setPreviewState(null);
     previewMutation.mutate({
       campaignId: selectedCampaign.id,
-      companyIds: [...selectedCompanyIds],
+      websiteIds: [...selectedWebsiteIds],
     });
   }
 
   function requestStart() {
     if (
       !selectedCampaign ||
-      selectedCompanyIds.length === 0 ||
+      selectedWebsiteIds.length === 0 ||
       !previewMatchesSelection
     ) {
       return;
     }
     startMutation.mutate({
       campaignId: selectedCampaign.id,
-      companyIds: [...selectedCompanyIds],
+      websiteIds: [...selectedWebsiteIds],
     });
   }
 
@@ -543,14 +543,14 @@ export function EmailCampaignsPage() {
     createMutation.reset();
     setCampaignInput(initialCampaignInput());
     setPendingAudienceError("");
-    setCompanySelectionError("");
+    setWebsiteSelectionError("");
     setManualCreateOpen(true);
   }
 
   function closeCampaignSetup() {
     setManualCreateOpen(false);
     setPendingAudienceError("");
-    setCompanySelectionError("");
+    setWebsiteSelectionError("");
     try {
       window.sessionStorage.removeItem(PENDING_CAMPAIGN_AUDIENCE_KEY);
     } catch (error) {
@@ -568,10 +568,10 @@ export function EmailCampaignsPage() {
   const selectedTemplateName = selectedCampaign
     ? (templateNames.get(selectedCampaign.template_id) ?? "Template unavailable")
     : "";
-  const previewSkippedCompanies =
-    previewState?.result.skipped_company_ids
-      .map((companyId) => companies.find((company) => company.id === companyId))
-      .filter((company) => company !== undefined) ?? [];
+  const previewSkippedWebsites =
+    previewState?.result.skipped_website_ids
+      .map((websiteId) => websites.find((website) => website.id === websiteId))
+      .filter((website) => website !== undefined) ?? [];
 
   return (
     <div className="campaigns-page">
@@ -621,8 +621,8 @@ export function EmailCampaignsPage() {
                 Choose an existing template and the Gmail accounts assigned to
                 you.{" "}
                 {shouldCreateFromQuery
-                  ? "Leads selected from the Lead pipeline will be preselected after saving."
-                  : "You can pick companies and preview delivery after saving."}
+                  ? "Websites selected from the registry will be preselected after saving."
+                  : "You can pick websites and preview delivery after saving."}
               </p>
             </div>
             <button
@@ -1289,108 +1289,96 @@ export function EmailCampaignsPage() {
                   <div className="campaign-section-heading">
                     <div>
                       <p className="eyebrow">AUDIENCE</p>
-                      <h3>Choose companies</h3>
+                      <h3>Choose websites</h3>
                       <p className="panel-subtitle">
                         All contacts with a valid business email are queued.
                         Contacts without an email are skipped.
                       </p>
                     </div>
                     <span className="campaign-selection-count">
-                      {selectedCompanyIds.length} selected
+                      {selectedWebsiteIds.length} selected
                     </span>
                   </div>
 
-                  {companiesQuery.isError && (
+                  {websitesQuery.isError && (
                     <p className="campaign-field-error" role="alert">
-                      Could not load companies:{" "}
-                      {getErrorMessage(companiesQuery.error)}
+                      Could not load websites:{" "}
+                      {getErrorMessage(websitesQuery.error)}
                     </p>
                   )}
-                  {companiesQuery.isPending && (
+                  {websitesQuery.isPending && (
                     <p className="campaign-field-hint" role="status">
-                      Loading companies…
+                      Loading websites…
                     </p>
                   )}
-                  {companiesQuery.isSuccess && companies.length === 0 && (
+                  {websitesQuery.isSuccess && websites.length === 0 && (
                     <p className="campaign-field-hint">
-                      Add companies and contacts before creating a campaign.
+                      Add websites and contacts before creating a campaign.
                     </p>
                   )}
-                  {companies.length > 0 && (
+                  {websites.length > 0 && (
                     <>
-                      <div className="campaign-company-tools">
+                      <div className="campaign-website-tools">
                         <label className="campaign-search">
-                          <span className="sr-only">Search companies</span>
+                          <span className="sr-only">Search websites</span>
                           <span aria-hidden="true">⌕</span>
                           <input
                             onChange={(event) =>
-                              setCompanySearch(event.target.value)
+                              setWebsiteSearch(event.target.value)
                             }
-                            placeholder="Search companies or domains"
-                            value={companySearch}
+                            placeholder="Search websites or domains"
+                            value={websiteSearch}
                           />
                         </label>
                         <button
                           className="text-button"
-                          onClick={toggleVisibleCompanies}
+                          onClick={toggleVisibleWebsites}
                           type="button"
                         >
-                          {filteredCompanies.length > 0 &&
-                          filteredCompanies.every((company) =>
-                            selectedCompanyIds.includes(company.id),
+                          {filteredWebsites.length > 0 &&
+                          filteredWebsites.every((website) =>
+                            selectedWebsiteIds.includes(website.id),
                           )
                             ? "Clear visible"
                             : "Select visible"}
                         </button>
                       </div>
                       <div
-                        aria-label="Companies to include"
-                        className="campaign-company-list"
+                        aria-label="Websites to include"
+                        className="campaign-website-list"
                       >
-                        {filteredCompanies.map((company) => {
-                          const validEmailCount = company.contacts.filter(
-                            (contact) =>
-                              Boolean(contact.business_email?.trim()),
-                          ).length;
-                          return (
-                            <label
-                              className="campaign-company-option"
-                              key={company.id}
-                            >
-                              <input
-                                checked={selectedCompanyIds.includes(
-                                  company.id,
-                                )}
-                                onChange={() => toggleCompany(company.id)}
-                                type="checkbox"
-                              />
-                              <span className="campaign-company-copy">
-                                <strong>{company.name}</strong>
-                                <small>
-                                  {company.domain ?? company.website ?? "No domain"}
-                                </small>
-                              </span>
-                              <span
-                                className={`campaign-contact-count${validEmailCount === 0 ? " is-empty" : ""}`}
-                              >
-                                {validEmailCount} email
-                                {validEmailCount === 1 ? "" : "s"}
-                              </span>
-                            </label>
-                          );
-                        })}
-                        {filteredCompanies.length === 0 && (
+                        {filteredWebsites.map((website) => (
+                          <label
+                            className="campaign-website-option"
+                            key={website.id}
+                          >
+                            <input
+                              checked={selectedWebsiteIds.includes(website.id)}
+                              onChange={() => toggleWebsite(website.id)}
+                              type="checkbox"
+                            />
+                            <span className="campaign-website-copy">
+                              <strong>
+                                {website.business_name || website.domain}
+                              </strong>
+                              <small>
+                                {website.domain || website.website_url}
+                              </small>
+                            </span>
+                          </label>
+                        ))}
+                        {filteredWebsites.length === 0 && (
                           <p className="campaign-field-hint">
-                            No companies match that search.
+                            No websites match that search.
                           </p>
                         )}
                       </div>
                     </>
                   )}
 
-                  {companySelectionError && (
+                  {websiteSelectionError && (
                     <p className="campaign-field-error" role="alert">
-                      {companySelectionError}
+                      {websiteSelectionError}
                     </p>
                   )}
                   {previewMutation.isError && (
@@ -1404,9 +1392,9 @@ export function EmailCampaignsPage() {
                     <button
                       className="button button-secondary"
                       disabled={
-                        selectedCompanyIds.length === 0 ||
+                        selectedWebsiteIds.length === 0 ||
                         previewMutation.isPending ||
-                        companiesQuery.isError
+                        websitesQuery.isError
                       }
                       onClick={requestPreview}
                       type="button"
@@ -1455,9 +1443,9 @@ export function EmailCampaignsPage() {
                           value={previewState.result.eligible_contact_count}
                         />
                         <CampaignCount
-                          label="Companies skipped"
+                          label="Websites skipped"
                           value={
-                            previewState.result.skipped_companies_without_email
+                            previewState.result.skipped_websites_without_email
                           }
                         />
                         <CampaignCount
@@ -1467,12 +1455,12 @@ export function EmailCampaignsPage() {
                           }
                         />
                       </div>
-                      {previewSkippedCompanies.length > 0 && (
+                      {previewSkippedWebsites.length > 0 && (
                         <div className="campaign-skipped-list">
-                          <strong>Companies without an email contact</strong>
+                          <strong>Websites without an email contact</strong>
                           <span>
-                            {previewSkippedCompanies
-                              .map((company) => company.name)
+                            {previewSkippedWebsites
+                              .map((website) => website.business_name || website.domain)
                               .join(", ")}
                           </span>
                         </div>

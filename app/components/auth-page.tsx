@@ -135,7 +135,7 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
                 <span className="auth-benefit-icon">▤</span>
                 <span>
                   <strong>Keep your research organized</strong>
-                  <small>Bring website insights and leads into one place.</small>
+                  <small>Bring website insights, contacts, and outreach into one place.</small>
                 </span>
               </div>
             </div>

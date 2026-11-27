@@ -41,14 +41,11 @@ import {
   ApiError,
   createOrganization,
   getAuthSession,
-  getCompanyNavigationSummary,
-  getCompanies,
   getPageSpeedJobSummary,
   getWebsiteRegistryPage,
   getWebsiteCrawlJobSummary,
   logout,
   selectOrganization,
-  type Company,
   type OrganizationOption,
   type WebsiteRegistryPageParams,
   websiteRegistryPageQueryKey,
@@ -73,7 +70,6 @@ const SettingsModal = dynamic(
   { ssr: false },
 );
 
-const noCompanies: Company[] = [];
 const adminOnlySettingsSections = new Set([
   "crawler",
   "gmail",
@@ -128,22 +124,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     getThemePreferenceSnapshot,
     (): ThemePreference => "system",
   );
-  const companiesQuery = useQuery({
-    queryKey: ["companies"],
-    queryFn: getCompanies,
-    enabled:
-      !isPublicPage &&
-      commandPaletteOpen &&
-      sessionQuery.data !== undefined,
-    staleTime: 120_000,
-  });
-  const companyNavigationSummaryQuery = useQuery({
-    queryKey: ["companies", "navigation-summary"],
-    queryFn: getCompanyNavigationSummary,
-    enabled: !isPublicPage && sessionQuery.data !== undefined,
-    staleTime: 60_000,
-    retry: false,
-  });
   const crawlerJobSummaryQuery = useQuery({
     queryKey: ["crawler", "queue-summary"],
     queryFn: getWebsiteCrawlJobSummary,
@@ -211,9 +191,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       });
     },
   });
-  const companies = companiesQuery.data ?? noCompanies;
-  const leadsNeedingReview =
-    companyNavigationSummaryQuery.data?.leads_needing_review ?? 0;
   const runningJobs =
     (crawlerJobSummaryQuery.data?.running_count ?? 0) +
     (pageSpeedJobSummaryQuery.data?.running_count ?? 0);
@@ -537,7 +514,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <WorkspaceNavigation
               failedJobs={failedJobs}
               key={pathname}
-              leadsNeedingReview={leadsNeedingReview}
               location={currentLocation}
               onNavigate={() => setMobileMenuOpen(false)}
               runningJobs={runningJobs}
@@ -575,7 +551,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
       <main className="main-content" id="main-content" tabIndex={-1}>
         <WorkspaceTopBar
-          companies={companies}
           location={currentLocation}
           mobileMenuOpen={mobileMenuOpen}
           mobileMenuButtonRef={mobileMenuButtonRef}
@@ -590,13 +565,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         >
           {children}
           <footer className="page-footer">
-            ProspectLoop <span>·</span> Your company data stays in your
+            ProspectLoop <span>·</span> Your website data stays in your
             connected backend.
           </footer>
         </div>
       </main>
       <CommandPalette
-        companies={companies}
         isPersonalWorkspace={isPersonalWorkspace}
         onClose={() => setCommandPaletteOpen(false)}
         open={commandPaletteOpen}
@@ -624,7 +598,6 @@ interface WorkspaceAction {
 }
 
 function WorkspaceTopBar({
-  companies,
   location,
   mobileMenuOpen,
   mobileMenuButtonRef,
@@ -634,7 +607,6 @@ function WorkspaceTopBar({
   role,
   isPersonalWorkspace,
 }: {
-  companies: Company[];
   isPersonalWorkspace: boolean;
   location: string;
   mobileMenuOpen: boolean;
@@ -644,7 +616,7 @@ function WorkspaceTopBar({
   pathname: string;
   role: NavigationRole;
 }) {
-  const breadcrumbs = getWorkspaceBreadcrumbs(location, companies);
+  const breadcrumbs = getWorkspaceBreadcrumbs(location);
   const action =
     isPersonalWorkspace && pathname === "/settings"
       ? null
@@ -702,7 +674,7 @@ function WorkspaceTopBar({
             </Link>
           )}
           <button
-            aria-label="Search pages and companies (Ctrl or Command+K)"
+            aria-label="Search pages and actions (Ctrl or Command+K)"
             className="command-palette-trigger"
             onClick={onCommandPaletteOpen}
             type="button"
@@ -717,12 +689,8 @@ function WorkspaceTopBar({
   );
 }
 
-function getWorkspaceBreadcrumbs(
-  location: string,
-  companies: Company[],
-): WorkspaceBreadcrumb[] {
+function getWorkspaceBreadcrumbs(location: string): WorkspaceBreadcrumb[] {
   const pathname = location.split("?")[0] ?? "/";
-  const companyDetailMatch = pathname.match(/^\/company\/([^/]+)$/);
   if (pathname === "/organization/dashboard") {
     return [
       { label: "Organization", href: "/organization" },
@@ -754,15 +722,6 @@ function getWorkspaceBreadcrumbs(
     return [
       { label: "Organization", href: "/organization" },
       { label: "Member activity" },
-    ];
-  }
-  if (companyDetailMatch) {
-    const company = companies.find(
-      (candidate) => candidate.id === companyDetailMatch[1],
-    );
-    return [
-      { label: "Companies", href: "/companies" },
-      { label: company?.name ?? "Company details" },
     ];
   }
   if (/^\/websites\/[^/]+$/.test(pathname)) {
@@ -810,26 +769,6 @@ function getWorkspaceAction(
       icon: Plus,
     };
   }
-  if (pathname === "/companies") {
-    return {
-      label: "Add company",
-      href: "/companies?add=1",
-      icon: Plus,
-    };
-  }
-  if (pathname === "/leads") {
-    return role === "admin"
-      ? {
-          label: "New campaign",
-          href: "/campaigns?create=1",
-          icon: Megaphone,
-        }
-      : {
-          label: "Manage companies",
-          href: "/companies",
-          icon: Building2,
-        };
-  }
   if (pathname === "/jobs") {
     return { label: "Start indexing", href: "/websites?crawl=1", icon: Plus };
   }
@@ -841,13 +780,7 @@ function getWorkspaceAction(
     };
   }
   if (pathname === "/campaigns") {
-    return role === "admin"
-      ? null
-      : {
-          label: "View lead pipeline",
-          href: "/leads",
-          icon: Building2,
-        };
+    return null;
   }
   if (pathname === "/settings") {
     return role === "admin"
@@ -862,9 +795,6 @@ function getWorkspaceAction(
           icon: Settings,
         };
   }
-  if (pathname.startsWith("/company/")) {
-    return { label: "Start indexing", href: "/websites?crawl=1", icon: Plus };
-  }
   return null;
 }
 
@@ -877,10 +807,8 @@ const workspaceRoutes = new Set([
   "/discovery",
   "/excluded-domains",
   "/gmail",
-  "/companies",
   "/jobs",
   "/jobs/import",
-  "/leads",
   "/login",
   "/overview",
   "/organization",
@@ -900,7 +828,6 @@ function isKnownWorkspaceRoute(pathname: string) {
   return (
     workspaceRoutes.has(pathname) ||
     /^\/organization\/members\/[^/]+$/.test(pathname) ||
-    /^\/company\/[^/]+$/.test(pathname) ||
     /^\/websites\/[^/]+$/.test(pathname)
   );
 }
@@ -915,13 +842,11 @@ interface CommandEntry {
 }
 
 function CommandPalette({
-  companies,
   isPersonalWorkspace,
   onClose,
   open,
   role,
 }: {
-  companies: Company[];
   isPersonalWorkspace: boolean;
   onClose: () => void;
   open: boolean;
@@ -962,14 +887,6 @@ function CommandPalette({
   );
   const quickActions: CommandEntry[] = [
     {
-      id: "add-company",
-      label: "Add company",
-      description: "Create a company record",
-      href: "/companies?add=1",
-      icon: Building2,
-      keywords: "company create new add",
-    },
-    {
       id: "start-index",
       label: "Start indexing",
       description: "Index a website and extract business details",
@@ -998,18 +915,6 @@ function CommandPalette({
       .includes(normalizedQuery);
   const matchingPages = entries.filter(matches).slice(0, 6);
   const matchingActions = quickActions.filter(matches);
-  const matchingCompanies = normalizedQuery
-    ? companies
-        .filter((company) =>
-          [company.name, company.domain, company.website]
-            .filter(Boolean)
-            .some((value) =>
-              value?.toLocaleLowerCase().includes(normalizedQuery),
-            ),
-        )
-        .slice(0, 5)
-    : [];
-
   function navigateTo(href: string) {
     onClose();
     router.push(href);
@@ -1033,11 +938,11 @@ function CommandPalette({
       </h2>
       <label className="command-palette-search">
         <Search aria-hidden="true" size={20} strokeWidth={2} />
-        <span className="sr-only">Search pages, companies, and actions</span>
+        <span className="sr-only">Search pages and actions</span>
         <input
           autoComplete="off"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search pages, companies, and actions..."
+          placeholder="Search pages and actions..."
           ref={searchInputRef}
           type="search"
           value={query}
@@ -1069,36 +974,8 @@ function CommandPalette({
             ))}
           </section>
         )}
-        {matchingCompanies.length > 0 && (
-          <section aria-label="Companies">
-            <h3>Companies</h3>
-            {matchingCompanies.map((company) => (
-              <button
-                className="command-palette-result"
-                key={company.id}
-                onClick={() => navigateTo(`/company/${company.id}`)}
-                type="button"
-              >
-                <Building2 aria-hidden="true" size={18} strokeWidth={2} />
-                <span>
-                  <strong>{company.name}</strong>
-                  <small>
-                    {company.domain || company.website || "Company record"}
-                  </small>
-                </span>
-                <ArrowUpRight
-                  aria-hidden="true"
-                  className="command-palette-result-tail"
-                  size={16}
-                  strokeWidth={2}
-                />
-              </button>
-            ))}
-          </section>
-        )}
         {matchingActions.length === 0 &&
-          matchingPages.length === 0 &&
-          matchingCompanies.length === 0 && (
+          matchingPages.length === 0 && (
             <p className="command-palette-empty">No matching results.</p>
           )}
       </div>
@@ -1137,7 +1014,6 @@ function CommandPaletteButton({
 
 function WorkspaceNavigation({
   failedJobs,
-  leadsNeedingReview,
   location,
   onNavigate,
   runningJobs,
@@ -1145,7 +1021,6 @@ function WorkspaceNavigation({
   isPersonalWorkspace,
 }: {
   failedJobs: number;
-  leadsNeedingReview: number;
   location: string;
   onNavigate: () => void;
   runningJobs: number;
@@ -1153,7 +1028,7 @@ function WorkspaceNavigation({
   isPersonalWorkspace: boolean;
 }) {
   const pathname = location;
-  const badgeCounts = { leads: leadsNeedingReview, jobs: failedJobs };
+  const badgeCounts = { jobs: failedJobs };
   const visibleSections = getVisibleNavigationSections(
     role,
     isPersonalWorkspace,
@@ -1392,10 +1267,7 @@ function NavigationBadge({
 }) {
   if (count < 1) return null;
 
-  const badgeLabel =
-    itemLabel === "Lead pipeline"
-      ? "leads needing review"
-      : itemLabel.toLowerCase();
+  const badgeLabel = itemLabel.toLowerCase();
   // TODO: Move actionable counts to an aggregated API endpoint when available.
   return (
     <span
@@ -1993,13 +1865,10 @@ function getPageLoadingLabel(pathname: string) {
   if (pathname === "/organization") return "organization";
   if (pathname === "/overview") return "overview";
   if (pathname === "/website-analytics") return "website analytics";
-  if (pathname.startsWith("/company/")) return "company details";
   if (pathname.startsWith("/websites/")) return "website details";
   if (pathname === "/websites") return "websites";
   if (pathname === "/jobs" || pathname.includes("queue")) return "job queue";
   if (pathname === "/settings") return "settings";
-  if (pathname === "/leads") return "leads";
-  if (pathname === "/companies") return "companies";
   if (pathname === "/campaigns") return "campaigns";
   if (pathname === "/gmail") return "Gmail";
   if (pathname === "/discovery") return "discovery";
@@ -2027,10 +1896,7 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
   }
   if (pathname === "/organization/members") return "members";
   if (/^\/organization\/members\/[^/]+$/.test(pathname)) return "activity";
-  if (
-    pathname.startsWith("/company/") ||
-    /^\/websites\/[^/]+$/.test(pathname)
-  ) {
+  if (/^\/websites\/[^/]+$/.test(pathname)) {
     return "detail";
   }
   if (
@@ -2045,7 +1911,5 @@ function getPageLoadingVariant(pathname: string): PageLoadingVariant {
     return "table";
   }
   if (pathname === "/websites") return "websites";
-  if (pathname === "/leads") return "leads";
-  if (pathname === "/companies") return "companies";
   return "generic";
 }

@@ -30,14 +30,9 @@ const activityMetrics = [
     color: "websites",
   },
   {
-    key: "companies_created",
-    label: "Companies created",
-    color: "companies",
-  },
-  {
-    key: "leads_created",
-    label: "Leads created",
-    color: "leads",
+    key: "websites_created",
+    label: "Websites created",
+    color: "websites-created",
   },
   {
     key: "crawls_completed",
@@ -131,7 +126,7 @@ export function MemberWorkflowPage() {
             <h1>Member activity</h1>
           )}
           <p className="heading-copy">
-            A daily view of discovery, website indexing, lead creation, and
+            A daily view of discovery, website creation, website indexing, and
             outreach activity.
           </p>
         </div>
@@ -206,10 +201,9 @@ export function MemberWorkflowPage() {
           >
             <h2 id="member-workflow-definitions">How activity is counted</h2>
             <p>
-              Searches, websites, and companies use their creation dates.
-              Indexing counts successful jobs by completion date. Leads require
-              a contact created by this member, and outreach counts emails sent
-              by campaigns they created. All dates use {timezone}.
+              Searches and websites use their creation dates. Indexing counts
+              successful jobs by completion date, and outreach counts emails
+              sent by campaigns created by this member. All dates use {timezone}.
             </p>
           </section>
         </>

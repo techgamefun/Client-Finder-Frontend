@@ -13,74 +13,6 @@ export function getQueueEventsWebSocketUrl(): string {
   return url.toString();
 }
 
-export interface Company {
-  id: string;
-  name: string;
-  website: string | null;
-  domain: string | null;
-  industry: string | null;
-  city: string | null;
-  state: string | null;
-  software_need: string | null;
-  lead_score: number | null;
-  lead_status: string;
-  last_email_sent_at: string | null;
-  created_at: string;
-  created_by_email: string | null;
-  lead_batches: LeadBatchSummary[];
-  contacts: Contact[];
-  pagespeed_scans: PageSpeedScanSummary[];
-}
-
-export interface LeadBatchSummary {
-  id: string;
-  name: string;
-  created_at: string;
-}
-
-export interface LeadBatch {
-  id: string;
-  name: string;
-  created_at: string;
-  lead_count: number;
-}
-
-export type LeadBatchMembershipAction = "add" | "move" | "ungroup";
-
-export interface CompanyPipelineFilters {
-  view: "companies" | "leads";
-  query: string;
-  status: string | null;
-  email_status: "all" | "contacted" | "not_contacted";
-  website: "all" | "with_website" | "without_website";
-  batch_id: string | null;
-  ungrouped: boolean;
-  page: number;
-  page_size: 10 | 25 | 50;
-}
-
-export interface CompanyPipelineResponse {
-  items: Company[];
-  page: number;
-  page_count: number;
-  page_size: number;
-  total_count: number;
-  eligible_count: number;
-  company_count: number;
-  status_counts: Record<string, number>;
-  with_website_count: number;
-  contacted_count: number;
-}
-
-export interface CompanyPipelineSelectionResponse {
-  company_ids: string[];
-  total_count: number;
-}
-
-export interface CompanyNavigationSummary {
-  leads_needing_review: number;
-}
-
 export interface JobQueueStatusSummary {
   running_count: number;
   failed_count: number;
@@ -144,8 +76,8 @@ export interface OverviewResponse {
   };
   kpis: {
     websites_discovered: OverviewKpi;
-    leads_created: OverviewKpi;
-    reachable_leads: OverviewKpi;
+    websites_created: OverviewKpi;
+    reachable_websites: OverviewKpi;
     emails_sent: OverviewKpi;
   };
   funnel: {
@@ -160,7 +92,7 @@ export interface OverviewResponse {
   series: {
     date: string;
     websites_discovered: number;
-    leads_created: number;
+    websites_created: number;
   }[];
   status_breakdown: {
     status: string;
@@ -168,7 +100,7 @@ export interface OverviewResponse {
     percentage: number | null;
   }[];
   coverage: {
-    companies_total: number;
+    websites_total: number;
     with_email: OverviewCoverageRate;
     with_phone: OverviewCoverageRate;
     with_website: OverviewCoverageRate;
@@ -195,13 +127,13 @@ export interface OverviewResponse {
       completed: boolean;
     }[];
   } | null;
-  recent_leads: {
+  recent_websites: {
     id: string;
-    name: string;
+    business_name: string | null;
     domain: string | null;
     contact_count: number;
     source_keyword: string | null;
-    lead_status: string;
+    status: string;
     created_at: string;
     last_email_sent_at: string | null;
   }[];
@@ -214,8 +146,7 @@ export interface OverviewUserProgress {
   is_active: boolean;
   searches_run: number;
   websites_discovered: number;
-  companies_created: number;
-  leads_created: number;
+  websites_created: number;
   crawls_completed: number;
   emails_sent: number;
 }
@@ -228,8 +159,7 @@ export interface MemberActivitySeriesPoint {
   date: string;
   searches_run: number;
   websites_discovered: number;
-  companies_created: number;
-  leads_created: number;
+  websites_created: number;
   crawls_completed: number;
   emails_sent: number;
 }
@@ -249,7 +179,7 @@ export interface SearchKeyword {
 
 export interface Contact {
   id: string;
-  company_id: string;
+  website_id: string;
   name: string | null;
   role: string | null;
   business_email: string | null;
@@ -265,16 +195,14 @@ export interface ContactInput {
   is_publicly_listed: boolean;
 }
 
+export type WebsiteContactInput = ContactInput;
+
 export interface PageSpeedScanSummary {
   id: string;
   website_url: string;
   strategy: "mobile" | "desktop";
   category_scores: Record<string, number | null>;
   scanned_at: string;
-}
-
-export interface PageSpeedScanInput {
-  strategy: "mobile" | "desktop";
 }
 
 export interface BatchJobRetryResponse {
@@ -284,8 +212,7 @@ export interface BatchJobRetryResponse {
 
 export interface PageSpeedScanJob {
   id: string;
-  company_ids: string[];
-  website_id?: string | null;
+  website_id: string;
   website_url: string;
   strategy: "mobile" | "desktop";
   status: "queued" | "running" | "succeeded" | "failed";
@@ -325,20 +252,6 @@ export interface WebsiteHypeStatFetchJob {
   started_at: string | null;
   completed_at: string | null;
 }
-
-export interface CompanyInput {
-  name: string;
-  website?: string | null;
-  domain?: string | null;
-  industry?: string | null;
-  city?: string | null;
-  state?: string | null;
-  software_need?: string | null;
-}
-
-export type CompanyUpdateInput = Partial<CompanyInput> & {
-  lead_score?: number | null;
-};
 
 export interface DiscoveryInput {
   query: string;
@@ -464,10 +377,10 @@ export type DiscoveryAiSearchResponse = DiscoveryResponse;
 export interface IngestResponse {
   query: string;
   results_found: number;
-  candidates_created: number;
+  websites_created: number;
   results_skipped: number;
   websites_crawled: number;
-  companies_enriched: number;
+  websites_enriched: number;
   contacts_added: number;
   pagespeed_scans_queued: number;
   crawl_failures: {
@@ -673,6 +586,14 @@ export interface WebsiteRecord {
   id: string;
   website_url: string;
   domain: string;
+  business_name: string | null;
+  industry: string | null;
+  city: string | null;
+  state: string | null;
+  software_need: string | null;
+  lead_score: number | null;
+  last_email_sent_at: string | null;
+  domain_resolution_needed: boolean;
   favicon_url: string | null;
   crawl_id: string | null;
   is_crawled: boolean;
@@ -851,6 +772,7 @@ export interface WebsiteRegistryFacets {
 
 export interface WebsiteDetailResponse {
   website: WebsiteRecord;
+  contacts: Contact[];
   crawl: WebsiteCrawlResponse | null;
   pagespeed_scans: PageSpeedScanSummary[];
   hypestat_profile: WebsiteHypeStatProfile | null;
@@ -929,21 +851,17 @@ export interface WebsiteEnrichmentCounts {
   pagespeed_missing_scan_count: number;
 }
 
-export interface WebsiteAddToLeadsResult {
-  requested_count: number;
-  created_count: number;
-  already_existing_count: number;
-  status_updated_count: number;
-  skipped_listing_count: number;
-  skipped_uncrawled_count: number;
-  not_found_count: number;
-  batch_id: string | null;
-  batch_name: string | null;
+export interface WebsiteGroup {
+  id: string;
+  name: string;
+  created_at: string;
+  website_count: number;
 }
 
-export interface WebsiteLeadGroupSelection {
-  batchId?: string;
-  batchName?: string;
+export type WebsiteGroupAction = "add" | "move" | "ungroup";
+
+export interface WebsiteGroupMembershipResult {
+  updated_count: number;
 }
 
 export interface WebsiteBatchStatusUpdateResult {
@@ -956,7 +874,6 @@ const WEBSITE_ACTION_BATCH_SIZE = 500;
 
 export type WebsiteStatus =
   | "new"
-  | "lead"
   | "checked"
   | "qualified"
   | "contacted"
@@ -981,6 +898,13 @@ export type WebsitePageType =
 
 export interface WebsiteUpdateInput {
   status?: WebsiteStatus;
+  website_url?: string;
+  business_name?: string | null;
+  industry?: string | null;
+  city?: string | null;
+  state?: string | null;
+  software_need?: string | null;
+  lead_score?: number | null;
   page_type?: WebsitePageType | null;
   site_topic?: string[];
   language?: string | null;
@@ -1571,9 +1495,9 @@ export interface EmailCampaignInput {
 
 export interface EmailCampaignPreview {
   eligible_contact_count: number;
-  skipped_companies_without_email: number;
+  skipped_websites_without_email: number;
   skipped_suppressed_contacts: number;
-  skipped_company_ids: string[];
+  skipped_website_ids: string[];
   daily_capacity_per_day: number;
   estimated_completion_at: string | null;
 }
@@ -1984,93 +1908,6 @@ export function getOctoparseTemplates(
   );
 }
 
-function companyPipelineSearchParams(
-  filters: Omit<CompanyPipelineFilters, "page" | "page_size">,
-): URLSearchParams {
-  const search = new URLSearchParams({
-    view: filters.view,
-    email_status: filters.email_status,
-    website: filters.website,
-  });
-  if (filters.query) search.set("query", filters.query);
-  if (filters.status) search.set("status", filters.status);
-  if (filters.batch_id) search.set("batch_id", filters.batch_id);
-  if (filters.ungrouped) search.set("ungrouped", "true");
-  return search;
-}
-
-export async function getCompanies(): Promise<Company[]> {
-  const pageSize = 100;
-  const companies: Company[] = [];
-  let offset = 0;
-  while (true) {
-    const page = await request<Company[]>(
-      `/companies?limit=${pageSize}&offset=${offset}`,
-    );
-    companies.push(...page);
-    if (page.length < pageSize) return companies;
-    offset += pageSize;
-  }
-}
-
-export function getCompanyPipeline(
-  filters: CompanyPipelineFilters,
-): Promise<CompanyPipelineResponse> {
-  const search = companyPipelineSearchParams(filters);
-  search.set("page", String(filters.page));
-  search.set("page_size", String(filters.page_size));
-  return request<CompanyPipelineResponse>(
-    `/companies/pipeline?${search.toString()}`,
-  );
-}
-
-export function getLeadBatches(): Promise<{ items: LeadBatch[] }> {
-  return request<{ items: LeadBatch[] }>("/companies/lead-batches");
-}
-
-export function createLeadBatch(input: {
-  name: string;
-  company_ids: string[];
-}): Promise<LeadBatchSummary> {
-  return request<LeadBatchSummary>("/companies/lead-batches", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function updateLeadBatch(
-  batchId: string,
-  name: string,
-): Promise<LeadBatchSummary> {
-  return request<LeadBatchSummary>(
-    `/companies/lead-batches/${encodeURIComponent(batchId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ name }),
-    },
-  );
-}
-
-export function updateLeadBatchMembers(input: {
-  batch_id?: string;
-  company_ids: string[];
-  action: LeadBatchMembershipAction;
-}): Promise<{ updated_count: number }> {
-  return request<{ updated_count: number }>("/companies/lead-batches/members", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function getCompanyPipelineSelection(
-  filters: Omit<CompanyPipelineFilters, "page" | "page_size">,
-): Promise<CompanyPipelineSelectionResponse> {
-  const search = companyPipelineSearchParams(filters);
-  return request<CompanyPipelineSelectionResponse>(
-    `/companies/pipeline/selection?${search.toString()}`,
-  );
-}
-
 export function getOverview(
   range: OverviewRange,
   timezone: string,
@@ -2176,7 +2013,7 @@ export function previewEmailTemplate(
   orgId: string,
   templateId: string,
   input: {
-    company_id: string;
+    website_id: string;
     contact_id?: string;
     gmail_account_id?: string;
   },
@@ -2194,7 +2031,7 @@ export function sendEmailTemplate(
   orgId: string,
   templateId: string,
   input: {
-    company_id: string;
+    website_id: string;
     contact_id: string;
     gmail_account_id: string;
   },
@@ -2248,13 +2085,13 @@ export function createEmailCampaign(
 export function previewEmailCampaign(
   orgId: string,
   campaignId: string,
-  companyIds: string[],
+  websiteIds: string[],
 ): Promise<EmailCampaignPreview> {
   return request<EmailCampaignPreview>(
     `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}/preview`,
     {
       method: "POST",
-      body: JSON.stringify({ company_ids: companyIds }),
+      body: JSON.stringify({ website_ids: websiteIds }),
     },
   );
 }
@@ -2262,13 +2099,13 @@ export function previewEmailCampaign(
 export function startEmailCampaign(
   orgId: string,
   campaignId: string,
-  companyIds: string[],
+  websiteIds: string[],
 ): Promise<EmailCampaign> {
   return request<EmailCampaign>(
     `/orgs/${encodeURIComponent(orgId)}/campaigns/${encodeURIComponent(campaignId)}/start`,
     {
       method: "POST",
-      body: JSON.stringify({ company_ids: companyIds }),
+      body: JSON.stringify({ website_ids: websiteIds }),
     },
   );
 }
@@ -2303,118 +2140,7 @@ export function deleteEmailCampaign(
   );
 }
 
-export function createCompany(input: CompanyInput): Promise<Company> {
-  return request<Company>("/companies", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function getCompanyContacts(companyId: string): Promise<Contact[]> {
-  return request<Contact[]>(
-    `/companies/${encodeURIComponent(companyId)}/contacts`,
-  );
-}
-
-export function getCompanyContact(
-  companyId: string,
-  contactId: string,
-): Promise<Contact> {
-  return request<Contact>(
-    `/companies/${encodeURIComponent(companyId)}/contacts/${encodeURIComponent(contactId)}`,
-  );
-}
-
-export function createCompanyContact(
-  companyId: string,
-  input: ContactInput,
-): Promise<Contact> {
-  return request<Contact>(
-    `/companies/${encodeURIComponent(companyId)}/contacts`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function updateCompanyContact(
-  companyId: string,
-  contactId: string,
-  input: ContactInput,
-): Promise<Contact> {
-  return request<Contact>(
-    `/companies/${encodeURIComponent(companyId)}/contacts/${encodeURIComponent(contactId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function deleteCompanyContact(
-  companyId: string,
-  contactId: string,
-): Promise<void> {
-  return request<void>(
-    `/companies/${encodeURIComponent(companyId)}/contacts/${encodeURIComponent(contactId)}`,
-    { method: "DELETE" },
-  );
-}
-
-export function getCompany(companyId: string): Promise<Company> {
-  return request<Company>(`/companies/${companyId}`);
-}
-
-export function getPageSpeedScanJob(
-  companyId: string,
-  jobId: string,
-): Promise<PageSpeedScanJob> {
-  return request<PageSpeedScanJob>(
-    `/companies/${companyId}/pagespeed-jobs/${jobId}`,
-  );
-}
-
-export function createPageSpeedScan(
-  companyId: string,
-  input: PageSpeedScanInput,
-): Promise<PageSpeedScanSummary> {
-  return request<PageSpeedScanSummary>(
-    `/companies/${companyId}/pagespeed-scans`,
-    {
-      method: "POST",
-      body: JSON.stringify(input),
-    },
-  );
-}
-
-export function updateCompany(
-  companyId: string,
-  input: CompanyUpdateInput,
-): Promise<Company> {
-  return request<Company>(`/companies/${companyId}`, {
-    method: "PATCH",
-    body: JSON.stringify(input),
-  });
-}
-
-export function updateLeadStatus(
-  companyId: string,
-  leadStatus: string,
-): Promise<Company> {
-  return request<Company>(`/companies/${companyId}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ lead_status: leadStatus }),
-  });
-}
-
-export function deleteCompany(companyId: string): Promise<void> {
-  return request<void>(`/companies/${companyId}`, {
-    method: "DELETE",
-  });
-}
-
-export function searchCompanies(
+export function searchWebsites(
   input: DiscoverySearchInput,
 ): Promise<DiscoveryResponse> {
   return request<DiscoveryResponse>("/discovery/search", {
@@ -2423,7 +2149,7 @@ export function searchCompanies(
   });
 }
 
-export function searchCompaniesWithAi(
+export function searchWebsitesWithAi(
   input: DiscoveryAiSearchInput,
 ): Promise<DiscoveryAiSearchResponse> {
   return request<DiscoveryAiSearchResponse>("/discovery/ai-search", {
@@ -2455,7 +2181,7 @@ export function getSearchKeywordSuggestions(
   );
 }
 
-export function ingestCompanies(
+export function ingestWebsites(
   input: DiscoveryIngestInput,
 ): Promise<IngestResponse> {
   return request<IngestResponse>("/discovery/ingest", {
@@ -2483,49 +2209,62 @@ export function updateWebsite(
   });
 }
 
-export async function addWebsitesToLeads(
-  websiteIds: string[],
-  group: WebsiteLeadGroupSelection = {},
-): Promise<WebsiteAddToLeadsResult> {
-  const result: WebsiteAddToLeadsResult = {
-    requested_count: 0,
-    created_count: 0,
-    already_existing_count: 0,
-    status_updated_count: 0,
-    skipped_listing_count: 0,
-    skipped_uncrawled_count: 0,
-    not_found_count: 0,
-    batch_id: group.batchId ?? null,
-    batch_name: null,
-  };
+export function getWebsiteGroups(): Promise<WebsiteGroup[]> {
+  return request<WebsiteGroup[]>("/websites/groups");
+}
+
+export function createWebsiteGroup(input: {
+  name: string;
+  website_ids: string[];
+}): Promise<WebsiteGroup> {
+  return request<WebsiteGroup>("/websites/groups", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateWebsiteGroup(
+  groupId: string,
+  name: string,
+): Promise<WebsiteGroup> {
+  return request<WebsiteGroup>(
+    `/websites/groups/${encodeURIComponent(groupId)}`,
+    { method: "PATCH", body: JSON.stringify({ name }) },
+  );
+}
+
+export function deleteWebsiteGroup(groupId: string): Promise<void> {
+  return request<void>(
+    `/websites/groups/${encodeURIComponent(groupId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function updateWebsiteGroupMembers(input: {
+  group_id?: string;
+  website_ids: string[];
+  action: WebsiteGroupAction;
+}): Promise<WebsiteGroupMembershipResult> {
+  const result = { updated_count: 0 };
   for (
     let offset = 0;
-    offset < websiteIds.length;
+    offset < input.website_ids.length;
     offset += WEBSITE_ACTION_BATCH_SIZE
   ) {
-    const response = await request<WebsiteAddToLeadsResult>(
-      "/websites/add-to-leads",
+    const response = await request<WebsiteGroupMembershipResult>(
+      "/websites/groups/members",
       {
         method: "POST",
         body: JSON.stringify({
-          website_ids: websiteIds.slice(
+          ...input,
+          website_ids: input.website_ids.slice(
             offset,
             offset + WEBSITE_ACTION_BATCH_SIZE,
           ),
-          batch_id: result.batch_id,
-          batch_name: group.batchName ?? null,
         }),
       },
     );
-    result.requested_count += response.requested_count;
-    result.created_count += response.created_count;
-    result.already_existing_count += response.already_existing_count;
-    result.status_updated_count += response.status_updated_count;
-    result.skipped_listing_count += response.skipped_listing_count;
-    result.skipped_uncrawled_count += response.skipped_uncrawled_count;
-    result.not_found_count += response.not_found_count;
-    result.batch_id = response.batch_id ?? result.batch_id;
-    result.batch_name = response.batch_name ?? result.batch_name;
+    result.updated_count += response.updated_count;
   }
   return result;
 }
@@ -2606,6 +2345,41 @@ export function getWebsiteDetail(
   websiteId: string,
 ): Promise<WebsiteDetailResponse> {
   return request<WebsiteDetailResponse>(`/websites/${websiteId}`);
+}
+
+export function getWebsiteContacts(websiteId: string): Promise<Contact[]> {
+  return request<Contact[]>(`/websites/${encodeURIComponent(websiteId)}/contacts`);
+}
+
+export function createWebsiteContact(
+  websiteId: string,
+  input: WebsiteContactInput,
+): Promise<Contact> {
+  return request<Contact>(
+    `/websites/${encodeURIComponent(websiteId)}/contacts`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function updateWebsiteContact(
+  websiteId: string,
+  contactId: string,
+  input: Partial<WebsiteContactInput>,
+): Promise<Contact> {
+  return request<Contact>(
+    `/websites/${encodeURIComponent(websiteId)}/contacts/${encodeURIComponent(contactId)}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
+
+export function deleteWebsiteContact(
+  websiteId: string,
+  contactId: string,
+): Promise<void> {
+  return request<void>(
+    `/websites/${encodeURIComponent(websiteId)}/contacts/${encodeURIComponent(contactId)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function refetchWebsiteHypeStat(
@@ -2839,10 +2613,6 @@ export function getPageSpeedJobSummary(): Promise<JobQueueStatusSummary> {
   return request<JobQueueStatusSummary>("/pagespeed/jobs/summary");
 }
 
-export function getCompanyNavigationSummary(): Promise<CompanyNavigationSummary> {
-  return request<CompanyNavigationSummary>("/companies/navigation-summary");
-}
-
 export function getWebsiteCrawlJobFailureReasons(): Promise<string[]> {
   return request<string[]>("/crawler/jobs/failure-reasons");
 }
@@ -2893,22 +2663,5 @@ export function retryPageSpeedScanJobs(
     method: "POST",
     body: JSON.stringify({ job_ids: jobIds }),
   });
-}
-
-export function getCompanyWebsiteCrawl(
-  companyId: string,
-): Promise<WebsiteCrawlResponse | null> {
-  return request<WebsiteCrawlResponse | null>(
-    `/companies/${companyId}/website-crawl`,
-  );
-}
-
-export function crawlCompanyWebsite(
-  companyId: string,
-): Promise<WebsiteCrawlJobResponse> {
-  return request<WebsiteCrawlJobResponse>(
-    `/companies/${companyId}/website-crawl`,
-    { method: "POST" },
-  );
 }
 

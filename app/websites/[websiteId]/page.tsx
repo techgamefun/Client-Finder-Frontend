@@ -9,7 +9,7 @@ export default function WebsiteRoute({
   return (
     <Suspense
       fallback={
-        <section className="company-detail-state" aria-live="polite">
+        <section className="website-detail-state" aria-live="polite">
           <strong>Loading website record…</strong>
         </section>
       }

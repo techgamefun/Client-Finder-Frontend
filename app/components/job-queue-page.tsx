@@ -1347,7 +1347,7 @@ function ManualCrawlEntryDialog({
         </button>
       </header>
       <form
-        className="company-form manual-crawl-form"
+        className="website-form manual-crawl-form"
         onSubmit={handleSubmit}
       >
         <div className="manual-crawl-fields">

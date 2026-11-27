@@ -26,7 +26,8 @@ import {
 } from "lucide-react";
 import {
   addExcludedDomainsBatch,
-  addWebsitesToLeads,
+  createWebsiteGroup,
+  deleteWebsiteGroup,
   fetchMissingWebsiteAhrefsDomainRatings,
   fetchMissingWebsiteHypeStatProfiles,
   fetchMissingWebsitePageSpeedScans,
@@ -35,9 +36,11 @@ import {
   getWebsiteEnrichmentCounts,
   getWebsiteRegistryFacets,
   getWebsiteRegistryPage,
-  getLeadBatches,
+  getWebsiteGroups,
   reclassifyWebsite,
   reclassifyUnclassifiedWebsites,
+  updateWebsiteGroup,
+  updateWebsiteGroupMembers,
   updateWebsite,
   updateWebsitesStatus,
   websiteRegistryPageQueryKey,
@@ -46,6 +49,7 @@ import type {
   ExcludedDomainInput,
   PageSpeedScanSummary,
   WebsiteRecord,
+  WebsiteGroupAction,
   WebsiteBulkEnrichmentResult,
   WebsitePageType,
   WebsiteRegistryPageParams,
@@ -130,7 +134,6 @@ const defaultWebsiteColumns = websiteColumnGroups.flatMap((group) =>
 );
 const websiteStatuses: WebsiteStatus[] = [
   "new",
-  "lead",
   "checked",
   "qualified",
   "contacted",
@@ -874,18 +877,22 @@ export function WebsitesPage() {
   ]);
   const websiteScrollTimerRef = useRef<number | null>(null);
   const selectFilteredRef = useRef<HTMLInputElement>(null);
-  const addToLeadDialogRef = useRef<HTMLDialogElement>(null);
+  const websiteGroupDialogRef = useRef<HTMLDialogElement>(null);
   const bulkActionDialogRef = useRef<HTMLDialogElement>(null);
   const websiteFiltersDialogRef = useRef<HTMLDialogElement>(null);
   const enrichmentMenuRef = useRef<HTMLDivElement>(null);
   const enrichmentTriggerRef = useRef<HTMLButtonElement>(null);
   const [enrichmentMenuOpen, setEnrichmentMenuOpen] = useState(false);
   const [crawlDialogOpen, setCrawlDialogOpen] = useState(false);
-  const [leadGroupMode, setLeadGroupMode] = useState<"existing" | "custom">(
-    "custom",
-  );
-  const [selectedLeadBatchId, setSelectedLeadBatchId] = useState("");
-  const [customLeadBatchName, setCustomLeadBatchName] = useState("");
+  const [websiteGroupMode, setWebsiteGroupMode] = useState<
+    "existing" | "create"
+  >("create");
+  const [websiteGroupAction, setWebsiteGroupAction] =
+    useState<WebsiteGroupAction>("add");
+  const [selectedWebsiteGroupId, setSelectedWebsiteGroupId] = useState("");
+  const [newWebsiteGroupName, setNewWebsiteGroupName] = useState("");
+  const [editingWebsiteGroupName, setEditingWebsiteGroupName] = useState(false);
+  const [websiteGroupNameDraft, setWebsiteGroupNameDraft] = useState("");
   const [pendingBulkAction, setPendingBulkAction] = useState<
     "status" | "exclude" | null
   >(null);
@@ -1012,12 +1019,16 @@ export function WebsitesPage() {
     staleTime: 60_000,
     retry: false,
   });
-  const leadBatchesQuery = useQuery({
-    queryKey: ["companies", "lead-batches"],
-    queryFn: getLeadBatches,
+  const websiteGroupsQuery = useQuery({
+    queryKey: ["websites", "groups"],
+    queryFn: getWebsiteGroups,
     staleTime: 60_000,
     retry: false,
   });
+  const websiteGroups = websiteGroupsQuery.data ?? [];
+  const selectedWebsiteGroup = websiteGroups.find(
+    (group) => group.id === selectedWebsiteGroupId,
+  );
   const facetsQuery = useQuery({
     queryKey: ["websites", "registry-facets"],
     queryFn: getWebsiteRegistryFacets,
@@ -1082,24 +1093,61 @@ export function WebsitesPage() {
       }
     },
   });
-  const addToLeadMutation = useMutation({
+  const refreshWebsiteGroups = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["websites"] }),
+      queryClient.invalidateQueries({ queryKey: ["websites", "groups"] }),
+    ]);
+  };
+  const finishWebsiteGroupAction = async () => {
+    websiteGroupDialogRef.current?.close();
+    setSelectedWebsiteRecords(new Map());
+    setBulkStatus("");
+    await refreshWebsiteGroups();
+  };
+  const createWebsiteGroupMutation = useMutation({
+    mutationFn: ({ name, websiteIds }: { name: string; websiteIds: string[] }) =>
+      createWebsiteGroup({ name, website_ids: websiteIds }),
+    onSuccess: finishWebsiteGroupAction,
+  });
+  const websiteGroupMembersMutation = useMutation({
     mutationFn: ({
       websiteIds,
-      batchId,
-      batchName,
+      action,
+      groupId,
     }: {
       websiteIds: string[];
-      batchId?: string;
-      batchName?: string;
-    }) => addWebsitesToLeads(websiteIds, { batchId, batchName }),
-    onSuccess: async () => {
-      addToLeadDialogRef.current?.close();
-      setSelectedWebsiteRecords(new Map());
-      setBulkStatus("");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["websites"] }),
-        queryClient.invalidateQueries({ queryKey: ["companies"] }),
-      ]);
+      action: WebsiteGroupAction;
+      groupId?: string;
+    }) =>
+      updateWebsiteGroupMembers({
+        website_ids: websiteIds,
+        action,
+        group_id: groupId,
+      }),
+    onSuccess: finishWebsiteGroupAction,
+  });
+  const renameWebsiteGroupMutation = useMutation({
+    mutationFn: ({
+      groupId,
+      name,
+    }: {
+      groupId: string;
+      name: string;
+    }) => updateWebsiteGroup(groupId, name),
+    onSuccess: async (group) => {
+      setEditingWebsiteGroupName(false);
+      setWebsiteGroupNameDraft("");
+      setSelectedWebsiteGroupId(group.id);
+      await refreshWebsiteGroups();
+    },
+  });
+  const deleteWebsiteGroupMutation = useMutation({
+    mutationFn: deleteWebsiteGroup,
+    onSuccess: async (_, groupId) => {
+      if (selectedWebsiteGroupId === groupId) setSelectedWebsiteGroupId("");
+      setEditingWebsiteGroupName(false);
+      await refreshWebsiteGroups();
     },
   });
   const batchStatusMutation = useMutation({
@@ -1379,6 +1427,11 @@ export function WebsitesPage() {
   const hasPartiallySelectedPage =
     selectedPageCount > 0 && !allPageSelected;
   const selectedCount = selectedWebsiteIds.size;
+  const websiteGroupMutationPending =
+    createWebsiteGroupMutation.isPending ||
+    websiteGroupMembersMutation.isPending ||
+    renameWebsiteGroupMutation.isPending ||
+    deleteWebsiteGroupMutation.isPending;
 
   useEffect(() => {
     if (selectFilteredRef.current) {
@@ -1496,19 +1549,66 @@ export function WebsitesPage() {
     openBulkActionConfirmation("status");
   }
 
-  function submitAddSelectedWebsites(event: FormEvent<HTMLFormElement>) {
+  function submitWebsiteGroupAction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const websiteIds = Array.from(selectedWebsiteIds);
     if (websiteIds.length === 0) return;
-    if (leadGroupMode === "existing") {
-      if (!selectedLeadBatchId) return;
-      addToLeadMutation.mutate({ websiteIds, batchId: selectedLeadBatchId });
+    createWebsiteGroupMutation.reset();
+    websiteGroupMembersMutation.reset();
+    renameWebsiteGroupMutation.reset();
+    deleteWebsiteGroupMutation.reset();
+    if (websiteGroupAction === "ungroup") {
+      websiteGroupMembersMutation.mutate({
+        websiteIds,
+        action: "ungroup",
+      });
       return;
     }
 
-    const batchName = customLeadBatchName.trim();
-    if (!batchName) return;
-    addToLeadMutation.mutate({ websiteIds, batchName });
+    if (websiteGroupMode === "create") {
+      const name = newWebsiteGroupName.trim();
+      if (!name) return;
+      createWebsiteGroupMutation.mutate({ name, websiteIds });
+      return;
+    }
+
+    if (!selectedWebsiteGroupId) return;
+    websiteGroupMembersMutation.mutate({
+      websiteIds,
+      action: websiteGroupAction,
+      groupId: selectedWebsiteGroupId,
+    });
+  }
+
+  function saveWebsiteGroupRename() {
+    const name = websiteGroupNameDraft.trim();
+    if (!selectedWebsiteGroup || !name) return;
+    renameWebsiteGroupMutation.reset();
+    renameWebsiteGroupMutation.mutate({
+      groupId: selectedWebsiteGroup.id,
+      name,
+    });
+  }
+
+  function removeSelectedWebsiteGroup() {
+    if (!selectedWebsiteGroup) return;
+    if (
+      !window.confirm(
+        `Delete the website group "${selectedWebsiteGroup.name}"? Its websites will remain in the registry.`,
+      )
+    ) {
+      return;
+    }
+    deleteWebsiteGroupMutation.reset();
+    deleteWebsiteGroupMutation.mutate(selectedWebsiteGroup.id);
+  }
+
+  function openWebsiteGroupDialog() {
+    createWebsiteGroupMutation.reset();
+    websiteGroupMembersMutation.reset();
+    renameWebsiteGroupMutation.reset();
+    deleteWebsiteGroupMutation.reset();
+    websiteGroupDialogRef.current?.showModal();
   }
 
   function resetPage() {
@@ -1600,119 +1700,216 @@ export function WebsitesPage() {
         />
       )}
       <dialog
-        aria-labelledby="website-lead-group-dialog-title"
-        className="add-company-dialog website-lead-group-dialog"
+        aria-labelledby="website-group-dialog-title"
+        className="website-action-dialog website-group-dialog"
         onClick={(event) => {
           if (event.target === event.currentTarget) {
             event.currentTarget.close();
           }
         }}
-        ref={addToLeadDialogRef}
+        ref={websiteGroupDialogRef}
       >
         <div className="panel-heading compact-heading">
           <div>
-            <p className="eyebrow">WEBSITE IMPORT</p>
-            <h2 id="website-lead-group-dialog-title">
-              Choose a lead group
-            </h2>
+            <p className="eyebrow">WEBSITE GROUPS</p>
+            <h2 id="website-group-dialog-title">Group selected websites</h2>
             <p className="panel-subtitle">
-              Add {selectedCount} selected website
-              {selectedCount === 1 ? "" : "s"} to an existing group or create
-              one with a custom name.
+              Organize {selectedCount} selected website
+              {selectedCount === 1 ? "" : "s"} into a group or remove them from
+              their current groups.
             </p>
           </div>
           <button
-            aria-label="Close lead group selection"
+            aria-label="Close website group dialog"
             className="icon-button"
-            onClick={() => addToLeadDialogRef.current?.close()}
+            onClick={() => websiteGroupDialogRef.current?.close()}
             type="button"
           >
             ×
           </button>
         </div>
         <form
-          className="company-form website-lead-group-form"
-          onSubmit={submitAddSelectedWebsites}
+          className="website-form website-group-form"
+          onSubmit={submitWebsiteGroupAction}
         >
-          <label className="website-lead-group-option">
+          <label className="website-group-option">
             <input
-              checked={leadGroupMode === "existing"}
-              disabled={
-                leadBatchesQuery.isLoading ||
-                (leadBatchesQuery.data?.items.length ?? 0) === 0
-              }
-              name="lead-group-mode"
-              onChange={() => setLeadGroupMode("existing")}
+              checked={websiteGroupMode === "existing"}
+              disabled={websiteGroupsQuery.isLoading || websiteGroups.length === 0}
+              name="website-group-mode"
+              onChange={() => setWebsiteGroupMode("existing")}
               type="radio"
             />
             <span>
-              <strong>Add to an existing group</strong>
-              <small>Keep the group&apos;s name and add these leads to it.</small>
+              <strong>Use an existing group</strong>
+              <small>Choose a group and add or move selected websites.</small>
             </span>
           </label>
-          {leadGroupMode === "existing" && (
-            <label className="website-lead-group-field">
-              Existing group
-              <select
-                onChange={(event) =>
-                  setSelectedLeadBatchId(event.target.value)
-                }
-                required
-                value={selectedLeadBatchId}
-              >
-                <option value="">Choose a group</option>
-                {(leadBatchesQuery.data?.items ?? []).map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batch.name} ({batch.lead_count} leads)
-                  </option>
-                ))}
-              </select>
-            </label>
+          {websiteGroupMode === "existing" && (
+            <>
+              <label className="website-group-field">
+                Group
+                <select
+                  onChange={(event) =>
+                    setSelectedWebsiteGroupId(event.target.value)
+                  }
+                  required={websiteGroupAction !== "ungroup"}
+                  value={selectedWebsiteGroupId}
+                >
+                  <option value="">Choose a group</option>
+                  {websiteGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name} ({group.website_count} websites)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="website-group-field">
+                Membership action
+                <select
+                  onChange={(event) =>
+                    setWebsiteGroupAction(
+                      event.target.value as WebsiteGroupAction,
+                    )
+                  }
+                  value={websiteGroupAction}
+                >
+                  <option value="add">Add (keep other group memberships)</option>
+                  <option value="move">Move (remove other memberships)</option>
+                  <option value="ungroup">Ungroup selected websites</option>
+                </select>
+              </label>
+              {selectedWebsiteGroup && websiteGroupAction !== "ungroup" && (
+                <div className="website-group-management">
+                  {editingWebsiteGroupName ? (
+                    <div className="website-group-rename-form">
+                      <label className="website-group-field">
+                        New group name
+                        <input
+                          autoComplete="off"
+                          maxLength={160}
+                          onChange={(event) =>
+                            setWebsiteGroupNameDraft(event.target.value)
+                          }
+                          required
+                          value={websiteGroupNameDraft}
+                        />
+                      </label>
+                      <button
+                        className="button button-secondary"
+                        disabled={
+                          renameWebsiteGroupMutation.isPending ||
+                          !websiteGroupNameDraft.trim()
+                        }
+                        onClick={saveWebsiteGroupRename}
+                        type="button"
+                      >
+                        {renameWebsiteGroupMutation.isPending
+                          ? "Saving…"
+                          : "Save name"}
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        onClick={() => setEditingWebsiteGroupName(false)}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        className="button button-secondary"
+                        onClick={() => {
+                          setWebsiteGroupNameDraft(selectedWebsiteGroup.name);
+                          setEditingWebsiteGroupName(true);
+                        }}
+                        type="button"
+                      >
+                        Rename group
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        disabled={deleteWebsiteGroupMutation.isPending}
+                        onClick={removeSelectedWebsiteGroup}
+                        type="button"
+                      >
+                        {deleteWebsiteGroupMutation.isPending
+                          ? "Deleting…"
+                          : "Delete group"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </>
           )}
-          <label className="website-lead-group-option">
+          <label className="website-group-option">
             <input
-              checked={leadGroupMode === "custom"}
-              name="lead-group-mode"
-              onChange={() => setLeadGroupMode("custom")}
+              checked={websiteGroupMode === "create"}
+              name="website-group-mode"
+              onChange={() => {
+                setWebsiteGroupMode("create");
+                if (websiteGroupAction === "ungroup") {
+                  setWebsiteGroupAction("add");
+                }
+              }}
               type="radio"
             />
             <span>
-              <strong>Create a custom-named group</strong>
-              <small>
-                A new group is created if at least one selected website can be
-                added as a lead.
-              </small>
+              <strong>Create a new group</strong>
+              <small>Create a named group containing the selected websites.</small>
             </span>
           </label>
-          {leadGroupMode === "custom" && (
-            <label className="website-lead-group-field">
-              Group name
-              <input
-                autoComplete="off"
-                maxLength={160}
-                onChange={(event) =>
-                  setCustomLeadBatchName(event.target.value)
-                }
-                placeholder="e.g. Q4 manufacturing prospects"
-                required
-                value={customLeadBatchName}
-              />
-            </label>
-          )}
-          {leadBatchesQuery.isError && (
-            <p className="website-lead-group-error" role="alert">
-              Could not load existing groups: {leadBatchesQuery.error.message}
+          {websiteGroupMode === "create" &&
+            websiteGroupAction !== "ungroup" && (
+              <label className="website-group-field">
+                New group name
+                <input
+                  autoComplete="off"
+                  maxLength={160}
+                  onChange={(event) =>
+                    setNewWebsiteGroupName(event.target.value)
+                  }
+                  placeholder="e.g. Q4 manufacturing websites"
+                  required
+                  value={newWebsiteGroupName}
+                />
+              </label>
+            )}
+          {websiteGroupsQuery.isError && (
+            <p className="website-group-error" role="alert">
+              Could not load website groups: {websiteGroupsQuery.error.message}
             </p>
           )}
-          {addToLeadMutation.isError && (
-            <p className="website-lead-group-error" role="alert">
-              Could not add websites to Leads: {addToLeadMutation.error.message}
+          {createWebsiteGroupMutation.isError && (
+            <p className="website-group-error" role="alert">
+              Could not create website group:{" "}
+              {createWebsiteGroupMutation.error.message}
             </p>
           )}
-          <div className="website-lead-group-actions">
+          {websiteGroupMembersMutation.isError && (
+            <p className="website-group-error" role="alert">
+              Could not update website group memberships:{" "}
+              {websiteGroupMembersMutation.error.message}
+            </p>
+          )}
+          {renameWebsiteGroupMutation.isError && (
+            <p className="website-group-error" role="alert">
+              Could not rename website group:{" "}
+              {renameWebsiteGroupMutation.error.message}
+            </p>
+          )}
+          {deleteWebsiteGroupMutation.isError && (
+            <p className="website-group-error" role="alert">
+              Could not delete website group:{" "}
+              {deleteWebsiteGroupMutation.error.message}
+            </p>
+          )}
+          <div className="website-group-actions">
             <button
               className="button button-secondary"
-              onClick={() => addToLeadDialogRef.current?.close()}
+              onClick={() => websiteGroupDialogRef.current?.close()}
               type="button"
             >
               Cancel
@@ -1720,17 +1917,25 @@ export function WebsitesPage() {
             <button
               className="button button-primary"
               disabled={
-                addToLeadMutation.isPending ||
-                (leadGroupMode === "existing" && leadBatchesQuery.isLoading) ||
-                (leadGroupMode === "existing" &&
-                  (!selectedLeadBatchId || leadBatchesQuery.isError)) ||
-                (leadGroupMode === "custom" && !customLeadBatchName.trim())
+                websiteGroupMutationPending ||
+                (websiteGroupMode === "existing" &&
+                  (websiteGroupsQuery.isLoading || websiteGroupsQuery.isError)) ||
+                (websiteGroupAction !== "ungroup" &&
+                  (websiteGroupMode === "existing"
+                    ? !selectedWebsiteGroupId
+                    : !newWebsiteGroupName.trim()))
               }
               type="submit"
             >
-              {addToLeadMutation.isPending
-                ? "Adding websites..."
-                : "Add websites to Leads"}
+              {websiteGroupMutationPending
+                ? "Updating…"
+                : websiteGroupAction === "ungroup"
+                  ? "Ungroup selected websites"
+                  : websiteGroupMode === "create"
+                    ? "Create website group"
+                    : websiteGroupAction === "move"
+                      ? "Move to group"
+                      : "Add to group"}
             </button>
           </div>
         </form>
@@ -1739,7 +1944,7 @@ export function WebsitesPage() {
       <dialog
         aria-describedby="website-bulk-action-description"
         aria-labelledby="website-bulk-action-title"
-        className="add-company-dialog website-bulk-action-dialog"
+        className="website-action-dialog website-bulk-action-dialog"
         onCancel={(event) => {
           event.preventDefault();
           closeBulkActionConfirmation();
@@ -2460,7 +2665,7 @@ export function WebsitesPage() {
                 className="website-clear-selection"
                 disabled={
                   batchStatusMutation.isPending ||
-                  addToLeadMutation.isPending ||
+                  websiteGroupMutationPending ||
                   excludeSelectedWebsitesMutation.isPending
                 }
                 onClick={() => {
@@ -2480,7 +2685,7 @@ export function WebsitesPage() {
                   aria-label="Status to apply to selected websites"
                   disabled={
                     batchStatusMutation.isPending ||
-                    addToLeadMutation.isPending ||
+                    websiteGroupMutationPending ||
                     excludeSelectedWebsitesMutation.isPending
                   }
                   onChange={(event) => {
@@ -2504,7 +2709,7 @@ export function WebsitesPage() {
                 disabled={
                   !bulkStatus ||
                   batchStatusMutation.isPending ||
-                  addToLeadMutation.isPending ||
+                  websiteGroupMutationPending ||
                   excludeSelectedWebsitesMutation.isPending
                 }
                 onClick={changeSelectedWebsiteStatus}
@@ -2517,21 +2722,21 @@ export function WebsitesPage() {
               className="button button-primary"
               disabled={
                 batchStatusMutation.isPending ||
-                addToLeadMutation.isPending ||
+                websiteGroupMutationPending ||
                 excludeSelectedWebsitesMutation.isPending
               }
-              onClick={() => addToLeadDialogRef.current?.showModal()}
+              onClick={openWebsiteGroupDialog}
               type="button"
             >
-              {addToLeadMutation.isPending
-                ? "Adding to Lead…"
-                : "Add selected to Lead"}
+              {websiteGroupMutationPending
+                ? "Updating groups…"
+                : "Manage website groups"}
             </button>
             <button
               className="button button-secondary website-exclude-selected-button"
               disabled={
                 batchStatusMutation.isPending ||
-                addToLeadMutation.isPending ||
+                websiteGroupMutationPending ||
                 excludeSelectedWebsitesMutation.isPending
               }
               onClick={() => openBulkActionConfirmation("exclude")}
@@ -2555,38 +2760,25 @@ export function WebsitesPage() {
             Could not update website: {updateMutation.error.message}
           </div>
         )}
-        {addToLeadMutation.isError && (
-          <div className="alert alert-error" role="alert">
-            Could not add websites to Leads: {addToLeadMutation.error.message}
+        {createWebsiteGroupMutation.isSuccess && (
+          <div className="alert alert-success" role="status">
+            Created website group{" "}
+            <strong>{createWebsiteGroupMutation.data.name}</strong> with the
+            selected websites.
           </div>
         )}
-        {addToLeadMutation.isSuccess && (
+        {websiteGroupMembersMutation.isSuccess && (
           <div className="alert alert-success" role="status">
-            Created {addToLeadMutation.data.created_count} companies and marked{" "}
-            {addToLeadMutation.data.status_updated_count} websites as Lead.
-            {addToLeadMutation.data.batch_id && (
-              <>
-                {" "}Added to{" "}
-                <strong>
-                  {addToLeadMutation.data.batch_name ?? "a new lead group"}
-                </strong>
-                {" "}·{" "}
-                <Link
-                  href={`/leads?batch=${encodeURIComponent(addToLeadMutation.data.batch_id)}`}
-                >
-                  View group
-                </Link>
-                .
-              </>
-            )}
-            {addToLeadMutation.data.already_existing_count > 0 &&
-              ` ${addToLeadMutation.data.already_existing_count} already had a company.`}
-            {addToLeadMutation.data.skipped_listing_count > 0 &&
-              ` ${addToLeadMutation.data.skipped_listing_count} listing websites were skipped.`}
-            {addToLeadMutation.data.skipped_uncrawled_count > 0 &&
-              ` ${addToLeadMutation.data.skipped_uncrawled_count} unindexed websites were skipped.`}
-            {addToLeadMutation.data.not_found_count > 0 &&
-              ` ${addToLeadMutation.data.not_found_count} websites were no longer available.`}
+            {websiteGroupAction === "ungroup"
+              ? "Ungrouped"
+              : websiteGroupAction === "move"
+                ? "Moved"
+                : "Added"}{" "}
+            {websiteGroupMembersMutation.data.updated_count} website
+            {websiteGroupMembersMutation.data.updated_count === 1 ? "" : "s"}{" "}
+            {websiteGroupAction === "ungroup"
+              ? "from their groups."
+              : `to ${selectedWebsiteGroup?.name ?? "the selected group"}.`}
           </div>
         )}
         {reclassifyMutation.isError && (
@@ -2717,7 +2909,7 @@ export function WebsitesPage() {
                           checked={allPageSelected}
                           disabled={
                             batchStatusMutation.isPending ||
-                            addToLeadMutation.isPending ||
+                            websiteGroupMutationPending ||
                             excludeSelectedWebsitesMutation.isPending ||
                             pageWebsites.length === 0
                           }
@@ -2842,7 +3034,7 @@ export function WebsitesPage() {
                             checked={selectedWebsiteIds.has(website.id)}
                             disabled={
                               batchStatusMutation.isPending ||
-                              addToLeadMutation.isPending ||
+                              websiteGroupMutationPending ||
                               excludeSelectedWebsitesMutation.isPending
                             }
                             onChange={() =>
@@ -2912,7 +3104,7 @@ export function WebsitesPage() {
                           <WebsiteStatusMenu
                             disabled={
                               updateMutation.isPending ||
-                              addToLeadMutation.isPending ||
+                              websiteGroupMutationPending ||
                               batchStatusMutation.isPending ||
                               reclassifyMutation.isPending ||
                               reclassifyAllMutation.isPending
@@ -2990,7 +3182,7 @@ export function WebsitesPage() {
                             className="website-review-select"
                             disabled={
                               updateMutation.isPending ||
-                              addToLeadMutation.isPending ||
+                              websiteGroupMutationPending ||
                               reclassifyMutation.isPending ||
                               reclassifyAllMutation.isPending
                             }
@@ -3020,7 +3212,7 @@ export function WebsitesPage() {
                             className="icon-button website-recompute-button"
                             disabled={
                               updateMutation.isPending ||
-                              addToLeadMutation.isPending ||
+                              websiteGroupMutationPending ||
                               reclassifyMutation.isPending ||
                               reclassifyAllMutation.isPending
                             }
@@ -3038,7 +3230,7 @@ export function WebsitesPage() {
                           className="website-review-input"
                           disabled={
                             updateMutation.isPending ||
-                            addToLeadMutation.isPending ||
+                            websiteGroupMutationPending ||
                             reclassifyMutation.isPending ||
                             reclassifyAllMutation.isPending
                           }
@@ -3126,7 +3318,7 @@ export function WebsitesPage() {
                           className="website-review-input website-language-input"
                           disabled={
                             updateMutation.isPending ||
-                            addToLeadMutation.isPending ||
+                            websiteGroupMutationPending ||
                             reclassifyMutation.isPending ||
                             reclassifyAllMutation.isPending
                           }

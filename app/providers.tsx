@@ -58,18 +58,16 @@ function QueueEventsListener() {
               ["crawler", "queue-jobs"],
               ["crawler", "queue-summary"],
               ["website-crawl-job"],
-              ["company-website-crawl"],
               ["website-detail"],
               ["websites"],
               ["website-corpus-words"],
-              ["company"],
               ["overview"],
             ]
           : [
               ["pagespeed", "queue-jobs"],
               ["pagespeed", "queue-summary"],
-              ["company"],
               ["website-detail"],
+              ["websites"],
               ["overview"],
             ];
       for (const queryKey of queryKeys) {

@@ -10,7 +10,7 @@ import { PUBLIC_CONTACT_EMAIL, SITE_NAME } from "@/lib/site";
 export const metadata: Metadata = {
   title: `Terms of service | ${SITE_NAME}`,
   description:
-    "Review the terms for using ProspectLoop’s company research and outreach workspace.",
+    "Review the terms for using ProspectLoop’s website research and outreach workspace.",
   alternates: { canonical: "/terms" },
 };
 
@@ -32,9 +32,9 @@ export default function TermsPage() {
           <section>
             <h2>Using the service</h2>
             <p>
-              ProspectLoop provides a workspace for discovering businesses,
-              reviewing website research, managing company and contact records,
-              and organizing email outreach. You must be authorized to act for
+              ProspectLoop provides a workspace for discovering websites,
+              reviewing website research, managing website profiles and
+              contacts, and organizing email outreach. You must be authorized to act for
               your organization and keep your sign-in details secure. Your
               organization is responsible for activity by its users.
             </p>

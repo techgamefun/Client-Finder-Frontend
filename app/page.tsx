@@ -218,15 +218,15 @@ export default function Home() {
           <div className="public-home-hero-copy">
             <p className="public-home-hero-eyebrow">
               <Sparkles aria-hidden="true" size={14} />
-              <span>LEAD-READY WEBSITE RESEARCH</span>
+              <span>WEBSITE RESEARCH FOR OUTREACH</span>
             </p>
             <h1 id="public-home-title">
               Know the website{" "}
               <span>before you reach out.</span>
             </h1>
             <p className="public-home-hero-description">
-              Find potential companies, understand what their websites reveal,
-              and turn the strongest fits into organized leads—all in one
+              Find relevant websites, understand what they reveal, and
+              organize the strongest fits for thoughtful outreach—all in one
               research workspace.
             </p>
             <div className="public-home-hero-actions">
@@ -268,7 +268,7 @@ export default function Home() {
           <div className="public-home-hero-visual">
             <div aria-hidden="true" className="public-home-hero-orbit" />
             <ProductScreenshot
-              alt="Organization dashboard showing lead funnel, website trends, data coverage and team activity."
+              alt="Organization dashboard showing website workflow, research coverage and team activity."
               priority
               screen="organization-dashboard"
             />
@@ -295,7 +295,7 @@ export default function Home() {
               Every website gets a clearer next step.
             </h2>
             <p>
-              Move from a promising domain to a researched, organized lead.
+              Move from a promising domain to a researched, organized website.
               Each view answers a different question—and keeps the evidence
               close to the decision.
             </p>
@@ -316,7 +316,7 @@ export default function Home() {
                 items={[
                   "Filter and sort websites by type, topic, status and available metrics.",
                   "See crawl, Ahrefs DR, HypeStat and PageSpeed data alongside each domain.",
-                  "Select promising websites and add them to a named lead group.",
+                  "Select promising websites and add them to a named website group.",
                 ]}
               />
               <p className="public-home-usage-tip">
@@ -355,7 +355,7 @@ export default function Home() {
                 <ShieldCheck aria-hidden="true" size={15} />
                 <span>
                   <strong>Use the context:</strong> verify important details
-                  on the original website before contacting a company.
+                  on the original website before reaching out.
                 </span>
               </p>
             </div>
@@ -406,14 +406,14 @@ export default function Home() {
               <h3>Turn research into coordinated action.</h3>
               <p>
                 The organization dashboard connects the work: follow
-                discoveries through crawls, leads, contacts and email activity.
+                discoveries through indexing, contacts and email activity.
                 Team activity and job health help admins see where progress is
                 happening and where attention may be needed.
               </p>
               <FeatureList
                 items={[
                   "Track organization-wide performance over 7, 30 or 90 days.",
-                  "See conversion between stages and compare daily website and lead activity.",
+                  "See conversion between stages and compare daily website activity.",
                   "Check member activity, data coverage and background job status.",
                 ]}
               />
@@ -426,7 +426,7 @@ export default function Home() {
               </p>
             </div>
             <ProductScreenshot
-              alt="Organization dashboard with performance cards, conversion funnel, team activity and recent leads."
+              alt="Organization dashboard with performance cards, website funnel, team activity and recent websites."
               screen="organization-dashboard"
             />
           </article>
@@ -443,7 +443,7 @@ export default function Home() {
               A practical loop from research to outreach.
             </h2>
             <p>
-              You control what becomes a lead. Enrichment runs in the
+              You control which websites are qualified. Enrichment runs in the
               background, so you can keep working while provider results are
               collected.
             </p>
@@ -456,7 +456,7 @@ export default function Home() {
               <span className="public-home-how-number">STEP 01</span>
               <h3>Discover websites</h3>
               <p>
-                Search for relevant businesses or bring in websites you
+                Search for relevant websites or bring in sites you
                 already know. Keep early candidates in the website registry.
               </p>
             </li>
@@ -480,7 +480,7 @@ export default function Home() {
               <h3>Qualify and group</h3>
               <p>
                 Review the website profile, decide whether it fits, then add
-                selected sites to a lead group you can revisit.
+                selected sites to a website group you can revisit.
               </p>
             </li>
             <li>
@@ -490,8 +490,8 @@ export default function Home() {
               <span className="public-home-how-number">STEP 04</span>
               <h3>Work your pipeline</h3>
               <p>
-                Review company and contact details, manage lead status, and
-                move qualified opportunities toward thoughtful outreach.
+                Review website and contact details, manage website status, and
+                move qualified sites toward thoughtful outreach.
               </p>
             </li>
           </ol>

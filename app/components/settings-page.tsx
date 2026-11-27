@@ -725,7 +725,7 @@ export function SettingsPage({
                 <p className="eyebrow">DISCOVERY DEFAULTS</p>
                 <h3>Default Tavily search preferences</h3>
                 <p className="panel-subtitle">
-                  These organization defaults prefill the Discover Leads filters.
+                  These organization defaults prefill the Discover Websites filters.
                 </p>
               </div>
               {!isOrganizationAdmin && (
