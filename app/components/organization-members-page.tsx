@@ -62,16 +62,21 @@ export function OrganizationMembersPage() {
     retry: false,
   });
   const isAdmin = sessionQuery.data?.user.role === "admin";
+  const isPersonalWorkspace =
+    sessionQuery.data?.organizations.find(
+      (organization) =>
+        organization.id === sessionQuery.data?.organization_id,
+    )?.is_personal ?? false;
   const usersQuery = useQuery({
     queryKey: ["organization-users"],
     queryFn: getOrganizationUsers,
-    enabled: isAdmin,
+    enabled: isAdmin && !isPersonalWorkspace,
     retry: false,
   });
   const invitationsQuery = useQuery({
     queryKey: ["organization-invitations"],
     queryFn: getOrganizationInvitations,
-    enabled: isAdmin,
+    enabled: isAdmin && !isPersonalWorkspace,
     retry: false,
   });
   const createMutation = useMutation({
@@ -173,6 +178,17 @@ export function OrganizationMembersPage() {
       <section className="panel organization-access-panel" role="alert">
         <h1>Members access restricted</h1>
         <p>Only organization administrators can manage members.</p>
+      </section>
+    );
+  }
+  if (isPersonalWorkspace) {
+    return (
+      <section className="panel organization-access-panel">
+        <h1>Personal workspace</h1>
+        <p>
+          This workspace is private to you. Create an organization from the
+          account menu to invite team members.
+        </p>
       </section>
     );
   }

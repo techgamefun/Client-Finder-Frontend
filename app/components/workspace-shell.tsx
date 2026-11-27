@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,11 +33,13 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
   type ReactNode,
 } from "react";
 import {
   ApiError,
+  createOrganization,
   getAuthSession,
   getCompanyNavigationSummary,
   getCompanies,
@@ -65,7 +68,17 @@ import { BrandMark } from "./brand-mark";
 import { PageLoading, type PageLoadingVariant } from "./page-loading";
 import { useToast } from "./toast-provider";
 
+const SettingsModal = dynamic(
+  () => import("./settings-page").then((module) => module.SettingsPage),
+  { ssr: false },
+);
+
 const noCompanies: Company[] = [];
+const adminOnlySettingsSections = new Set([
+  "crawler",
+  "gmail",
+  "suppression",
+]);
 const initialWebsiteRegistryParams: WebsiteRegistryPageParams = {
   limit: 25,
   offset: 0,
@@ -81,6 +94,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const showToast = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsModalSection, setSettingsModalSection] = useState<
+    string | undefined
+  >();
   const sidebarRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const isPublicAuthPage = pathname === "/login" || pathname === "/signup";
@@ -161,11 +178,35 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       await queryClient.cancelQueries();
       queryClient.clear();
       queryClient.setQueryData(["auth-session"], session);
+      if (
+        session.organizations.find(
+          (organization) => organization.id === session.organization_id,
+        )?.is_personal &&
+        pathname.startsWith("/organization")
+      ) {
+        router.replace("/overview");
+      }
     },
     onError: (error: Error) => {
       showToast({
         type: "error",
         title: "Could not switch organization",
+        message: error.message,
+      });
+    },
+  });
+  const createOrganizationMutation = useMutation({
+    mutationFn: createOrganization,
+    onSuccess: async (session) => {
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      queryClient.setQueryData(["auth-session"], session);
+      router.push("/organization/dashboard");
+    },
+    onError: (error: Error) => {
+      showToast({
+        type: "error",
+        title: "Could not create organization",
         message: error.message,
       });
     },
@@ -181,6 +222,23 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     (pageSpeedJobSummaryQuery.data?.failed_count ?? 0);
   const sessionIsUnauthorized =
     sessionQuery.error instanceof ApiError && sessionQuery.error.status === 401;
+  const activeOrganization = sessionQuery.data?.organizations.find(
+    (organization) => organization.id === sessionQuery.data.organization_id,
+  );
+  const isPersonalWorkspace = activeOrganization?.is_personal ?? false;
+  const settingsSearchParams = new URLSearchParams(search);
+  const settingsRequestedByUrl =
+    settingsSearchParams.get("openSettings") === "1";
+  const settingsModalIsOpen = settingsModalOpen || settingsRequestedByUrl;
+  const requestedSettingsSection =
+    settingsSearchParams.get("settingsSection") ?? undefined;
+  const activeSettingsSection = settingsModalOpen
+    ? settingsModalSection
+    : requestedSettingsSection &&
+        adminOnlySettingsSections.has(requestedSettingsSection) &&
+        sessionQuery.data?.user.role !== "admin"
+      ? "account"
+      : requestedSettingsSection;
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -277,9 +335,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       !sessionQuery.isFetching
     ) {
       router.replace(
-        sessionQuery.data.user.role === "admin"
-          ? "/organization/dashboard"
-          : "/overview",
+        activeOrganization?.is_personal
+          ? "/overview"
+          : sessionQuery.data.user.role === "admin"
+            ? "/organization/dashboard"
+            : "/overview",
       );
     }
   }, [
@@ -288,6 +348,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     sessionIsUnauthorized,
     sessionQuery.data,
     sessionQuery.isFetching,
+    activeOrganization?.is_personal,
   ]);
 
   useEffect(() => {
@@ -295,6 +356,58 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       router.replace("/login");
     }
   }, [isPublicPage, router, sessionIsUnauthorized, sessionQuery.isLoading]);
+
+  function openSettingsFromLink(event: ReactMouseEvent<HTMLDivElement>) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const link = target.closest("a[href]");
+    if (!(link instanceof HTMLAnchorElement) || link.target === "_blank") return;
+
+    const destination = new URL(link.href, window.location.href);
+    if (
+      destination.origin !== window.location.origin ||
+      destination.pathname !== "/settings"
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    const section = destination.searchParams.get("section");
+    setSettingsModalSection(
+      section &&
+        adminOnlySettingsSections.has(section) &&
+        sessionQuery.data?.user.role !== "admin"
+        ? "account"
+        : section ?? "account",
+    );
+    setSettingsModalOpen(true);
+    setMobileMenuOpen(false);
+  }
+
+  function closeSettingsModal() {
+    setSettingsModalOpen(false);
+    setSettingsModalSection(undefined);
+
+    const searchParams = new URLSearchParams(search);
+    if (searchParams.get("openSettings") !== "1") return;
+    searchParams.delete("openSettings");
+    searchParams.delete("settingsSection");
+    const nextSearch = searchParams.toString();
+    router.replace(nextSearch ? `${pathname}?${nextSearch}` : pathname, {
+      scroll: false,
+    });
+  }
 
   if (pathname === "/") return children;
   if (isPublicNotFoundPage) return children;
@@ -344,6 +457,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   return (
     <div
       className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${/^\/websites\/[^/]+$/.test(pathname) ? " is-website-profile" : ""}`}
+      onClickCapture={openSettingsFromLink}
     >
       <a className="skip-link" href="#main-content">
         Skip to content
@@ -369,9 +483,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             aria-label="ProspectLoop home"
             className="brand"
             href={
-              sessionQuery.data.user.role === "admin"
-                ? "/organization/dashboard"
-                : "/overview"
+              isPersonalWorkspace
+                ? "/overview"
+                : sessionQuery.data.user.role === "admin"
+                  ? "/organization/dashboard"
+                  : "/overview"
             }
             title="ProspectLoop"
           >
@@ -425,11 +541,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               location={currentLocation}
               onNavigate={() => setMobileMenuOpen(false)}
               runningJobs={runningJobs}
+              isPersonalWorkspace={isPersonalWorkspace}
               role={sessionQuery.data.user.role}
             />
           </Suspense>
         </nav>
         <AccountMenu
+          returnTo={currentLocation}
           email={sessionQuery.data.user.email}
           activeOrganizationId={sessionQuery.data.organization_id}
           organizations={sessionQuery.data.organizations}
@@ -440,12 +558,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           onOrganizationChange={(organizationId) =>
             organizationMutation.mutate(organizationId)
           }
+          onCreateOrganization={(name, onSuccess) =>
+            createOrganizationMutation.mutate(name, { onSuccess })
+          }
           onNavigate={() => setMobileMenuOpen(false)}
           onThemeChange={(preference) => {
             saveUserPreferences({ theme: preference });
           }}
           organizationLogoUrl={sessionQuery.data.organization_logo_url}
           organizationName={sessionQuery.data.organization_name}
+          createOrganizationPending={createOrganizationMutation.isPending}
           role={sessionQuery.data.user.role}
           themePreference={themePreference}
         />
@@ -461,6 +583,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           onMobileMenuOpen={() => setMobileMenuOpen(true)}
           pathname={pathname}
           role={sessionQuery.data.user.role}
+          isPersonalWorkspace={isPersonalWorkspace}
         />
         <div
           className={`content-wrap${pathname === "/templates" ? " is-templates-page" : pathname === "/websites" ? " is-websites-page" : ""}`}
@@ -474,10 +597,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       </main>
       <CommandPalette
         companies={companies}
+        isPersonalWorkspace={isPersonalWorkspace}
         onClose={() => setCommandPaletteOpen(false)}
         open={commandPaletteOpen}
         role={sessionQuery.data.user.role}
       />
+      {settingsModalIsOpen && (
+        <SettingsModal
+          initialSection={activeSettingsSection}
+          onClose={closeSettingsModal}
+        />
+      )}
     </div>
   );
 }
@@ -502,8 +632,10 @@ function WorkspaceTopBar({
   onMobileMenuOpen,
   pathname,
   role,
+  isPersonalWorkspace,
 }: {
   companies: Company[];
+  isPersonalWorkspace: boolean;
   location: string;
   mobileMenuOpen: boolean;
   mobileMenuButtonRef: RefObject<HTMLButtonElement | null>;
@@ -513,7 +645,10 @@ function WorkspaceTopBar({
   role: NavigationRole;
 }) {
   const breadcrumbs = getWorkspaceBreadcrumbs(location, companies);
-  const action = getWorkspaceAction(pathname, role);
+  const action =
+    isPersonalWorkspace && pathname === "/settings"
+      ? null
+      : getWorkspaceAction(pathname, role);
 
   return (
     <header className="workspace-topbar">
@@ -605,6 +740,9 @@ function getWorkspaceBreadcrumbs(
       { label: "Organization", href: "/organization" },
       { label: "Settings" },
     ];
+  }
+  if (pathname === "/settings") {
+    return [{ label: "Settings" }];
   }
   if (pathname === "/organization/members") {
     return [
@@ -755,6 +893,7 @@ const workspaceRoutes = new Set([
   "/templates",
   "/website-analytics",
   "/websites",
+  "/websites/import",
 ]);
 
 function isKnownWorkspaceRoute(pathname: string) {
@@ -777,11 +916,13 @@ interface CommandEntry {
 
 function CommandPalette({
   companies,
+  isPersonalWorkspace,
   onClose,
   open,
   role,
 }: {
   companies: Company[];
+  isPersonalWorkspace: boolean;
   onClose: () => void;
   open: boolean;
   role: NavigationRole;
@@ -803,10 +944,12 @@ function CommandPalette({
     }
   }, [open]);
 
-  const entries = navigationSections.flatMap((section) =>
+  const entries = getVisibleNavigationSections(
+    role,
+    isPersonalWorkspace,
+  ).flatMap((section) =>
     section.items.flatMap((item) =>
       (item.children ?? [item])
-        .filter((entry) => !entry.role || entry.role === role)
         .map((entry) => ({
           id: entry.id,
           label: entry.label,
@@ -999,6 +1142,7 @@ function WorkspaceNavigation({
   onNavigate,
   runningJobs,
   role,
+  isPersonalWorkspace,
 }: {
   failedJobs: number;
   leadsNeedingReview: number;
@@ -1006,17 +1150,14 @@ function WorkspaceNavigation({
   onNavigate: () => void;
   runningJobs: number;
   role: NavigationRole;
+  isPersonalWorkspace: boolean;
 }) {
   const pathname = location;
   const badgeCounts = { leads: leadsNeedingReview, jobs: failedJobs };
-  const visibleSections = navigationSections
-    .map((section) => ({
-      ...section,
-      items: section.items
-        .map((item) => filterNavigationItem(item, role))
-        .filter((item): item is NavigationItem => item !== null),
-    }))
-    .filter((section) => section.items.length > 0);
+  const visibleSections = getVisibleNavigationSections(
+    role,
+    isPersonalWorkspace,
+  );
   const primarySections = visibleSections.filter((section) => !section.bottom);
   const bottomSections = visibleSections.filter((section) => section.bottom);
 
@@ -1076,6 +1217,33 @@ function filterNavigationItem(
     .map((child) => filterNavigationItem(child, role))
     .filter((child): child is NavigationItem => child !== null);
   return children.length > 0 ? { ...item, children } : null;
+}
+
+function getVisibleNavigationSections(
+  role: NavigationRole,
+  isPersonalWorkspace: boolean,
+) {
+  return navigationSections
+    .filter(
+      (section) =>
+        !isPersonalWorkspace || section.id !== "administration",
+    )
+    .map((section) => ({
+      ...section,
+      items: section.items
+        .map((item) => {
+          if (
+            isPersonalWorkspace &&
+            role === "admin" &&
+            item.id === "overview"
+          ) {
+            return item;
+          }
+          return filterNavigationItem(item, role);
+        })
+        .filter((item): item is NavigationItem => item !== null),
+    }))
+    .filter((section) => section.items.length > 0);
 }
 
 function NavigationEntry({
@@ -1335,9 +1503,12 @@ function isActiveRoute(location: string, href: string) {
 function AccountMenu({
   activeOrganizationId,
   email,
+  returnTo,
+  createOrganizationPending,
   logoutPending,
   onLogout,
   onOrganizationChange,
+  onCreateOrganization,
   onNavigate,
   onThemeChange,
   organizations,
@@ -1350,9 +1521,12 @@ function AccountMenu({
 }: {
   activeOrganizationId: string;
   email: string;
+  returnTo: string;
+  createOrganizationPending: boolean;
   logoutPending: boolean;
   onLogout: () => void;
   onOrganizationChange: (organizationId: string) => void;
+  onCreateOrganization: (name: string, onSuccess: () => void) => void;
   onNavigate: () => void;
   onThemeChange: (preference: ThemePreference) => void;
   organizations: OrganizationOption[];
@@ -1364,9 +1538,25 @@ function AccountMenu({
   themePreference: ThemePreference;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isCreateOrganizationOpen, setIsCreateOrganizationOpen] =
+    useState(false);
+  const [newOrganizationName, setNewOrganizationName] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const createOrganizationDialogRef = useRef<HTMLDialogElement>(null);
+  const organizationNameInputRef = useRef<HTMLInputElement>(null);
   const initials = getAccountInitials(email);
+
+  useEffect(() => {
+    const dialog = createOrganizationDialogRef.current;
+    if (!dialog) return;
+    if (isCreateOrganizationOpen && !dialog.open) {
+      dialog.showModal();
+      organizationNameInputRef.current?.focus();
+    } else if (!isCreateOrganizationOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [isCreateOrganizationOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1469,7 +1659,7 @@ function AccountMenu({
           </div>
           {organizations.length > 1 && (
             <label className="account-organization-switch">
-              <span>Organization</span>
+              <span>Workspace</span>
               <select
                 disabled={organizationSwitchPending}
                 onChange={(event) =>
@@ -1480,12 +1670,28 @@ function AccountMenu({
                 {organizations.map((organization) => (
                   <option key={organization.id} value={organization.id}>
                     {organization.name} ·{" "}
-                    {organization.role === "admin" ? "Admin" : "Member"}
+                    {organization.is_personal
+                      ? "Personal"
+                      : organization.role === "admin"
+                        ? "Admin"
+                        : "Member"}
                   </option>
                 ))}
               </select>
             </label>
           )}
+          <button
+            className="button button-secondary account-create-organization"
+            onClick={() => {
+              setIsOpen(false);
+              onNavigate();
+              setIsCreateOrganizationOpen(true);
+            }}
+            type="button"
+          >
+            <Plus aria-hidden="true" size={15} />
+            Create organization
+          </button>
           <fieldset className="account-theme-options">
             <legend>Theme</legend>
             <div className="account-theme-buttons">
@@ -1511,7 +1717,7 @@ function AccountMenu({
           </fieldset>
           <Link
             className="account-menu-link"
-            href="/settings"
+            href={`/settings?returnTo=${encodeURIComponent(returnTo)}`}
             onClick={closeMenu}
           >
             <Settings aria-hidden="true" size={18} strokeWidth={2} />
@@ -1532,6 +1738,87 @@ function AccountMenu({
           </button>
         </div>
       )}
+      <dialog
+        aria-labelledby="create-organization-heading"
+        className="organization-add-member-dialog account-create-organization-dialog"
+        onCancel={(event) => {
+          event.preventDefault();
+          setIsCreateOrganizationOpen(false);
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setIsCreateOrganizationOpen(false);
+          }
+        }}
+        ref={createOrganizationDialogRef}
+      >
+        <header className="organization-add-member-dialog-heading">
+          <div>
+            <p className="eyebrow">WORKSPACE</p>
+            <h2 id="create-organization-heading">Create an organization</h2>
+            <p className="heading-copy">
+              Create a shared workspace for your team. Your personal workspace
+              stays separate.
+            </p>
+          </div>
+          <button
+            aria-label="Close create organization dialog"
+            className="icon-button"
+            disabled={createOrganizationPending}
+            onClick={() => setIsCreateOrganizationOpen(false)}
+            type="button"
+          >
+            <X aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <form
+          className="organization-member-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreateOrganization(newOrganizationName.trim(), () => {
+              setNewOrganizationName("");
+              setIsCreateOrganizationOpen(false);
+            });
+          }}
+        >
+          <label>
+            <span>Organization name</span>
+            <input
+              autoComplete="organization"
+              maxLength={200}
+              minLength={2}
+              disabled={createOrganizationPending}
+              onChange={(event) => setNewOrganizationName(event.target.value)}
+              placeholder="Acme Inc."
+              ref={organizationNameInputRef}
+              required
+              value={newOrganizationName}
+            />
+          </label>
+          <div className="organization-add-member-dialog-actions">
+            <button
+              className="button button-secondary"
+              disabled={createOrganizationPending}
+              onClick={() => setIsCreateOrganizationOpen(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="button button-primary"
+              disabled={
+                createOrganizationPending ||
+                newOrganizationName.trim().length < 2
+              }
+              type="submit"
+            >
+              {createOrganizationPending
+                ? "Creating…"
+                : "Create organization"}
+            </button>
+          </div>
+        </form>
+      </dialog>
     </div>
   );
 }

@@ -23,7 +23,7 @@ const pendingPreferenceSyncs = new Set<string>();
 const preferenceRevisions = new Map<string, number>();
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
-  theme: "system",
+  theme: "light",
   sidebar_collapsed: false,
   search: { providers: null, tavily: null },
   websites: { visible_columns: null },

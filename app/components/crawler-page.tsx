@@ -1,7 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { ScanSearch, X } from "lucide-react";
+import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
+import { FileSpreadsheet, X } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -9,13 +10,24 @@ import {
   type FormEvent,
   type MouseEvent,
 } from "react";
-import { crawlWebsite, getWebsiteCrawlJob } from "@/lib/api";
-import { formatSiteType } from "@/lib/site-type";
+import { crawlWebsite, crawlWebsites } from "@/lib/api";
+import { useToast } from "./toast-provider";
 
-export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
+const MAX_WEBSITES_PER_BATCH = 100;
+
+export function CrawlWebsiteDialog({
+  onClose,
+  onWebsiteQueued,
+}: {
+  onClose: () => void;
+  onWebsiteQueued?: () => void;
+}) {
+  const showToast = useToast();
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [websiteUrls, setWebsiteUrls] = useState("");
+  const [websiteInputError, setWebsiteInputError] = useState<string | null>(
+    null,
+  );
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
@@ -26,69 +38,54 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
 
   const crawlMutation = useMutation({
     mutationFn: crawlWebsite,
-    onMutate: () => setJobId(null),
-    onSuccess: (job) => setJobId(job.id),
-  });
-  const jobQuery = useQuery({
-    queryKey: ["website-crawl-job", jobId],
-    queryFn: () => {
-      if (jobId === null) {
-        throw new Error("An indexing job must be queued before checking status.");
-      }
-      return getWebsiteCrawlJob(jobId);
+    onSuccess: () => {
+      onWebsiteQueued?.();
+      showToast({
+        type: "success",
+        title: "Website added",
+        message: "Queued for indexing.",
+      });
+      onClose();
     },
-    enabled: jobId !== null,
   });
-  const crawlJob = jobQuery.data;
-  const crawlResult = crawlJob?.result;
-  const pageIssues =
-    crawlResult?.classification_signals.filter(
-      (page) =>
-        Boolean(page.error) ||
-        (page.status_code != null && page.status_code >= 400),
-    ) ?? [];
-  const isCrawlPending =
-    crawlMutation.isPending ||
-    crawlJob?.status === "queued" ||
-    crawlJob?.status === "running";
-  const indexedPages = crawlResult
-    ? [
-        {
-          label: "Home",
-          url: crawlResult.home_page_url,
-          content: crawlResult.home_content,
-        },
-        {
-          label: "About",
-          url: crawlResult.about_page_url,
-          content: crawlResult.about_content,
-        },
-        {
-          label: "Blog",
-          url: crawlResult.blog_page_url,
-          content: crawlResult.blog_content,
-        },
-        {
-          label: "Services",
-          url: crawlResult.service_page_url,
-          content: crawlResult.service_content,
-        },
-        {
-          label: "Contact",
-          url: crawlResult.contact_page_url,
-          content: crawlResult.contact_content,
-        },
-        {
-          label: "Mission & goals",
-          url: crawlResult.goals_page_url,
-          content: crawlResult.goals_content,
-        },
-      ].filter((page) => page.url || page.content)
-    : [];
+  const batchMutation = useMutation({
+    mutationFn: crawlWebsites,
+    onSuccess: (result) => {
+      onWebsiteQueued?.();
+      if (result.excluded.length > 0) {
+        showToast({
+          type: "warning",
+          title: "Some websites were skipped",
+          message: `Queued ${result.jobs.length}; excluded ${result.excluded.length}. Review the details below.`,
+        });
+        return;
+      }
+
+      showToast({
+        type: "success",
+        title: "Websites added",
+        message: `${result.jobs.length} websites queued for indexing.`,
+      });
+      onClose();
+    },
+  });
+  const isCrawlPending = crawlMutation.isPending || batchMutation.isPending;
+  const enteredWebsiteCount = websiteUrls
+    .split(/\r?\n/)
+    .filter((websiteUrl) => websiteUrl.trim().length > 0).length;
 
   function handleCrawlWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    crawlMutation.mutate({ website_url: websiteUrl.trim() });
+    crawlMutation.reset();
+    batchMutation.reset();
+    const parsed = parseWebsiteList(websiteUrls);
+    setWebsiteInputError(parsed.error);
+    if (parsed.error) return;
+    if (parsed.urls.length === 1) {
+      crawlMutation.mutate({ website_url: parsed.urls[0] });
+    } else {
+      batchMutation.mutate(parsed.urls);
+    }
   }
 
   function handleDialogClick(event: MouseEvent<HTMLDialogElement>) {
@@ -108,12 +105,7 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
     >
       <header className="crawl-dialog-header">
         <div>
-          <p className="eyebrow">WEBSITE RESEARCH</p>
-          <h2 id="crawl-dialog-title">Index a website</h2>
-          <p className="heading-copy">
-            Collect public company information from its homepage and relevant
-            About, Blog, Services, Contact, and Mission pages.
-          </p>
+          <h2 id="crawl-dialog-title">Add websites</h2>
         </div>
         <button
           aria-label="Close indexing dialog"
@@ -125,46 +117,65 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
         </button>
       </header>
 
-      <article className="panel crawler-panel crawler-page-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">PUBLIC WEBSITE INDEXING</p>
-            <h2>Enter a company website</h2>
-            <p className="panel-subtitle">
-              Indexing scans a small number of pages on the same public website
-              and extracts page text, email addresses, and social links.
-            </p>
-          </div>
-          <ScanSearch aria-hidden="true" className="sparkle" size={22} />
-        </div>
-
-        <form className="crawler-form" onSubmit={handleCrawlWebsite}>
-          <label htmlFor="website-url">
-            Website URL
-            <input
-              autoComplete="url"
-              id="website-url"
-              onChange={(event) => setWebsiteUrl(event.target.value)}
-              placeholder="https://example.com"
+      <section
+        aria-labelledby="crawl-dialog-title"
+        className="crawl-dialog-content"
+      >
+        <form className="crawl-dialog-form" onSubmit={handleCrawlWebsite}>
+          <div className="crawl-dialog-url-field">
+            <label htmlFor="website-urls">URLs</label>
+            <textarea
+              aria-describedby="crawl-dialog-url-hint"
+              id="website-urls"
+              onChange={(event) => {
+                setWebsiteUrls(event.target.value);
+                setWebsiteInputError(null);
+              }}
+              placeholder={"example.com\nhttps://another-example.com"}
               required
-              type="url"
-              value={websiteUrl}
+              rows={5}
+              value={websiteUrls}
             />
-          </label>
-          <button
-            className="button button-primary"
-            disabled={isCrawlPending}
-            type="submit"
-          >
-            {isCrawlPending ? "Indexing..." : "Index website"}
-            {!isCrawlPending && <span aria-hidden="true">→</span>}
-          </button>
+            <span id="crawl-dialog-url-hint">
+              One URL per line · Up to {MAX_WEBSITES_PER_BATCH} · HTTPS by
+              default
+            </span>
+          </div>
+          <div className="crawl-dialog-actions">
+            <Link
+              className="button button-secondary crawl-csv-link"
+              href="/websites/import"
+              onClick={onClose}
+            >
+              <FileSpreadsheet aria-hidden="true" size={15} />
+              Import CSV
+            </Link>
+            <button
+              className="button button-primary"
+              disabled={isCrawlPending}
+              type="submit"
+            >
+              {isCrawlPending
+                ? "Adding..."
+                : enteredWebsiteCount === 1
+                  ? "Add website"
+                  : "Add websites"}
+              {!isCrawlPending && <span aria-hidden="true">→</span>}
+            </button>
+          </div>
         </form>
+
+        {websiteInputError && (
+          <div className="alert alert-error" role="alert">
+            {websiteInputError}
+          </div>
+        )}
 
         {isCrawlPending && (
           <div className="alert" role="status">
-            Indexing job {crawlJob?.status ?? "queued"}. This page will update
-            when it finishes.
+            {batchMutation.isPending
+              ? `Adding ${enteredWebsiteCount} websites to the queue…`
+              : "Adding website to the queue…"}
           </div>
         )}
 
@@ -174,136 +185,95 @@ export function CrawlWebsiteDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {jobQuery.isError && (
+        {batchMutation.isError && (
           <div className="alert alert-error" role="alert">
-            Could not check indexing status: {jobQuery.error.message}
+            Could not queue websites: {batchMutation.error.message}
           </div>
         )}
 
-        {crawlJob?.status === "failed" && (
-          <div className="alert alert-error" role="alert">
-            Indexing failed: {crawlJob.error || "The indexing job failed."}
-          </div>
-        )}
-
-        {crawlJob?.status === "succeeded" && crawlResult && (
-          <div className="crawl-result" role="status">
-            <div className="crawl-result-heading">
-              <div>
-                <strong>Indexing complete</strong>
-                <a
-                  href={crawlResult.website_url}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  {crawlResult.website_url}
-                  <span aria-hidden="true"> ↗</span>
-                </a>
-              </div>
-              <span>{new Date(crawlResult.crawled_at).toLocaleString()}</span>
-            </div>
-            <p className="crawl-site-type">
-              Site type: <strong>{formatSiteType(crawlResult.site_type)}</strong>
+        {batchMutation.data && (
+          <div className="alert" role="status">
+            <p>
+              {batchMutation.data.jobs.length} queued
+              {batchMutation.data.excluded.length > 0 &&
+                ` · ${batchMutation.data.excluded.length} excluded`}
             </p>
-
-            {indexedPages.length > 0 ? (
-              <div className="crawl-pages">
-                {indexedPages.map((page) => (
-                  <article className="crawl-page" key={page.label}>
-                    <div>
-                      <strong>{page.label}</strong>
-                      {page.url && (
-                        <a href={page.url} rel="noreferrer" target="_blank">
-                          Open page ↗
-                        </a>
-                      )}
-                    </div>
-                    <p>{page.content || "No page text was extracted."}</p>
-                  </article>
+            {batchMutation.data.excluded.length > 0 && (
+              <ul>
+                {batchMutation.data.excluded.map((item) => (
+                  <li key={`${item.website_url}-${item.reason}`}>
+                    {item.website_url}: {item.reason}
+                  </li>
                 ))}
-              </div>
-            ) : (
-              <p className="empty-copy">
-                No page text was extracted.
-              </p>
-            )}
-
-            <div className="crawl-extracted">
-              <ExtractedList
-                title="Email addresses"
-                values={crawlResult.emails}
-                href={(email) => `mailto:${email}`}
-              />
-              <ExtractedList
-                title="Social links"
-                values={crawlResult.social_links}
-                href={(url) => url}
-                external
-              />
-            </div>
-
-            {pageIssues.length > 0 && (
-              <section
-                aria-label="Page fetch issues"
-                className="crawl-page-issues"
-              >
-                <h3>Page issues ({pageIssues.length})</h3>
-                <ul>
-                  {pageIssues.map((page, index) => (
-                    <li key={`${page.url}-${index}`}>
-                      <div>
-                        <a href={page.url} rel="noreferrer" target="_blank">
-                          {page.url}
-                        </a>
-                        {page.status_code != null &&
-                          page.status_code > 0 && (
-                            <span>HTTP {page.status_code}</span>
-                          )}
-                      </div>
-                      {page.error && <p>{page.error}</p>}
-                    </li>
-                  ))}
-                </ul>
-              </section>
+              </ul>
             )}
           </div>
         )}
-      </article>
+
+      </section>
     </dialog>
   );
 }
 
-function ExtractedList({
-  title,
-  values,
-  href,
-  external = false,
-}: {
-  title: string;
-  values: string[];
-  href: (value: string) => string;
-  external?: boolean;
-}) {
-  return (
-    <div>
-      <strong>{title}</strong>
-      {values.length > 0 ? (
-        <ul>
-          {values.map((value) => (
-            <li key={value}>
-              <a
-                href={href(value)}
-                rel={external ? "noreferrer" : undefined}
-                target={external ? "_blank" : undefined}
-              >
-                {value}
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>None found</p>
-      )}
-    </div>
-  );
+function parseWebsiteList(value: string): {
+  urls: string[];
+  error: string | null;
+} {
+  const entries = value
+    .split(/\r?\n/)
+    .map((websiteUrl, index) => ({
+      line: index + 1,
+      value: websiteUrl.trim(),
+    }))
+    .filter((entry) => entry.value.length > 0);
+
+  if (entries.length === 0) {
+    return { urls: [], error: "Enter at least one website URL." };
+  }
+  if (entries.length > MAX_WEBSITES_PER_BATCH) {
+    return {
+      urls: [],
+      error: `Add no more than ${MAX_WEBSITES_PER_BATCH} websites at a time.`,
+    };
+  }
+
+  const seenDomains = new Set<string>();
+  const urls: string[] = [];
+  for (const entry of entries) {
+    const websiteUrl = /^[a-z][a-z\d+.-]*:\/\//i.test(entry.value)
+      ? entry.value
+      : `https://${entry.value.replace(/^\/\//, "")}`;
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(websiteUrl);
+    } catch {
+      return {
+        urls: [],
+        error: `Line ${entry.line}: enter a valid website URL.`,
+      };
+    }
+    if (
+      !["http:", "https:"].includes(parsedUrl.protocol) ||
+      !parsedUrl.hostname ||
+      parsedUrl.username ||
+      parsedUrl.password
+    ) {
+      return {
+        urls: [],
+        error: `Line ${entry.line}: use a public HTTP or HTTPS website URL.`,
+      };
+    }
+
+    const domain = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
+    if (seenDomains.has(domain)) {
+      return {
+        urls: [],
+        error: `Line ${entry.line}: ${domain} is listed more than once.`,
+      };
+    }
+    seenDomains.add(domain);
+    urls.push(parsedUrl.toString());
+  }
+
+  return { urls, error: null };
 }

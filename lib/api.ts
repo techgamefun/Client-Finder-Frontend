@@ -1166,6 +1166,7 @@ export interface OrganizationOption {
   id: string;
   name: string;
   role: "admin" | "user";
+  is_personal: boolean;
 }
 
 export interface OrganizationUser {
@@ -1651,13 +1652,24 @@ export function getAuthSession(): Promise<AuthSession> {
 }
 
 export function bootstrapAdmin(input: {
-  organization_name: string;
   email: string;
   password: string;
   first_name: string;
   last_name: string;
 }): Promise<AuthSession> {
   return request<AuthSession>("/auth/bootstrap", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function registerAccount(input: {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+}): Promise<AuthSession> {
+  return request<AuthSession>("/auth/register", {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -1673,6 +1685,13 @@ export function registerOrganization(input: {
   return request<AuthSession>("/auth/register-organization", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export function createOrganization(name: string): Promise<AuthSession> {
+  return request<AuthSession>("/auth/organizations", {
+    method: "POST",
+    body: JSON.stringify({ name }),
   });
 }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   FileSpreadsheet,
@@ -32,8 +32,13 @@ interface CsvImportResult {
 const MAX_CSV_FILE_BYTES = 1_000_000;
 const MAX_CSV_ROWS = 100;
 
-export function CsvWebsiteImportPage() {
+export function CsvWebsiteImportPage({
+  returnToWebsites = false,
+}: {
+  returnToWebsites?: boolean;
+}) {
   const showToast = useToast();
+  const queryClient = useQueryClient();
   const csvInputRef = useRef<HTMLInputElement>(null);
   const hasUploadedCsvRef = useRef(false);
   const [csvFileName, setCsvFileName] = useState("");
@@ -130,7 +135,10 @@ export function CsvWebsiteImportPage() {
           message: `${result.queuedUrls.length} websites were added to the crawl queue.`,
         });
       }
-      await crawlerJobsQuery.refetch();
+      await Promise.all([
+        crawlerJobsQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ["websites"] }),
+      ]);
     },
   });
   const queuedByImport = new Set(
@@ -260,9 +268,12 @@ export function CsvWebsiteImportPage() {
 
   return (
     <div className="queue-csv-page">
-      <Link className="queue-csv-back-link" href="/jobs?tab=crawler">
+      <Link
+        className="queue-csv-back-link"
+        href={returnToWebsites ? "/websites" : "/jobs?tab=crawler"}
+      >
         <ArrowLeft aria-hidden="true" size={15} />
-        Back to jobs
+        {returnToWebsites ? "Back to websites" : "Back to jobs"}
       </Link>
       <header className="page-heading queue-csv-page-heading">
         <div>

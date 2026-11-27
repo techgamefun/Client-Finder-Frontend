@@ -19,6 +19,7 @@ export const themeBootstrapScript = `(() => {
       window.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = isDark ? "dark" : "light";
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle("dark", isDark);
   document.documentElement.style.colorScheme = theme;
 })();`;
 
@@ -76,5 +77,6 @@ function applyTheme(preference: ThemePreference) {
       window.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = isDark ? "dark" : "light";
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle("dark", isDark);
   document.documentElement.style.colorScheme = theme;
 }

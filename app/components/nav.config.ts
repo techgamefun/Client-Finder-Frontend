@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   Mail,
   Megaphone,
-  Settings,
   UsersRound,
   Workflow,
   type LucideIcon,
@@ -159,18 +158,6 @@ export const navigationSections: NavigationSection[] = [
         label: "Excluded domains",
         href: "/excluded-domains",
         icon: CircleOff,
-      },
-    ],
-  },
-  {
-    id: "settings",
-    bottom: true,
-    items: [
-      {
-        id: "settings",
-        label: "Settings",
-        href: "/settings",
-        icon: Settings,
       },
     ],
   },

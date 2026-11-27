@@ -1,13 +1,27 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
 } from "react";
+import {
+  Bell,
+  Gauge,
+  Globe,
+  KeyRound,
+  Mail,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  UserRound,
+  Workflow,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import {
   assignGmailAccount,
   changePassword,
@@ -85,12 +99,124 @@ type SettingsSection =
   | "account"
   | "notifications";
 
-export function SettingsPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const requestedSection = searchParams.get("section");
+type SettingsNavigationItem = {
+  section: SettingsSection;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+};
+
+const settingsNavigationGroups: {
+  label: string;
+  items: SettingsNavigationItem[];
+}[] = [
+  {
+    label: "Account",
+    items: [
+      {
+        section: "account",
+        label: "My account",
+        description: "Manage your profile and account security.",
+        icon: UserRound,
+      },
+      {
+        section: "notifications",
+        label: "Notifications",
+        description: "Choose which updates you receive.",
+        icon: Bell,
+      },
+    ],
+  },
+  {
+    label: "Workspace",
+    items: [
+      {
+        section: "tavily",
+        label: "Tavily",
+        description: "Search provider, usage, and discovery defaults.",
+        icon: Search,
+      },
+      {
+        section: "octoparse",
+        label: "Octoparse",
+        description: "Search engine API access and templates.",
+        icon: Globe,
+      },
+      {
+        section: "hypestat",
+        label: "HypeStat",
+        description: "Traffic profile lookup settings.",
+        icon: Globe,
+      },
+      {
+        section: "ahrefs",
+        label: "Ahrefs",
+        description: "Domain rating access and usage.",
+        icon: KeyRound,
+      },
+      {
+        section: "pagespeed",
+        label: "PageSpeed",
+        description: "Configure website performance scans.",
+        icon: Gauge,
+      },
+      {
+        section: "crawler",
+        label: "Website indexing",
+        description: "Manage crawl limits and indexing behavior.",
+        icon: Workflow,
+        adminOnly: true,
+      },
+      {
+        section: "gmail",
+        label: "Gmail accounts",
+        description: "Manage shared Gmail connections.",
+        icon: Mail,
+        adminOnly: true,
+      },
+      {
+        section: "suppression",
+        label: "Email suppression",
+        description: "Manage organization-wide do-not-contact rules.",
+        icon: ShieldCheck,
+        adminOnly: true,
+      },
+    ],
+  },
+  {
+    label: "Features",
+    items: [
+      {
+        section: "gemini",
+        label: "Gemini",
+        description: "Configure AI-assisted search and template drafts.",
+        icon: Sparkles,
+      },
+      {
+        section: "groq",
+        label: "Groq",
+        description: "Configure AI-assisted search and template drafts.",
+        icon: Sparkles,
+      },
+    ],
+  },
+];
+
+export function SettingsPage({
+  initialSection,
+  onClose,
+}: {
+  initialSection?: string;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("tavily");
+  const settingsDialogRef = useRef<HTMLDialogElement>(null);
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() => {
+    const section = initialSection ?? "account";
+    return isSettingsSection(section) ? section : "account";
+  });
+  const [settingsSearch, setSettingsSearch] = useState("");
   const [maxPages, setMaxPages] = useState<number | null>(null);
   const [maxDepth, setMaxDepth] = useState<number | null>(null);
   const [tavilyApiKey, setTavilyApiKey] = useState("");
@@ -159,18 +285,31 @@ export function SettingsPage() {
     enabled: false,
   });
   const isOrganizationAdmin = authSessionQuery.data?.user.role === "admin";
+  const activeSettingsItem = settingsNavigationGroups
+    .flatMap((group) => group.items)
+    .find((item) => item.section === activeSection);
+  const filteredSettingsGroups = settingsNavigationGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.adminOnly && !isOrganizationAdmin) return false;
+        const searchTerm = settingsSearch.trim().toLowerCase();
+        return (
+          !searchTerm ||
+          item.label.toLowerCase().includes(searchTerm) ||
+          group.label.toLowerCase().includes(searchTerm)
+        );
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
   useEffect(() => {
-    if (!requestedSection) return;
-    if (
-      isSettingsSection(requestedSection) &&
-      (requestedSection !== "suppression" ||
-        isOrganizationAdmin)
-    ) {
-      window.requestAnimationFrame(() =>
-        setActiveSection(requestedSection),
-      );
-    }
-  }, [isOrganizationAdmin, requestedSection]);
+    const dialog = settingsDialogRef.current;
+    if (!dialog || dialog.open) return;
+    dialog.showModal();
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, []);
   const gmailStatus = useSyncExternalStore(
     subscribeToLocationChanges,
     getGmailCallbackStatus,
@@ -393,51 +532,96 @@ export function SettingsPage() {
     });
   }
 
-  return (
-    <>
-      <section className="page-heading settings-heading">
-        <div>
-          <h1>Settings</h1>
-          <p className="heading-copy">
-            Manage providers, website indexing, notifications, and your account.
-          </p>
-        </div>
-        <div className="settings-section-picker">
-          <label className="settings-field">
-            Settings for
-            <select
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                if (isSettingsSection(value)) {
-                  setActiveSection(value);
-                  router.replace(`/settings?section=${value}`, {
-                    scroll: false,
-                  });
-                }
-              }}
-              value={activeSection}
-            >
-              <option value="tavily">Tavily</option>
-              <option value="ahrefs">Ahrefs</option>
-              <option value="octoparse">Octoparse</option>
-              <option value="hypestat">HypeStat</option>
-              <option value="pagespeed">PageSpeed</option>
-              <option value="gemini">Gemini</option>
-              <option value="groq">Groq</option>
-              {isOrganizationAdmin && (
-                <option value="gmail">Gmail accounts</option>
-              )}
-              {isOrganizationAdmin && <option value="crawler">Indexing</option>}
-              <option value="account">My account</option>
-              <option value="notifications">Notifications</option>
-              {isOrganizationAdmin && (
-                <option value="suppression">Email suppression</option>
-              )}
-            </select>
-          </label>
-        </div>
-      </section>
+  function selectSettingsSection(section: SettingsSection) {
+    setActiveSection(section);
+  }
 
+  return (
+    <dialog
+      aria-labelledby="settings-dialog-title"
+      aria-modal="true"
+      className="settings-dialog"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const clickedOutside =
+          event.clientX < bounds.left ||
+          event.clientX > bounds.right ||
+          event.clientY < bounds.top ||
+          event.clientY > bounds.bottom;
+        if (clickedOutside) onClose();
+      }}
+      ref={settingsDialogRef}
+    >
+      <aside aria-label="Settings navigation" className="settings-dialog-sidebar">
+        <label className="settings-dialog-search">
+          <Search aria-hidden="true" size={16} />
+          <input
+            aria-label="Search settings"
+            autoComplete="off"
+            autoFocus
+            onChange={(event) => setSettingsSearch(event.currentTarget.value)}
+            placeholder="Search settings"
+            type="search"
+            value={settingsSearch}
+          />
+        </label>
+        <nav aria-label="Settings sections" className="settings-dialog-nav">
+          {filteredSettingsGroups.map((group) => (
+            <section className="settings-dialog-nav-group" key={group.label}>
+              <h2>{group.label}</h2>
+              <ul>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <li key={item.section}>
+                      <button
+                        aria-current={
+                          activeSection === item.section ? "page" : undefined
+                        }
+                        className={`settings-dialog-nav-item${activeSection === item.section ? " is-active" : ""}`}
+                        onClick={() => selectSettingsSection(item.section)}
+                        type="button"
+                      >
+                        <Icon aria-hidden="true" size={17} strokeWidth={1.8} />
+                        <span>{item.label}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+          {filteredSettingsGroups.length === 0 && (
+            <p className="settings-dialog-empty">No matching settings.</p>
+          )}
+        </nav>
+      </aside>
+
+      <div className="settings-dialog-main">
+        <header className="settings-dialog-header">
+          <div>
+            <h1 id="settings-dialog-title">
+              {activeSettingsItem?.label ?? "Settings"}
+            </h1>
+            <p>
+              {activeSettingsItem?.description ??
+                "Manage your workspace settings."}
+            </p>
+          </div>
+          <button
+            aria-label="Close settings"
+            className="settings-dialog-close"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" size={19} />
+          </button>
+        </header>
+        <div className="settings-dialog-content">
       {gmailStatus && (
         <p
           className={`settings-feedback${gmailStatus === "error" || gmailStatus === "already-connected" ? " settings-feedback-error" : ""}`}
@@ -1724,7 +1908,9 @@ export function SettingsPage() {
         </>
       )}
       {activeSection === "notifications" && <PushNotificationSettings />}
-    </>
+        </div>
+      </div>
+    </dialog>
   );
 }
 

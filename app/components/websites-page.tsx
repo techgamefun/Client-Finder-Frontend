@@ -3,16 +3,26 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
   Columns3,
+  Plus,
   RotateCcw,
   Search,
   Sparkles,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
 import {
   addExcludedDomainsBatch,
@@ -161,9 +171,458 @@ const pageSpeedCategories: {
   { key: "seo", label: "SEO" },
 ];
 
+type WebsiteFilterDraft = {
+  pageType: string;
+  statusFilter: WebsiteStatus | "all";
+  category: string;
+  discoverySource: string;
+  minimumMonthlyVisits: string;
+  minimumReferringDomains: string;
+  maximumGlobalRank: string;
+  minimumAhrefsDomainRating: string;
+  maximumAhrefsDomainRating: string;
+  pageSpeedStrategy: PageSpeedScanSummary["strategy"];
+  pageSpeedCategory: NonNullable<
+    WebsiteRegistryPageParams["pagespeed_category"]
+  >;
+  minimumPageSpeedScore: string;
+  maximumPageSpeedScore: string;
+  hypestatCountry: string;
+  backlinkCountry: string;
+  audienceCountry: string;
+};
+
+const defaultWebsiteFilterDraft: WebsiteFilterDraft = {
+  pageType: "all",
+  statusFilter: "all",
+  category: "all",
+  discoverySource: "all",
+  minimumMonthlyVisits: "",
+  minimumReferringDomains: "",
+  maximumGlobalRank: "",
+  minimumAhrefsDomainRating: "",
+  maximumAhrefsDomainRating: "",
+  pageSpeedStrategy: "desktop",
+  pageSpeedCategory: "performance",
+  minimumPageSpeedScore: "",
+  maximumPageSpeedScore: "",
+  hypestatCountry: "all",
+  backlinkCountry: "all",
+  audienceCountry: "all",
+};
+
 function numericFilter(value: string): number | null {
   const parsed = Number(value);
   return value.trim() && Number.isFinite(parsed) ? parsed : null;
+}
+
+function WebsiteFilterRangeField({
+  description,
+  label,
+  maximumLabel,
+  maximumValue,
+  minimumLabel,
+  minimumValue,
+  onMaximumChange,
+  onMinimumChange,
+}: {
+  description: string;
+  label: string;
+  maximumLabel: string;
+  maximumValue: string;
+  minimumLabel: string;
+  minimumValue: string;
+  onMaximumChange(value: string): void;
+  onMinimumChange(value: string): void;
+}) {
+  const parsedMinimum = numericFilter(minimumValue);
+  const parsedMaximum = numericFilter(maximumValue);
+  const minimum = Math.max(0, Math.min(100, parsedMinimum ?? 0));
+  const maximum = Math.max(0, Math.min(100, parsedMaximum ?? 100));
+  const lowerBound = Math.min(minimum, maximum);
+  const upperBound = Math.max(minimum, maximum);
+  const hasValue = Boolean(minimumValue || maximumValue);
+
+  function changeMinimum(value: string) {
+    if (!value) {
+      onMinimumChange("");
+      return;
+    }
+
+    const nextMinimum = Math.max(0, Math.min(100, Number(value)));
+    onMinimumChange(String(nextMinimum));
+    if (parsedMaximum !== null && nextMinimum > parsedMaximum) {
+      onMaximumChange(String(nextMinimum));
+    }
+  }
+
+  function changeMaximum(value: string) {
+    if (!value) {
+      onMaximumChange("");
+      return;
+    }
+
+    const nextMaximum = Math.max(0, Math.min(100, Number(value)));
+    onMaximumChange(String(nextMaximum));
+    if (parsedMinimum !== null && nextMaximum < parsedMinimum) {
+      onMinimumChange(String(nextMaximum));
+    }
+  }
+
+  return (
+    <div className="website-filter-field website-filter-range-field">
+      <span className="website-filter-field-label">{label}</span>
+      <div className="website-filter-range-values">
+        <label>
+          <span className="sr-only">{minimumLabel}</span>
+          <input
+            aria-label={minimumLabel}
+            max="100"
+            min="0"
+            onChange={(event) => changeMinimum(event.target.value)}
+            placeholder="Min"
+            type="number"
+            value={minimumValue}
+          />
+        </label>
+        <span aria-hidden="true" className="website-filter-range-to">
+          to
+        </span>
+        <label>
+          <span className="sr-only">{maximumLabel}</span>
+          <input
+            aria-label={maximumLabel}
+            max="100"
+            min="0"
+            onChange={(event) => changeMaximum(event.target.value)}
+            placeholder="Max"
+            type="number"
+            value={maximumValue}
+          />
+        </label>
+      </div>
+      <div
+        className={`website-filter-range-slider${hasValue ? " is-active" : ""}`}
+      >
+        <div className="website-filter-range-track">
+          <span
+            className="website-filter-range-fill"
+            style={{
+              left: `${lowerBound}%`,
+              width: `${upperBound - lowerBound}%`,
+            }}
+          />
+        </div>
+        <input
+          aria-label={minimumLabel}
+          max={upperBound}
+          min="0"
+          onChange={(event) => changeMinimum(event.target.value)}
+          type="range"
+          value={lowerBound}
+        />
+        <input
+          aria-label={maximumLabel}
+          max="100"
+          min={lowerBound}
+          onChange={(event) => changeMaximum(event.target.value)}
+          type="range"
+          value={upperBound}
+        />
+      </div>
+      <span className="website-filter-help">{description}</span>
+    </div>
+  );
+}
+
+type WebsiteFilterSelectOption = {
+  value: string;
+  label: string;
+};
+
+function WebsiteFilterSelect({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange(value: string): void;
+  options: WebsiteFilterSelectOption[];
+  value: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const optionRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const listboxId = useId();
+  const triggerId = useId();
+  const searchable = options.length >= 8;
+  const isMenuPositioned = menuPosition !== null;
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(searchValue.trim().toLowerCase()),
+  );
+  const selectedOption = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const dialog = triggerRef.current?.closest("dialog");
+    setPortalTarget(dialog ?? document.body);
+    const updateMenuPosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+
+      const triggerBounds = trigger.getBoundingClientRect();
+      const dialogBounds = dialog?.getBoundingClientRect();
+      const topBound = Math.max(8, dialogBounds?.top ?? 0);
+      const bottomBound = Math.min(
+        window.innerHeight - 8,
+        dialogBounds?.bottom ?? window.innerHeight,
+      );
+      const leftBound = dialogBounds?.left ?? 0;
+      const rightBound = dialogBounds?.right ?? window.innerWidth;
+      const spaceBelow = bottomBound - triggerBounds.bottom - 8;
+      const spaceAbove = triggerBounds.top - topBound - 8;
+      const opensAbove = spaceBelow < 260 && spaceAbove > spaceBelow;
+      const availableSpace = opensAbove ? spaceAbove : spaceBelow;
+      const maxHeight = Math.max(96, Math.min(320, availableSpace));
+      const width = Math.min(
+        triggerBounds.width,
+        rightBound - leftBound - 24,
+      );
+
+      setMenuPosition({
+        top: opensAbove
+          ? Math.max(topBound + 8, triggerBounds.top - maxHeight - 8)
+          : triggerBounds.bottom + 8,
+        left: Math.max(
+          leftBound + 12,
+          Math.min(triggerBounds.left, rightBound - width - 12),
+        ),
+        width,
+        maxHeight,
+      });
+    };
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        !triggerRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    const closeWithDialog = () => setIsOpen(false);
+
+    updateMenuPosition();
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    dialog?.addEventListener("close", closeWithDialog);
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      dialog?.removeEventListener("close", closeWithDialog);
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isMenuPositioned) return;
+    if (searchable) {
+      searchInputRef.current?.focus();
+    }
+  }, [isMenuPositioned, isOpen, searchable]);
+
+  useEffect(() => {
+    if (!isOpen || !isMenuPositioned || searchable) return;
+    optionRefs.current[activeIndex]?.focus();
+  }, [activeIndex, isMenuPositioned, isOpen, searchable]);
+
+  function closeMenu(restoreFocus = false) {
+    setIsOpen(false);
+    setSearchValue("");
+    if (restoreFocus) triggerRef.current?.focus();
+  }
+
+  function focusOption(index: number) {
+    if (filteredOptions.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(index, filteredOptions.length - 1));
+    setActiveIndex(nextIndex);
+    optionRefs.current[nextIndex]?.focus();
+  }
+
+  function openMenu() {
+    const selectedIndex = options.findIndex(
+      (option) => option.value === value,
+    );
+    const initialIndex = selectedIndex < 0 ? 0 : selectedIndex;
+    setSearchValue("");
+    setActiveIndex(initialIndex);
+    setIsOpen(true);
+  }
+
+  function selectOption(option: WebsiteFilterSelectOption) {
+    onChange(option.value);
+    closeMenu(true);
+  }
+
+  function handleSearchKeyDown(
+    event: ReactKeyboardEvent<HTMLInputElement>,
+  ) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusOption(activeIndex);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusOption(
+        activeIndex === 0 ? filteredOptions.length - 1 : activeIndex - 1,
+      );
+    } else if (event.key === "Enter") {
+      const option = filteredOptions[activeIndex];
+      if (option) {
+        event.preventDefault();
+        selectOption(option);
+      }
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
+  }
+
+  function handleOptionKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    index: number,
+  ) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusOption((index + 1) % filteredOptions.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusOption(
+        index === 0 ? filteredOptions.length - 1 : index - 1,
+      );
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusOption(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusOption(filteredOptions.length - 1);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      const option = filteredOptions[index];
+      if (option) selectOption(option);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    } else if (event.key === "Tab") {
+      closeMenu();
+    }
+  }
+
+  const menu =
+    isOpen && menuPosition && portalTarget
+      ? createPortal(
+          <div
+            className="website-filter-select-popover"
+            ref={menuRef}
+            style={menuPosition}
+          >
+            {searchable && (
+              <label className="website-filter-select-search">
+                <Search aria-hidden="true" size={14} />
+                <input
+                  aria-controls={listboxId}
+                  aria-label={`Search ${label} options`}
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setSearchValue(event.target.value);
+                    setActiveIndex(0);
+                  }}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Search options"
+                  ref={searchInputRef}
+                  value={searchValue}
+                />
+              </label>
+            )}
+            <div
+              aria-labelledby={triggerId}
+              className="website-filter-select-options"
+              id={listboxId}
+              role="listbox"
+            >
+              {filteredOptions.length > 0 ? (
+                filteredOptions.map((option, index) => (
+                  <div
+                    aria-selected={option.value === value}
+                    className="website-filter-select-option"
+                    key={option.value}
+                    onClick={() => selectOption(option)}
+                    onKeyDown={(event) => handleOptionKeyDown(event, index)}
+                    onMouseMove={() => setActiveIndex(index)}
+                    ref={(element) => {
+                      optionRefs.current[index] = element;
+                    }}
+                    role="option"
+                    tabIndex={activeIndex === index ? 0 : -1}
+                  >
+                    <span>{option.label}</span>
+                    {option.value === value && (
+                      <Check aria-hidden="true" size={15} />
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="website-filter-select-empty">No options found</p>
+              )}
+            </div>
+          </div>,
+          portalTarget,
+        )
+      : null;
+
+  return (
+    <div className="website-filter-select">
+      <button
+        aria-controls={listboxId}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={label}
+        className="website-filter-select-trigger"
+        id={triggerId}
+        onClick={() => {
+          if (isOpen) closeMenu();
+          else openMenu();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            openMenu();
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        <span>{selectedOption?.label ?? "Select an option"}</span>
+        <ChevronDown aria-hidden="true" size={15} />
+      </button>
+      {menu}
+    </div>
+  );
 }
 
 function enrichmentQueueMessage(
@@ -407,6 +866,8 @@ export function WebsitesPage() {
   const websiteScrollTimerRef = useRef<number | null>(null);
   const selectFilteredRef = useRef<HTMLInputElement>(null);
   const addToLeadDialogRef = useRef<HTMLDialogElement>(null);
+  const bulkActionDialogRef = useRef<HTMLDialogElement>(null);
+  const websiteFiltersDialogRef = useRef<HTMLDialogElement>(null);
   const enrichmentMenuRef = useRef<HTMLDivElement>(null);
   const enrichmentTriggerRef = useRef<HTMLButtonElement>(null);
   const [enrichmentMenuOpen, setEnrichmentMenuOpen] = useState(false);
@@ -416,6 +877,9 @@ export function WebsitesPage() {
   );
   const [selectedLeadBatchId, setSelectedLeadBatchId] = useState("");
   const [customLeadBatchName, setCustomLeadBatchName] = useState("");
+  const [pendingBulkAction, setPendingBulkAction] = useState<
+    "status" | "exclude" | null
+  >(null);
   const [selectedWebsiteRecords, setSelectedWebsiteRecords] = useState<
     Map<string, WebsiteRecord>
   >(
@@ -449,6 +913,7 @@ export function WebsitesPage() {
   const [discoverySource, setDiscoverySource] = useState("all");
   const [pageType, setPageType] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(true);
   const [statusFilter, setStatusFilter] = useState<WebsiteStatus | "all">(
     "all",
   );
@@ -470,6 +935,8 @@ export function WebsitesPage() {
   const [hypestatCountry, setHypestatCountry] = useState("all");
   const [backlinkCountry, setBacklinkCountry] = useState("all");
   const [audienceCountry, setAudienceCountry] = useState("all");
+  const [draftWebsiteFilters, setDraftWebsiteFilters] =
+    useState<WebsiteFilterDraft>(() => ({ ...defaultWebsiteFilterDraft }));
   const [topicDrafts, setTopicDrafts] = useState<Record<string, string>>({});
   const [languageDrafts, setLanguageDrafts] = useState<Record<string, string>>(
     {},
@@ -845,6 +1312,47 @@ export function WebsitesPage() {
   const hypestatCountries = facetsQuery.data?.hypestat_countries ?? [];
   const backlinkCountries = facetsQuery.data?.backlink_countries ?? [];
   const audienceCountries = facetsQuery.data?.audience_countries ?? [];
+  const websiteTypeOptions = [
+    { value: "all", label: "Any type" },
+    ...pageTypes.map((value) => ({
+      value,
+      label: formatSiteType(value),
+    })),
+  ];
+  const websiteStatusOptions = [
+    { value: "all", label: "Any status" },
+    ...websiteStatuses.map((value) => ({
+      value,
+      label: formatWebsiteStatus(value),
+    })),
+  ];
+  const topicOptions = [
+    { value: "all", label: "Any topic" },
+    ...categories.map((value) => ({
+      value,
+      label:
+        value === "unclassified" ? "Unclassified" : formatSiteType(value),
+    })),
+  ];
+  const discoverySourceOptions = [
+    { value: "all", label: "Any source" },
+    ...discoverySources.map((value) => ({
+      value,
+      label: formatDiscoverySource(value),
+    })),
+  ];
+  const getCountryOptions = (values: string[]) => [
+    { value: "all", label: "Any country" },
+    ...values.map((value) => ({ value, label: value })),
+  ];
+  const pageSpeedStrategyOptions = [
+    { value: "desktop", label: "Desktop" },
+    { value: "mobile", label: "Mobile" },
+  ];
+  const pageSpeedCategoryOptions = pageSpeedCategories.map(({ key, label }) => ({
+    value: key,
+    label,
+  }));
   const indexedWebsiteCount = websitesQuery.data?.indexed_count ?? 0;
   const websiteCount = websitesQuery.data?.website_count ?? 0;
   const filteredWebsiteCount = websitesQuery.data?.total_count ?? 0;
@@ -887,6 +1395,27 @@ export function WebsitesPage() {
       (value) => value !== "all",
     ).length +
     (search.trim() ? 1 : 0);
+  const draftActiveFilterCount =
+    [
+      draftWebsiteFilters.minimumMonthlyVisits,
+      draftWebsiteFilters.minimumReferringDomains,
+      draftWebsiteFilters.maximumGlobalRank,
+      draftWebsiteFilters.minimumAhrefsDomainRating,
+      draftWebsiteFilters.maximumAhrefsDomainRating,
+      draftWebsiteFilters.minimumPageSpeedScore,
+      draftWebsiteFilters.maximumPageSpeedScore,
+    ].filter(Boolean).length +
+    [
+      draftWebsiteFilters.hypestatCountry,
+      draftWebsiteFilters.backlinkCountry,
+      draftWebsiteFilters.audienceCountry,
+    ].filter((value) => value !== "all").length +
+    [
+      draftWebsiteFilters.pageType,
+      draftWebsiteFilters.statusFilter,
+      draftWebsiteFilters.category,
+      draftWebsiteFilters.discoverySource,
+    ].filter((value) => value !== "all").length;
 
   function updateWebsiteField(websiteId: string, input: WebsiteUpdateInput) {
     updateMutation.mutate({ websiteId, input });
@@ -925,12 +1454,37 @@ export function WebsitesPage() {
     });
   }
 
+  function openBulkActionConfirmation(action: "status" | "exclude") {
+    if (selectedCount === 0 || (action === "status" && !bulkStatus)) return;
+    setPendingBulkAction(action);
+    const dialog = bulkActionDialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  function closeBulkActionConfirmation() {
+    const dialog = bulkActionDialogRef.current;
+    if (dialog?.open) dialog.close();
+    setPendingBulkAction(null);
+  }
+
+  function confirmBulkAction() {
+    const websiteIds = Array.from(selectedWebsiteIds);
+    const action = pendingBulkAction;
+    closeBulkActionConfirmation();
+
+    if (websiteIds.length === 0) return;
+    if (action === "status" && bulkStatus) {
+      batchStatusMutation.mutate({ websiteIds, status: bulkStatus });
+    } else if (action === "exclude") {
+      excludeSelectedWebsitesMutation.mutate(
+        Array.from(selectedWebsiteRecords.values()),
+      );
+    }
+  }
+
   function changeSelectedWebsiteStatus() {
     if (!bulkStatus || selectedCount === 0) return;
-    batchStatusMutation.mutate({
-      websiteIds: Array.from(selectedWebsiteIds),
-      status: bulkStatus,
-    });
+    openBulkActionConfirmation("status");
   }
 
   function submitAddSelectedWebsites(event: FormEvent<HTMLFormElement>) {
@@ -952,6 +1506,68 @@ export function WebsitesPage() {
     setCurrentPage(1);
   }
 
+  function updateDraftWebsiteFilter<K extends keyof WebsiteFilterDraft>(
+    key: K,
+    value: WebsiteFilterDraft[K],
+  ) {
+    setDraftWebsiteFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function openWebsiteFilters() {
+    setDraftWebsiteFilters({
+      pageType,
+      statusFilter,
+      category,
+      discoverySource,
+      minimumMonthlyVisits,
+      minimumReferringDomains,
+      maximumGlobalRank,
+      minimumAhrefsDomainRating,
+      maximumAhrefsDomainRating,
+      pageSpeedStrategy,
+      pageSpeedCategory,
+      minimumPageSpeedScore,
+      maximumPageSpeedScore,
+      hypestatCountry,
+      backlinkCountry,
+      audienceCountry,
+    });
+    const dialog = websiteFiltersDialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    setFiltersOpen(true);
+  }
+
+  function closeWebsiteFilters() {
+    const dialog = websiteFiltersDialogRef.current;
+    if (dialog?.open) dialog.close();
+    setFiltersOpen(false);
+  }
+
+  function applyWebsiteFilters() {
+    setPageType(draftWebsiteFilters.pageType);
+    setStatusFilter(draftWebsiteFilters.statusFilter);
+    setCategory(draftWebsiteFilters.category);
+    setDiscoverySource(draftWebsiteFilters.discoverySource);
+    setMinimumMonthlyVisits(draftWebsiteFilters.minimumMonthlyVisits);
+    setMinimumReferringDomains(draftWebsiteFilters.minimumReferringDomains);
+    setMaximumGlobalRank(draftWebsiteFilters.maximumGlobalRank);
+    setMinimumAhrefsDomainRating(draftWebsiteFilters.minimumAhrefsDomainRating);
+    setMaximumAhrefsDomainRating(draftWebsiteFilters.maximumAhrefsDomainRating);
+    setPageSpeedStrategy(draftWebsiteFilters.pageSpeedStrategy);
+    setPageSpeedCategory(draftWebsiteFilters.pageSpeedCategory);
+    setMinimumPageSpeedScore(draftWebsiteFilters.minimumPageSpeedScore);
+    setMaximumPageSpeedScore(draftWebsiteFilters.maximumPageSpeedScore);
+    setHypestatCountry(draftWebsiteFilters.hypestatCountry);
+    setBacklinkCountry(draftWebsiteFilters.backlinkCountry);
+    setAudienceCountry(draftWebsiteFilters.audienceCountry);
+    resetPage();
+    closeWebsiteFilters();
+  }
+
+  function clearWebsiteFilters() {
+    setDraftWebsiteFilters({ ...defaultWebsiteFilterDraft });
+  }
+
   function toggleSort(key: WebsiteSortKey) {
     setCurrentPage(1);
     setSort((current) => ({
@@ -967,7 +1583,12 @@ export function WebsitesPage() {
     <>
       <h1 className="sr-only">Websites</h1>
       {crawlDialogOpen && (
-        <CrawlWebsiteDialog onClose={() => setCrawlDialogOpen(false)} />
+        <CrawlWebsiteDialog
+          onClose={() => setCrawlDialogOpen(false)}
+          onWebsiteQueued={() => {
+            void queryClient.invalidateQueries({ queryKey: ["websites"] });
+          }}
+        />
       )}
       <dialog
         aria-labelledby="website-lead-group-dialog-title"
@@ -1106,6 +1727,79 @@ export function WebsitesPage() {
         </form>
       </dialog>
 
+      <dialog
+        aria-describedby="website-bulk-action-description"
+        aria-labelledby="website-bulk-action-title"
+        className="add-company-dialog website-bulk-action-dialog"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeBulkActionConfirmation();
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            closeBulkActionConfirmation();
+          }
+        }}
+        ref={bulkActionDialogRef}
+      >
+        {pendingBulkAction && (
+          <>
+            <div className="panel-heading compact-heading">
+              <div>
+                <p className="eyebrow">
+                  {pendingBulkAction === "exclude"
+                    ? "EXCLUDE WEBSITES"
+                    : "UPDATE STATUS"}
+                </p>
+                <h2 id="website-bulk-action-title">
+                  {pendingBulkAction === "exclude"
+                    ? "Exclude selected websites?"
+                    : "Update website status?"}
+                </h2>
+                <p
+                  className="panel-subtitle"
+                  id="website-bulk-action-description"
+                >
+                  {pendingBulkAction === "exclude"
+                    ? `Add ${selectedCount} selected domain${selectedCount === 1 ? "" : "s"} to Excluded domains. Matching queued and failed indexing jobs will also be removed.`
+                    : `Change the status of ${selectedCount} selected website${selectedCount === 1 ? "" : "s"} to ${bulkStatus ? formatWebsiteStatus(bulkStatus) : "the selected status"}.`}
+                </p>
+              </div>
+              <button
+                aria-label="Close confirmation"
+                className="icon-button"
+                onClick={closeBulkActionConfirmation}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <div className="website-bulk-confirm-actions">
+              <button
+                className="button button-secondary"
+                onClick={closeBulkActionConfirmation}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className={
+                  pendingBulkAction === "exclude"
+                    ? "button-danger"
+                    : "button button-primary"
+                }
+                onClick={confirmBulkAction}
+                type="button"
+              >
+                {pendingBulkAction === "exclude"
+                  ? "Exclude websites"
+                  : "Update status"}
+              </button>
+            </div>
+          </>
+        )}
+      </dialog>
+
       <section className="website-registry-panel">
         <div className="website-registry-toolbar">
           <label className="filter-input">
@@ -1122,374 +1816,408 @@ export function WebsitesPage() {
               value={search}
             />
           </label>
-          <details
-            className="website-filter-drawer"
-            onToggle={(event) => setFiltersOpen(event.currentTarget.open)}
+          <button
+            aria-controls="website-filter-dialog"
+            aria-expanded={filtersOpen}
+            aria-haspopup="dialog"
+            className="website-filter-trigger"
+            onClick={openWebsiteFilters}
+            type="button"
           >
-            <summary>
-              <SlidersHorizontal aria-hidden="true" size={15} strokeWidth={1.8} />
-              <span>Filters</span>
-              {activeFilterCount > 0 && (
-                <span className="website-active-filter-count">
-                  {activeFilterCount}
-                </span>
-              )}
-              <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
-            </summary>
+            <SlidersHorizontal aria-hidden="true" size={15} strokeWidth={1.8} />
+            <span>Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="website-active-filter-count">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <dialog
+            aria-labelledby="website-filter-dialog-title"
+            className="website-filter-dialog"
+            id="website-filter-dialog"
+            onCancel={(event) => {
+              event.preventDefault();
+              closeWebsiteFilters();
+            }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closeWebsiteFilters();
+            }}
+            ref={websiteFiltersDialogRef}
+          >
+            <div className="website-filter-modal">
+              <header className="website-filter-modal-header">
+                <h2 id="website-filter-dialog-title">Filter websites</h2>
+                <div className="website-filter-modal-header-actions">
+                  {draftActiveFilterCount > 0 && (
+                    <button
+                      className="website-clear-filters"
+                      onClick={clearWebsiteFilters}
+                      type="button"
+                    >
+                      <RotateCcw aria-hidden="true" size={13} />
+                      Clear all
+                    </button>
+                  )}
+                  <button
+                    aria-label="Close website filters"
+                    className="icon-button website-filter-close"
+                    onClick={closeWebsiteFilters}
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={17} />
+                  </button>
+                </div>
+              </header>
             <div
               aria-label="Website filters"
               className="website-filter-content"
               role="group"
             >
-              <div className="website-filter-popover-heading">
-                <div className="website-filter-popover-copy">
-                  <strong>Filter websites</strong>
+              <section className="website-filter-essentials">
+                <div className="website-filter-section-heading">
+                  <h2>Essentials</h2>
+                  <p>The filters most searches start with.</p>
                 </div>
-                {activeFilterCount > 0 && (
-                  <button
-                    className="website-clear-filters"
-                    onClick={() => {
-                      setSearch("");
-                      setPageType("all");
-                      setStatusFilter("all");
-                      setCategory("all");
-                      setDiscoverySource("all");
-                      setMinimumMonthlyVisits("");
-                      setMinimumReferringDomains("");
-                      setMaximumGlobalRank("");
-                      setMinimumAhrefsDomainRating("");
-                      setMaximumAhrefsDomainRating("");
-                      setPageSpeedStrategy("desktop");
-                      setPageSpeedCategory("performance");
-                      setMinimumPageSpeedScore("");
-                      setMaximumPageSpeedScore("");
-                      setHypestatCountry("all");
-                      setBacklinkCountry("all");
-                      setAudienceCountry("all");
-                      resetPage();
-                    }}
-                    type="button"
+                <div className="website-filter-essentials-grid">
+                  <label className="website-filter-field">
+                    <span className="website-filter-field-label">
+                      Website type
+                    </span>
+                    <WebsiteFilterSelect
+                      label="Website type"
+                      onChange={(value) =>
+                        updateDraftWebsiteFilter("pageType", value)
+                      }
+                      options={websiteTypeOptions}
+                      value={draftWebsiteFilters.pageType}
+                    />
+                  </label>
+                  <label className="website-filter-field">
+                    <span className="website-filter-field-label">
+                      Site topic
+                    </span>
+                    <WebsiteFilterSelect
+                      label="Site topic"
+                      onChange={(value) =>
+                        updateDraftWebsiteFilter("category", value)
+                      }
+                      options={topicOptions}
+                      value={draftWebsiteFilters.category}
+                    />
+                  </label>
+                  <label className="website-filter-field">
+                    <span className="website-filter-field-label">Status</span>
+                    <WebsiteFilterSelect
+                      label="Website status"
+                      onChange={(value) => {
+                        const nextStatus = websiteStatuses.find(
+                          (status) => status === value,
+                        );
+                        updateDraftWebsiteFilter(
+                          "statusFilter",
+                          nextStatus ?? "all",
+                        );
+                      }}
+                      options={websiteStatusOptions}
+                      value={draftWebsiteFilters.statusFilter}
+                    />
+                  </label>
+                  <label className="website-filter-field">
+                    <span className="website-filter-field-label">
+                      Discovery source
+                    </span>
+                    <WebsiteFilterSelect
+                      label="Discovery source"
+                      onChange={(value) =>
+                        updateDraftWebsiteFilter("discoverySource", value)
+                      }
+                      options={discoverySourceOptions}
+                      value={draftWebsiteFilters.discoverySource}
+                    />
+                  </label>
+                  <label className="website-filter-field website-filter-help-field">
+                    <span className="website-filter-field-label">
+                      Min. monthly visits
+                    </span>
+                    <input
+                      aria-label="Minimum monthly visits"
+                      min="0"
+                      onChange={(event) =>
+                        updateDraftWebsiteFilter(
+                          "minimumMonthlyVisits",
+                          event.target.value,
+                        )
+                      }
+                      placeholder="e.g. 10,000"
+                      type="number"
+                      value={draftWebsiteFilters.minimumMonthlyVisits}
+                    />
+                    <span className="website-filter-help">
+                      Estimated visits per month
+                    </span>
+                  </label>
+                  <label className="website-filter-field website-filter-help-field">
+                    <span className="website-filter-field-label">
+                      Min. referring domains
+                    </span>
+                    <input
+                      aria-label="Minimum referring domains"
+                      min="0"
+                      onChange={(event) =>
+                        updateDraftWebsiteFilter(
+                          "minimumReferringDomains",
+                          event.target.value,
+                        )
+                      }
+                      placeholder="e.g. 100"
+                      type="number"
+                      value={draftWebsiteFilters.minimumReferringDomains}
+                    />
+                    <span className="website-filter-help">
+                      Unique sites that link to it
+                    </span>
+                  </label>
+                  <WebsiteFilterRangeField
+                    description="Authority score from 0 to 100. Leave blank for no limit."
+                    label="Domain Rating (DR)"
+                    maximumLabel="Maximum domain rating"
+                    maximumValue={
+                      draftWebsiteFilters.maximumAhrefsDomainRating
+                    }
+                    minimumLabel="Minimum domain rating"
+                    minimumValue={
+                      draftWebsiteFilters.minimumAhrefsDomainRating
+                    }
+                    onMaximumChange={(value) =>
+                      updateDraftWebsiteFilter(
+                        "maximumAhrefsDomainRating",
+                        value,
+                      )
+                    }
+                    onMinimumChange={(value) =>
+                      updateDraftWebsiteFilter(
+                        "minimumAhrefsDomainRating",
+                        value,
+                      )
+                    }
+                  />
+                </div>
+              </section>
+              <section className="website-filter-more">
+                <button
+                  aria-controls="website-more-filters-content"
+                  aria-expanded={moreFiltersOpen}
+                  className="website-filter-more-toggle"
+                  onClick={() =>
+                    setMoreFiltersOpen((isOpen) => !isOpen)
+                  }
+                  type="button"
+                >
+                  <span className="website-filter-more-title">
+                    <strong>More filters</strong>
+                    <span>Geography, rank and PageSpeed</span>
+                  </span>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="website-filter-more-chevron"
+                    size={17}
+                  />
+                </button>
+                {moreFiltersOpen && (
+                  <div
+                    className="website-filter-more-content"
+                    id="website-more-filters-content"
                   >
-                    <RotateCcw aria-hidden="true" size={13} />
-                    Clear all
-                  </button>
+                    <section className="website-filter-subsection">
+                      <h3>Geography</h3>
+                      <div className="website-filter-geography-grid">
+                        <label className="website-filter-field website-filter-help-field">
+                          <span className="website-filter-field-label">
+                            Audience in
+                          </span>
+                          <WebsiteFilterSelect
+                            label="Audience country"
+                            onChange={(value) =>
+                              updateDraftWebsiteFilter(
+                                "audienceCountry",
+                                value,
+                              )
+                            }
+                            options={getCountryOptions(audienceCountries)}
+                            value={draftWebsiteFilters.audienceCountry}
+                          />
+                          <span className="website-filter-help">
+                            Where most visitors are located
+                          </span>
+                        </label>
+                        <label className="website-filter-field website-filter-help-field">
+                          <span className="website-filter-field-label">
+                            Backlinks from
+                          </span>
+                          <WebsiteFilterSelect
+                            label="Backlink country"
+                            onChange={(value) =>
+                              updateDraftWebsiteFilter(
+                                "backlinkCountry",
+                                value,
+                              )
+                            }
+                            options={getCountryOptions(backlinkCountries)}
+                            value={draftWebsiteFilters.backlinkCountry}
+                          />
+                          <span className="website-filter-help">
+                            Where most of its backlinks come from
+                          </span>
+                        </label>
+                        <label className="website-filter-field website-filter-help-field">
+                          <span className="website-filter-field-label">
+                            Top market (HypeStat)
+                          </span>
+                          <WebsiteFilterSelect
+                            label="HypeStat country"
+                            onChange={(value) =>
+                              updateDraftWebsiteFilter("hypestatCountry", value)
+                            }
+                            options={getCountryOptions(hypestatCountries)}
+                            value={draftWebsiteFilters.hypestatCountry}
+                          />
+                          <span className="website-filter-help">
+                            Country listed in HypeStat&apos;s data
+                          </span>
+                        </label>
+                      </div>
+                    </section>
+                    <section className="website-filter-subsection">
+                      <h3>Rank and performance</h3>
+                      <div className="website-filter-performance-grid">
+                        <label className="website-filter-field website-filter-help-field website-filter-best-rank">
+                          <span className="website-filter-field-label">
+                            Best global rank
+                          </span>
+                          <input
+                            aria-label="Maximum global rank"
+                            min="1"
+                            onChange={(event) =>
+                              updateDraftWebsiteFilter(
+                                "maximumGlobalRank",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="e.g. 50,000"
+                            type="number"
+                            value={draftWebsiteFilters.maximumGlobalRank}
+                          />
+                          <span className="website-filter-help">
+                            Rank number or better. 50,000 shows the top 50k sites.
+                          </span>
+                        </label>
+                        <div className="website-filter-field website-filter-device">
+                          <span className="website-filter-field-label">
+                            PageSpeed device
+                          </span>
+                          <div
+                            aria-label="PageSpeed device"
+                            className="website-filter-segmented"
+                          >
+                            {pageSpeedStrategyOptions.map((option) => (
+                              <button
+                                aria-pressed={
+                                  draftWebsiteFilters.pageSpeedStrategy ===
+                                  option.value
+                                }
+                                className={
+                                  draftWebsiteFilters.pageSpeedStrategy ===
+                                  option.value
+                                    ? "is-selected"
+                                    : undefined
+                                }
+                                key={option.value}
+                                onClick={() => {
+                                  if (
+                                    option.value === "desktop" ||
+                                    option.value === "mobile"
+                                  ) {
+                                    updateDraftWebsiteFilter(
+                                      "pageSpeedStrategy",
+                                      option.value,
+                                    );
+                                  }
+                                }}
+                                type="button"
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <label className="website-filter-field website-filter-category">
+                          <span className="website-filter-field-label">
+                            PageSpeed category
+                          </span>
+                          <WebsiteFilterSelect
+                            label="PageSpeed category"
+                            onChange={(value) => {
+                              const selectedCategory = pageSpeedCategories.find(
+                                (option) => option.key === value,
+                              )?.key;
+                              if (selectedCategory) {
+                                updateDraftWebsiteFilter(
+                                  "pageSpeedCategory",
+                                  selectedCategory,
+                                );
+                              }
+                            }}
+                            options={pageSpeedCategoryOptions}
+                            value={draftWebsiteFilters.pageSpeedCategory}
+                          />
+                        </label>
+                        <WebsiteFilterRangeField
+                          description="Lighthouse score from 0 to 100."
+                          label="Score range"
+                          maximumLabel="Maximum PageSpeed score"
+                          maximumValue={
+                            draftWebsiteFilters.maximumPageSpeedScore
+                          }
+                          minimumLabel="Minimum PageSpeed score"
+                          minimumValue={
+                            draftWebsiteFilters.minimumPageSpeedScore
+                          }
+                          onMaximumChange={(value) =>
+                            updateDraftWebsiteFilter(
+                              "maximumPageSpeedScore",
+                              value,
+                            )
+                          }
+                          onMinimumChange={(value) =>
+                            updateDraftWebsiteFilter(
+                              "minimumPageSpeedScore",
+                              value,
+                            )
+                          }
+                        />
+                      </div>
+                    </section>
+                  </div>
                 )}
-              </div>
-              <div className="website-filter-group">
-                <h2>Site</h2>
-                <div className="website-registry-primary-filters">
-            <label className="website-filter-field select-filter">
-              <span className="website-filter-field-label">Type</span>
-              <select
-                aria-label="Website type"
-                disabled={
-                  batchStatusMutation.isPending || addToLeadMutation.isPending
-                }
-                onChange={(event) => {
-                  resetPage();
-                  setPageType(event.target.value);
-                }}
-                value={pageType}
-              >
-                <option value="all">All</option>
-                {pageTypes.map((value) => (
-                  <option key={value} value={value}>
-                    {formatSiteType(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="website-filter-field select-filter">
-              <span className="website-filter-field-label">Status</span>
-              <select
-                aria-label="Website status"
-                onChange={(event) => {
-                  resetPage();
-                  const nextStatus = websiteStatuses.find(
-                    (value) => value === event.target.value,
-                  );
-                  setStatusFilter(nextStatus ?? "all");
-                }}
-                value={statusFilter}
-              >
-                <option value="all">All</option>
-                {websiteStatuses.map((value) => (
-                  <option key={value} value={value}>
-                    {formatWebsiteStatus(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="website-filter-field select-filter">
-              <span className="website-filter-field-label">Topic</span>
-              <select
-                aria-label="Website topic"
-                onChange={(event) => {
-                  resetPage();
-                  setCategory(event.target.value);
-                }}
-                value={category}
-              >
-                <option value="all">All</option>
-                {categories.map((value) => (
-                  <option key={value} value={value}>
-                    {value === "unclassified"
-                      ? "Unclassified"
-                      : formatSiteType(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="website-filter-field select-filter">
-              <span className="website-filter-field-label">Source</span>
-              <select
-                aria-label="Discovery source"
-                onChange={(event) => {
-                  resetPage();
-                  setDiscoverySource(event.target.value);
-                }}
-                value={discoverySource}
-              >
-                <option value="all">All</option>
-                {discoverySources.map((value) => (
-                  <option key={value} value={value}>
-                    {formatDiscoverySource(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-                </div>
-              </div>
-              <div className="website-filter-group">
-                <h2>Traffic &amp; audience</h2>
-            <div className="website-advanced-filter-grid">
-              <label className="website-filter-field hypestat-table-filter">
-                <span className="website-filter-field-label">
-                  Min. monthly visits
-                </span>
-                <input
-                  aria-label="Minimum monthly visits"
-                  min="0"
-                  onChange={(event) => {
-                    resetPage();
-                    setMinimumMonthlyVisits(event.target.value);
-                  }}
-                  placeholder="e.g. 10,000"
-                  type="number"
-                  value={minimumMonthlyVisits}
-                />
-              </label>
-              <label className="website-filter-field hypestat-table-filter">
-                <span className="website-filter-field-label">
-                  Min. referring domains
-                </span>
-                <input
-                  aria-label="Minimum referring domains"
-                  min="0"
-                  onChange={(event) => {
-                    resetPage();
-                    setMinimumReferringDomains(event.target.value);
-                  }}
-                  placeholder="e.g. 100"
-                  type="number"
-                  value={minimumReferringDomains}
-                />
-              </label>
-              <label className="website-filter-field hypestat-table-filter">
-                <span className="website-filter-field-label">
-                  Max. global rank
-                </span>
-                <input
-                  aria-label="Maximum global rank"
-                  min="1"
-                  onChange={(event) => {
-                    resetPage();
-                    setMaximumGlobalRank(event.target.value);
-                  }}
-                  placeholder="e.g. 50,000"
-                  type="number"
-                  value={maximumGlobalRank}
-                />
-              </label>
-              <label className="website-filter-field select-filter">
-                <span className="website-filter-field-label">
-                  HypeStat country
-                </span>
-                <select
-                  aria-label="HypeStat country"
-                  onChange={(event) => {
-                    resetPage();
-                    setHypestatCountry(event.target.value);
-                  }}
-                  value={hypestatCountry}
-                >
-                  <option value="all">All</option>
-                  {hypestatCountries.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="website-filter-field select-filter">
-                <span className="website-filter-field-label">
-                  Backlink country
-                </span>
-                <select
-                  aria-label="Backlink country"
-                  onChange={(event) => {
-                    resetPage();
-                    setBacklinkCountry(event.target.value);
-                  }}
-                  value={backlinkCountry}
-                >
-                  <option value="all">All</option>
-                  {backlinkCountries.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="website-filter-field select-filter">
-                <span className="website-filter-field-label">
-                  Audience country
-                </span>
-                <select
-                  aria-label="Audience country"
-                  onChange={(event) => {
-                    resetPage();
-                    setAudienceCountry(event.target.value);
-                  }}
-                  value={audienceCountry}
-                >
-                  <option value="all">All</option>
-                  {audienceCountries.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              </section>
             </div>
-              </div>
-              <div className="website-filter-group">
-                <h2>Domain Rating</h2>
-                <div className="website-advanced-filter-grid">
-                  <label className="website-filter-field hypestat-table-filter">
-                    <span className="website-filter-field-label">
-                      Min. DR
-                    </span>
-                    <input
-                      aria-label="Minimum domain rating"
-                      max="100"
-                      min="0"
-                      onChange={(event) => {
-                        resetPage();
-                        setMinimumAhrefsDomainRating(event.target.value);
-                      }}
-                      placeholder="0–100"
-                      type="number"
-                      value={minimumAhrefsDomainRating}
-                    />
-                  </label>
-                  <label className="website-filter-field hypestat-table-filter">
-                    <span className="website-filter-field-label">
-                      Max. DR
-                    </span>
-                    <input
-                      aria-label="Maximum domain rating"
-                      max="100"
-                      min="0"
-                      onChange={(event) => {
-                        resetPage();
-                        setMaximumAhrefsDomainRating(event.target.value);
-                      }}
-                      placeholder="0–100"
-                      type="number"
-                      value={maximumAhrefsDomainRating}
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className="website-filter-group">
-                <h2>PageSpeed score</h2>
-                <div className="website-advanced-filter-grid">
-                  <label className="website-filter-field select-filter">
-                    <span className="website-filter-field-label">Device</span>
-                    <select
-                      aria-label="PageSpeed device"
-                      onChange={(event) => {
-                        resetPage();
-                        const strategy = event.target.value;
-                        if (strategy === "desktop" || strategy === "mobile") {
-                          setPageSpeedStrategy(strategy);
-                        }
-                      }}
-                      value={pageSpeedStrategy}
-                    >
-                      <option value="desktop">Desktop</option>
-                      <option value="mobile">Mobile</option>
-                    </select>
-                  </label>
-                  <label className="website-filter-field select-filter">
-                    <span className="website-filter-field-label">Category</span>
-                    <select
-                      aria-label="PageSpeed category"
-                      onChange={(event) => {
-                        resetPage();
-                        const category = pageSpeedCategories.find(
-                          (option) => option.key === event.target.value,
-                        )?.key;
-                        if (category) setPageSpeedCategory(category);
-                      }}
-                      value={pageSpeedCategory}
-                    >
-                      {pageSpeedCategories.map(({ key, label }) => (
-                        <option key={key} value={key}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="website-filter-field hypestat-table-filter">
-                    <span className="website-filter-field-label">
-                      Min. score
-                    </span>
-                    <input
-                      aria-label="Minimum PageSpeed score"
-                      max="100"
-                      min="0"
-                      onChange={(event) => {
-                        resetPage();
-                        setMinimumPageSpeedScore(event.target.value);
-                      }}
-                      placeholder="0–100"
-                      type="number"
-                      value={minimumPageSpeedScore}
-                    />
-                  </label>
-                  <label className="website-filter-field hypestat-table-filter">
-                    <span className="website-filter-field-label">
-                      Max. score
-                    </span>
-                    <input
-                      aria-label="Maximum PageSpeed score"
-                      max="100"
-                      min="0"
-                      onChange={(event) => {
-                        resetPage();
-                        setMaximumPageSpeedScore(event.target.value);
-                      }}
-                      placeholder="0–100"
-                      type="number"
-                      value={maximumPageSpeedScore}
-                    />
-                  </label>
-                </div>
-              </div>
+              <footer className="website-filter-modal-footer">
+                <span>
+                  {draftActiveFilterCount === 0
+                    ? "No filters selected"
+                    : `${draftActiveFilterCount} selected`}
+                </span>
+                <button
+                  className="button button-primary"
+                  onClick={applyWebsiteFilters}
+                  type="button"
+                >
+                  Apply filters
+                </button>
+              </footer>
             </div>
-          </details>
+          </dialog>
           <div className="website-mobile-sort-control">
             <label>
               <span>Sort</span>
@@ -1554,6 +2282,14 @@ export function WebsitesPage() {
             </button>
           </div>
           <div className="website-registry-actions">
+            <button
+              className="button button-primary website-add-button"
+              onClick={() => setCrawlDialogOpen(true)}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={15} strokeWidth={2} />
+              <span>Add website</span>
+            </button>
             <details className="website-columns-menu">
               <summary>
                 <Columns3 aria-hidden="true" size={15} strokeWidth={1.8} />
@@ -1704,11 +2440,29 @@ export function WebsitesPage() {
             className="website-bulk-toolbar"
             role="region"
           >
-            <div className="website-bulk-selection-count">
-              <span className="website-bulk-selection-value">
-                {selectedCount}
-              </span>
-              <span>selected website{selectedCount === 1 ? "" : "s"}</span>
+            <div className="website-bulk-selection-summary">
+              <div className="website-bulk-selection-count">
+                <span className="website-bulk-selection-value">
+                  {selectedCount}
+                </span>
+                <span>selected website{selectedCount === 1 ? "" : "s"}</span>
+              </div>
+              <button
+                className="website-clear-selection"
+                disabled={
+                  batchStatusMutation.isPending ||
+                  addToLeadMutation.isPending ||
+                  excludeSelectedWebsitesMutation.isPending
+                }
+                onClick={() => {
+                  setSelectedWebsiteRecords(new Map());
+                  setBulkStatus("");
+                }}
+                type="button"
+              >
+                <X aria-hidden="true" size={14} />
+                Clear selection
+              </button>
             </div>
             <div className="website-bulk-status-actions">
               <label className="website-bulk-status">
@@ -1771,31 +2525,12 @@ export function WebsitesPage() {
                 addToLeadMutation.isPending ||
                 excludeSelectedWebsitesMutation.isPending
               }
-              onClick={() =>
-                excludeSelectedWebsitesMutation.mutate(
-                  Array.from(selectedWebsiteRecords.values()),
-                )
-              }
+              onClick={() => openBulkActionConfirmation("exclude")}
               type="button"
             >
               {excludeSelectedWebsitesMutation.isPending
                 ? "Excluding..."
                 : `Exclude selected (${selectedCount})`}
-            </button>
-            <button
-              className="website-clear-selection"
-              disabled={
-                batchStatusMutation.isPending ||
-                addToLeadMutation.isPending ||
-                excludeSelectedWebsitesMutation.isPending
-              }
-              onClick={() => {
-                setSelectedWebsiteRecords(new Map());
-                setBulkStatus("");
-              }}
-              type="button"
-            >
-              Clear selection
             </button>
           </div>
         )}
@@ -1926,11 +2661,18 @@ export function WebsitesPage() {
                 ? "No websites registered yet"
                 : "No websites match your filters"}
             </strong>
-            <span>
-              {websiteCount === 0
-                ? "Websites are added through discovery or indexing jobs."
-                : "Try another search or site type."}
-            </span>
+            {websiteCount === 0 ? (
+              <button
+                className="button button-primary"
+                onClick={() => setCrawlDialogOpen(true)}
+                type="button"
+              >
+                <Plus aria-hidden="true" size={15} strokeWidth={2} />
+                Add websites
+              </button>
+            ) : (
+              <span>Try another search or site type.</span>
+            )}
           </div>
         ) : (
           <>

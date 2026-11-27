@@ -8,7 +8,7 @@ import {
   bootstrapAdmin,
   getBootstrapStatus,
   login,
-  registerOrganization,
+  registerAccount,
   getAuthSession,
   uploadProfilePhoto,
   type AuthSession,
@@ -23,7 +23,6 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
     queryFn: getBootstrapStatus,
     retry: false,
   });
-  const [organizationName, setOrganizationName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
@@ -41,15 +40,13 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
       if (bootstrapQuery.data?.required) {
         return bootstrapAdmin({
           ...input,
-          organization_name: organizationName.trim(),
           first_name: firstName.trim(),
           last_name: lastName.trim(),
         });
       }
       if (initialMode === "signup") {
-        return registerOrganization({
+        return registerAccount({
           ...input,
-          organization_name: organizationName.trim(),
           first_name: firstName.trim(),
           last_name: lastName.trim(),
         });
@@ -70,10 +67,15 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
         }
       }
       queryClient.setQueryData(["auth-session"], completeSession);
+      const activeWorkspace = completeSession.organizations.find(
+        (organization) => organization.id === completeSession.organization_id,
+      );
       router.replace(
-        completeSession.user.role === "admin"
-          ? "/organization/dashboard"
-          : "/overview",
+        activeWorkspace?.is_personal
+          ? "/overview"
+          : completeSession.user.role === "admin"
+            ? "/organization/dashboard"
+            : "/overview",
       );
     },
   });
@@ -132,8 +134,8 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
               <div>
                 <span className="auth-benefit-icon">▤</span>
                 <span>
-                  <strong>Keep your team aligned</strong>
-                  <small>One shared pipeline for your organization.</small>
+                  <strong>Keep your research organized</strong>
+                  <small>Bring website insights and leads into one place.</small>
                 </span>
               </div>
             </div>
@@ -157,9 +159,9 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
           <h2 id="auth-heading">{formTitle}</h2>
           <p className="auth-card-copy">
             {isBootstrap
-              ? "Create your organization and administrator account to get started."
+              ? "Create your personal workspace and administrator account to get started."
               : isSignup
-                ? "Create an organization workspace for your team."
+                ? "Start with a personal workspace. You can create an organization whenever you’re ready to collaborate."
                 : "Sign in to pick up where your team left off."}
           </p>
 
@@ -256,22 +258,6 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
                       />
                     </label>
                   </div>
-                  <label className="auth-field">
-                    <span>Organization name</span>
-                    <input
-                      autoComplete="organization"
-                      disabled={authMutation.isPending}
-                      maxLength={200}
-                      minLength={2}
-                      onChange={(event) => {
-                        setOrganizationName(event.target.value);
-                        authMutation.reset();
-                      }}
-                      placeholder="Acme Inc."
-                      required
-                      value={organizationName}
-                    />
-                  </label>
                 </>
               )}
               <label className="auth-field">
@@ -372,7 +358,8 @@ export function AuthPage({ initialMode }: { initialMode: "login" | "signup" }) {
           )}
           <div className="auth-card-note">
             <span aria-hidden="true">⌑</span>
-            Your organization’s data stays private and secure.
+            Your personal workspace stays private. Create an organization when
+            you want to share work.
           </div>
         </section>
       </div>

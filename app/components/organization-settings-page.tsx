@@ -51,6 +51,22 @@ export function OrganizationSettingsPage() {
       </section>
     );
   }
+  if (
+    sessionQuery.data.organizations.find(
+      (organization) =>
+        organization.id === sessionQuery.data?.organization_id,
+    )?.is_personal
+  ) {
+    return (
+      <section className="panel organization-access-panel">
+        <h1>Personal workspace</h1>
+        <p>
+          Organization branding is available after you create an organization
+          from the account menu.
+        </p>
+      </section>
+    );
+  }
 
   return <OrganizationSettingsForm session={sessionQuery.data} />;
 }
