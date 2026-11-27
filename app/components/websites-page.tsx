@@ -160,6 +160,7 @@ const pageSpeedSortOptions: {
 ];
 const websiteSortOptions: { key: WebsiteRegistrySortKey; label: string }[] = [
   { key: "website", label: "Website" },
+  { key: "emails", label: "Emails" },
   { key: "website_type", label: "Website type" },
   { key: "site_topic", label: "Site topic" },
   { key: "ahrefs_domain_rating", label: "Domain Rating (DR)" },
@@ -2927,7 +2928,13 @@ export function WebsitesPage() {
                       sort={sort}
                       sortKey="website"
                     />
-                    <th data-column="emails" scope="col">Emails</th>
+                    <SortableHeader
+                      column="emails"
+                      label="Emails"
+                      onSort={toggleSort}
+                      sort={sort}
+                      sortKey="emails"
+                    />
                     <th data-column="keywords" scope="col">Keywords</th>
                     <SortableHeader
                       column="website_type"

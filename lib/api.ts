@@ -706,6 +706,7 @@ export interface WebsiteAnalyticsResponse {
 
 export type WebsiteRegistrySortKey =
   | "website"
+  | "emails"
   | "website_type"
   | "site_topic"
   | "language"
@@ -1209,6 +1210,7 @@ export interface UserTavilySearchPreferences {
 }
 
 export type WebsiteRegistryColumnId =
+  | "emails"
   | "keywords"
   | "website_type"
   | "site_topic"
