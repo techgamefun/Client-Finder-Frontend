@@ -10693,60 +10693,80 @@ td {
   );
 }
 
-.website-table-scroll th:nth-child(3),
-.website-table-scroll td:nth-child(3) {
+.website-table-scroll th[data-column="emails"],
+.website-table-scroll td[data-column="emails"] {
+  width: 240px;
+  min-width: 240px;
+}
+
+.website-table-scroll th[data-column="keywords"],
+.website-table-scroll td[data-column="keywords"] {
   width: 260px;
 }
 
-.website-table-scroll th:nth-child(4),
-.website-table-scroll td:nth-child(4) {
+.website-table-scroll th[data-column="website_type"],
+.website-table-scroll td[data-column="website_type"] {
   width: 175px;
 }
 
-.website-table-scroll th:nth-child(5),
-.website-table-scroll td:nth-child(5) {
+.website-table-scroll th[data-column="site_topic"],
+.website-table-scroll td[data-column="site_topic"] {
   width: 190px;
 }
 
-.website-table-scroll th:nth-child(6),
-.website-table-scroll td:nth-child(6),
-.website-table-scroll th:nth-child(7),
-.website-table-scroll td:nth-child(7),
-.website-table-scroll th:nth-child(8),
-.website-table-scroll td:nth-child(8) {
+.website-table-scroll th[data-column="hypestat_monthly_visits"],
+.website-table-scroll td[data-column="hypestat_monthly_visits"],
+.website-table-scroll th[data-column="hypestat_referring_domains"],
+.website-table-scroll td[data-column="hypestat_referring_domains"],
+.website-table-scroll th[data-column="hypestat_global_rank"],
+.website-table-scroll td[data-column="hypestat_global_rank"] {
   width: 130px;
   text-align: right;
 }
 
-.website-table-scroll th:nth-child(9),
-.website-table-scroll td:nth-child(9) {
+.website-table-scroll th[data-column="hypestat_country"],
+.website-table-scroll td[data-column="hypestat_country"] {
   width: 120px;
 }
 
-.website-table-scroll th:nth-child(10),
-.website-table-scroll td:nth-child(10) {
+.website-table-scroll th[data-column="hypestat_backlink_countries"],
+.website-table-scroll td[data-column="hypestat_backlink_countries"] {
   width: 220px;
 }
 
-.website-table-scroll th:nth-child(11),
-.website-table-scroll td:nth-child(11) {
+.website-table-scroll th[data-column="hypestat_audience_countries"],
+.website-table-scroll td[data-column="hypestat_audience_countries"] {
   width: 190px;
 }
 
-.website-table-scroll th:nth-child(12),
-.website-table-scroll td:nth-child(12) {
+.website-table-scroll th[data-column="language"],
+.website-table-scroll td[data-column="language"] {
   width: 100px;
 }
 
-.website-table-scroll th:nth-child(13),
-.website-table-scroll td:nth-child(13) {
+.website-table-scroll th[data-column="crawled_at"],
+.website-table-scroll td[data-column="crawled_at"] {
   width: 185px;
 }
 
-.website-table-scroll th:nth-child(14),
-.website-table-scroll td:nth-child(14) {
+.website-table-scroll th[data-column="ahrefs_domain_rating"],
+.website-table-scroll td[data-column="ahrefs_domain_rating"] {
   width: 100px;
   text-align: right;
+}
+
+.website-table-emails {
+  display: flex;
+  max-width: 240px;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.website-table-emails > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .website-url-cell {

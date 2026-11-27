@@ -586,6 +586,7 @@ export interface WebsiteRecord {
   id: string;
   website_url: string;
   domain: string;
+  emails: string[];
   business_name: string | null;
   industry: string | null;
   city: string | null;

@@ -2927,6 +2927,7 @@ export function WebsitesPage() {
                       sort={sort}
                       sortKey="website"
                     />
+                    <th data-column="emails" scope="col">Emails</th>
                     <th data-column="keywords" scope="col">Keywords</th>
                     <SortableHeader
                       column="website_type"
@@ -3125,6 +3126,28 @@ export function WebsitesPage() {
                             <span aria-hidden="true">↗</span>
                           </a>
                         </span>
+                      </td>
+                      <td
+                        className="website-emails-cell"
+                        data-column="emails"
+                        data-label="Emails"
+                      >
+                        {website.emails.length ? (
+                          <div
+                            aria-label={`Emails for ${website.domain}`}
+                            className="website-table-emails"
+                            title={website.emails.join("\n")}
+                          >
+                            {website.emails.slice(0, 2).map((email) => (
+                              <span key={email}>{email}</span>
+                            ))}
+                            {website.emails.length > 2 && (
+                              <span>+{website.emails.length - 2} more</span>
+                            )}
+                          </div>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td
                         className="website-keywords-cell"
