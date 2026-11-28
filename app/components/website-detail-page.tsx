@@ -441,10 +441,8 @@ function WebsiteDetails({ data }: { data: WebsiteDetailResponse }) {
           </section>
 
           <ContactsSection
-            emails={crawl?.emails ?? []}
             links={socialLinks}
             pageCount={crawlPages.length}
-            phones={crawl?.phones ?? []}
             savedContacts={data.contacts}
             websiteId={website.id}
           />
@@ -1628,17 +1626,13 @@ function WebsiteBusinessProfile({
 }
 
 function ContactsSection({
-  emails,
   links,
   pageCount,
-  phones,
   savedContacts,
   websiteId,
 }: {
-  emails: string[];
   links: NormalizedLink[];
   pageCount: number;
-  phones: string[];
   savedContacts: Contact[];
   websiteId: string;
 }) {
@@ -1651,6 +1645,20 @@ function ContactsSection({
   );
   const internalLinks = filteredLinks.filter((link) => link.isInternal);
   const externalLinks = filteredLinks.filter((link) => !link.isInternal);
+  const emails = [
+    ...new Set(
+      savedContacts
+        .map((contact) => contact.business_email?.trim())
+        .filter((email): email is string => Boolean(email)),
+    ),
+  ];
+  const phones = [
+    ...new Set(
+      savedContacts
+        .map((contact) => contact.business_phone?.trim())
+        .filter((phone): phone is string => Boolean(phone)),
+    ),
+  ];
 
   return (
     <section className="profile-card" id="contacts">

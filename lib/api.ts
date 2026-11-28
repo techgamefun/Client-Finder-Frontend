@@ -425,8 +425,6 @@ export interface WebsiteCrawlResponse {
   goals_page_url: string | null;
   goals_content: string | null;
   classification_signals: CrawlPageClassification[];
-  emails: string[];
-  phones: string[];
   social_links: string[];
   source: "crawler" | "manual";
   crawled_at: string;
